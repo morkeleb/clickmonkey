@@ -3,6 +3,9 @@ logs
 *.log
 npm-debug.log*
 
+# default clickmonkey settings file
+clickmoney.js
+
 # Runtime data
 pids
 *.pid
@@ -45,4 +48,3 @@ jspm_packages
 
 # Yarn Integrity file
 .yarn-integrity
-
