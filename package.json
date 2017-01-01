@@ -8,7 +8,10 @@
     "start": "node index.js"
   },
   "author": "Morten Nielsen",
-  "license": "ISC",
+  "license": "MIT",
+  "bin": {
+    "clickmonkey": "./index.js"
+  },
   "dependencies": {
     "chance": "^1.0.4",
     "commander": "^2.9.0",
