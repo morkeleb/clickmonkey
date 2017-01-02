@@ -5,12 +5,12 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node clickmonkey.js"
   },
   "author": "Morten Nielsen",
   "license": "MIT",
   "bin": {
-    "clickmonkey": "./index.js"
+    "clickmonkey": "./clickmonkey.js"
   },
   "dependencies": {
     "chance": "^1.0.4",

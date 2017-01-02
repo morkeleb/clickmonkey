@@ -1,6 +1,6 @@
 module.exports = exports = {
   // The absolute url to the website you want to unleash the monkey on goes here
-  url: 'your absolute url goes here  like http://google.com/'
+  url: 'your absolute url goes here  like http://google.com/',
   // This is the port for the proxy the monkey sets up to search for 404 and
   // 500 requests
   proxy_port: 9034,

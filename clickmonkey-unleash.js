@@ -12,14 +12,10 @@ const status = require('node-status')
 console = status.console()
 
 program.parse(process.argv);
-var file_path;
-var file = program.args[0];
-if(file){
-  file_path = path.join(path.dirname(fs.realpathSync(__filename)), file);
-}
 
-const settings  = path.join(path.dirname(fs.realpathSync(__filename)), file_path || 'clickmonkey.js');
-const settings_file = require(settings);
+var file_path = program.args[0] || 'clickmonkey.js';
+ 
+const settings_file = require(path.join(process.cwd(), file_path));
 
 if(!settings_file){
   console.error('No settingsfile found with the name: ', file_path || 'clickmonkey.js');
