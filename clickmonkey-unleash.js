@@ -14,7 +14,7 @@ console = status.console()
 program.parse(process.argv);
 
 var file_path = program.args[0] || 'clickmonkey.js';
- 
+
 const settings_file = require(path.join(process.cwd(), file_path));
 
 if(!settings_file){
@@ -31,9 +31,6 @@ var options = extend(defaults, settings_file);
 
 const url_object = url.parse(options.url);
 const proxy_url = 'http://localhost:'+options.proxy_port;
-
-console.log(proxy_url + url_object.path);
-
 
 const start_driver = (selenium_process)=>{
 
