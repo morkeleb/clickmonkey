@@ -10,7 +10,7 @@ var selenium_options = {
     chrome: {
       // check for more recent versions of chrome driver here:
       // https://chromedriver.storage.googleapis.com/index.html
-      version: '2.15',
+      //version: '2.15',
       arch: process.arch,
       baseURL: 'https://chromedriver.storage.googleapis.com'
     },

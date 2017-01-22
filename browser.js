@@ -114,19 +114,15 @@ module.exports = exports = (options)=>
 
 
 
-        console.log(options.url);
-
     const webdriverio = require('webdriverio');
+
+
 
     var driver = webdriverio.remote({
       desiredCapabilities: {
         browserName: 'chrome'
       }
-    }).init().on('error', page_error);
-
-    console.log(driver);
-
-    driver.url(options.url).then(function () {
+    }).init().on('error', page_error).url(options.url).then(function () {
         console.log('starting');
           options.intro(driver).then(function () {
 
