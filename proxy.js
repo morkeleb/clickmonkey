@@ -35,13 +35,15 @@ module.exports = exports = (options) => new Promise((resolve, reject)=>{
     console.error(err);
   };
 
+
+  // TODO: We need a black list of urls not to wait for.
   const check_requests = (callback) => {
     return function() {
       if(requests.length == 0){
       //  console.log('done waiting for load');
         callback();
       } else {
-      //  console.log('waiting for ', requests.map(r=>r.url));
+        console.log('waiting for ', requests.map(r=>r.url));
         setTimeout(check_requests(callback), 500);
       }
     }
@@ -51,7 +53,7 @@ module.exports = exports = (options) => new Promise((resolve, reject)=>{
     if(requests.length == 0){
       return Promise.resolve(1);
     } else {
-    //  console.log('waiting for load');
+      console.log('waiting for load');
       return new Promise((resolve,reject)=>{
         setTimeout(check_requests(resolve), 500);
         setTimeout(resolve, 30000); // we only wait for 30 seconds, because sometimes it seems we miss requests.
@@ -69,8 +71,8 @@ module.exports = exports = (options) => new Promise((resolve, reject)=>{
   console.log('starting proxy for: ' + options.url + ' on port: '+options.localProxy);
   var proxy = httpProxy.createProxyServer({
     target:options.url, // TODO: use host only here, so there only has to be one url in config
-    //autoRewrite: true,
-    //hostRewrite: true,
+    autoRewrite: true,
+    hostRewrite: true,
     //toProxy: true,
     //xfwd: true,
     changeOrigin: true,

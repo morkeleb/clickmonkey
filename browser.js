@@ -3,7 +3,7 @@
 const combine_arrays = results=>Array.prototype.concat.apply([], results.map(r=>r.value));
 
 function create_browser_proxy(driver, options) {
-
+  console.log('creating browser proxy');
   const clicks = options.status.addItem('clicks', {
     label: 'clicks',
   });
@@ -45,13 +45,13 @@ function create_browser_proxy(driver, options) {
     },
     restart: ()=>{
       console.log('restarting');
-      driver.end();
-      driver = webdriverio.remote({
-        desiredCapabilities: {
-          browserName: 'chrome'
+      return driver.url(options.url).then(new Promise((resolve,reject)=>{
+        if(options.intro){
+          options.intro(driver).then(resolve);
+        } else {
+          resolve();
         }
-      }).init().on('error', page_error).url(options.url);
-      return options.intro(driver);
+      }));
     },
     get_forms: ()=> {
       const get_forms = ()=> driver.elements('form');
@@ -124,14 +124,13 @@ module.exports = exports = (options)=>
       }
     }).init().on('error', page_error).url(options.url).then(function () {
         console.log('starting');
+        if(options.intro){
           options.intro(driver).then(function () {
-
             resolve(create_browser_proxy(driver, options));
           });
+        } else {
+            resolve(create_browser_proxy(driver, options));
+        }
 
     });
-
-
-
-
   });

@@ -50,13 +50,13 @@ const start_driver = (selenium_process)=>{
       fence: options.fence,
       status: status })
     ]).then((proxy, browser, options)=>{
-      console.log('test');
+      console.log('starting status');
 
       status.start({
           interval: 200,
           pattern: '{uptime}  |  {spinner.cyan} | clicks: {clicks} | forms: {forms} | at: {urls.custom}'
       });
-
+      console.log('creating brains');
       return brains(proxy, browser, options);
     }, cleanup).then(cleanup,cleanup);
 }
