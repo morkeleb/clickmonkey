@@ -53,8 +53,17 @@ module.exports = exports = (arguments)=>{
           if(forms.length == 0) {
             return Promise.resolve();
           }
-          return form_filler(forms[getRandomInt(forms.length)]);
+          return form_filler.fill_form(forms[getRandomInt(forms.length)]);
         });
+      case 2:
+        return browser.get_inputs().then(
+          inputs=>{
+            if(inputs.lenth == 0){
+              return Promise.resolve();
+            }
+            return form_filler.fill_input(inputs[getRandomInt(inputs.length)])
+          }
+        )
       default:
         return browser.get_clickable_elements().
           then(e=>browser.click(e[getRandomInt(e.length)]));

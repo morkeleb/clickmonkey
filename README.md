@@ -117,8 +117,6 @@ The monkey will then:
 * The url needs to be the exact url to the page you want to unleash the monkey on. If the proxy hits a 302 redirect or similar the monkey will freak out because it cant find it's fence. See [Node Proxy issue 1030](https://github.com/nodejitsu/node-http-proxy/issues/1030)
 * Some pages keep an active request open to a server for different reasons (metrics most probably). This will cause the monkey to go really slow. There needs to be a list of urls in the config that the monkey shouldn't care about this is a feature needed in clickmonkey.
 * Atleast on Windows PowerShell the monkey can't display the console UI. It is displayed when you hit CTRL+C to stop the monkey. [Node Status issue 9](https://github.com/derrickpelletier/node-status/issues/9)
-* The selenium process that is started wont be stopped on unix systems. Currently you have to stop the process yourself.
-* The monkey will only respect inputs inside form elements.
 
 ## License
 
