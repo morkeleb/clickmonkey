@@ -146,3 +146,11 @@ If you want to help out, thats great! Here are some guidelines:
   - It can pause for a while, and then continue, but it shouldn't stop.
 
     If you find a place where it stops I appreciate a heads up, or even better one of them pull requests that fixes things.
+
+
+## Release history
+
+* 0.6 support for single inputs, better button detection and kills selenium on exit
+* 0.5 minor bugfixes after testing on Windows
+* 0.4 fix with for verions being outdated as chrome autoupdates.
+* 0.3 command line switches
