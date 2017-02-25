@@ -42,6 +42,7 @@ const install = ()=> new Promise((resolve, reject) => {
 });
 
 
+
 const startclient = () => new Promise(
     (resolve, reject)=>{
       console.log('starting selenium');
@@ -54,6 +55,21 @@ const startclient = () => new Promise(
           return;
         }
         console.log('selenium started');
+        function exitHandler(options, err) {
+            if (err) console.log(err.stack);
+            console.log('stopping selenium');
+            child.kill();
+        }
+
+        //do something when app is closing
+        process.on('exit', exitHandler.bind(null,{cleanup:true}));
+
+        //catches ctrl+c event
+        process.on('SIGINT', exitHandler.bind(null, {exit:true}));
+
+        //catches uncaught exceptions
+        process.on('uncaughtException', exitHandler.bind(null, {exit:true}));
+
         resolve(child);
       });
 
