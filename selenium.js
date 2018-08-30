@@ -4,13 +4,13 @@ var extend = require('extend');
 var selenium_options = {
   // check for more recent versions of selenium here:
   // https://selenium-release.storage.googleapis.com/index.html
-  //version: '2.45.0',
+  // version: '3.12.0',
   baseURL: 'https://selenium-release.storage.googleapis.com',
   drivers: {
     chrome: {
       // check for more recent versions of chrome driver here:
       // https://chromedriver.storage.googleapis.com/index.html
-      //version: '2.15',
+      //version: '2.41',
       arch: process.arch,
       baseURL: 'https://chromedriver.storage.googleapis.com'
     },
@@ -69,7 +69,6 @@ const startclient = () => new Promise(
 
         //catches uncaught exceptions
         process.on('uncaughtException', exitHandler.bind(null, {exit:true}));
-
         resolve(child);
       });
 
