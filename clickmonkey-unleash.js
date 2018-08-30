@@ -9,7 +9,6 @@ const defaults = require('./default_settings');
 const extend = require('extend');
 const program = require('commander');
 const status = require('node-status')
-console = status.console()
 
 program.parse(process.argv);
 
