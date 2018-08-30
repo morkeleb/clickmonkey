@@ -1,4 +1,5 @@
 const selenium = require('./selenium');
+const fuzzdb = require('./fuzzdb');
 const browser = require('./browser');
 const proxy = require('./proxy');
 const brains = require('./brains');
@@ -8,7 +9,7 @@ const url = require('url');
 const defaults = require('./default_settings');
 const extend = require('extend');
 const program = require('commander');
-const status = require('node-status')
+const status = require('node-status');
 console = status.console()
 
 program.parse(process.argv);
@@ -61,6 +62,8 @@ const start_driver = (selenium_process)=>{
     }, cleanup).then(cleanup,cleanup);
 }
 
-selenium.start().then(start_driver).catch(function (res) {
+fuzzdb.install().then(()=>{
+  console.log(fuzzdb.get_random_fuzz_string());
+  return selenium.start();}).then(start_driver).catch(function (res) {
   console.error('error: ',res);
 });
