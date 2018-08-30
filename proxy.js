@@ -1,4 +1,5 @@
 var httpProxy = require('http-proxy');
+const url = require('url');
 
 module.exports = exports = (options) => new Promise((resolve, reject)=>{
 
@@ -69,8 +70,10 @@ module.exports = exports = (options) => new Promise((resolve, reject)=>{
   });
 
   console.log('starting proxy for: ' + options.url + ' on port: '+options.localProxy);
+
+  const url_object = url.parse(options.url);
   var proxy = httpProxy.createProxyServer({
-    target:options.url, // TODO: use host only here, so there only has to be one url in config
+    target: url_object.protocol + '//' + url_object.host + '/',
     autoRewrite: true,
     hostRewrite: true,
     //toProxy: true,
