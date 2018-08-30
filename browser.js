@@ -127,18 +127,16 @@ const page_error = ()=>{
 module.exports = exports = (options)=>
   new Promise((resolve, reject)=>{
 
-
-
     const webdriverio = require('webdriverio');
-
 
 
     var driver = webdriverio.remote({
       desiredCapabilities: {
         browserName: 'chrome'
-      }
+      },
+      services: ['selenium-standalone']
     }).init().on('error', page_error).url(options.url).then(function () {
-        console.log('starting');
+        console.log('starting clickmonkey');
         if(options.intro){
           options.intro(driver).then(function () {
             resolve(create_browser_proxy(driver, options));
