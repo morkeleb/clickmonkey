@@ -3,6 +3,7 @@
   "version": "0.0.7",
   "description": "bot that clicks through webpages",
   "main": "index.js",
+  "repository": "github:morkeleb/clickmonkey",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node clickmonkey.js"
