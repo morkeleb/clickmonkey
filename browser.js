@@ -132,7 +132,12 @@ module.exports = exports = (options)=>
 
     var driver = webdriverio.remote({
       desiredCapabilities: {
-        browserName: 'chrome'
+        browserName: 'chrome',
+        chromeOptions: {
+          args: [
+            'disable-web-security',
+          ],
+        },
       },
       services: ['selenium-standalone']
     }).init().on('error', page_error).url(options.url).then(function () {
