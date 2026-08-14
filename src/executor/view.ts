@@ -1,8 +1,12 @@
-import type { Page } from "playwright";
+import type { Locator as PwLocator, Page } from "playwright";
 import { locatorOf } from "../schema/locator.js";
-import type { Field, PageModel, PageModelDraft, Surface } from "../schema/page-model.js";
+import type { Field, PageModel, PageModelDraft, Surface, Widget } from "../schema/page-model.js";
 import type { ShownAction, ShownField, View } from "../schema/view.js";
+import { auditVisible } from "../surveyor/audit.js";
 import { toPlaywrightLocator } from "./locators.js";
+
+/** Keep the snapshot inside a brain's context. Cut on a line boundary. */
+export const CONTENT_MAX = 8000;
 
 function currentSurface(
   model: PageModel | PageModelDraft,
@@ -17,6 +21,96 @@ function currentSurface(
     if (s) return s;
   }
   return undefined;
+}
+
+/** Browser-side. Must stay closure-free for locator.evaluate. */
+function readLiveLabel(el: {
+  id: string;
+  innerText: string;
+  getAttribute(name: string): string | null;
+  closest(sel: string): { innerText: string } | null;
+}): string {
+  const g = globalThis as unknown as {
+    document: {
+      getElementById(id: string): { innerText: string } | null;
+      querySelector(sel: string): { innerText: string } | null;
+    };
+    CSS?: { escape(s: string): string };
+  };
+  const aria = el.getAttribute("aria-label");
+  if (aria?.trim()) return aria.trim().slice(0, 80);
+  const labelledBy = el.getAttribute("aria-labelledby");
+  if (labelledBy) {
+    const text = labelledBy
+      .split(/\s+/)
+      .map((id) => g.document.getElementById(id)?.innerText ?? "")
+      .join(" ")
+      .trim();
+    if (text) return text.slice(0, 80);
+  }
+  if (el.id) {
+    const escaped = g.CSS?.escape(el.id) ?? el.id;
+    const t = g.document.querySelector(`label[for="${escaped}"]`)?.innerText.trim() ?? "";
+    if (t) return t.slice(0, 80);
+  }
+  const wrap = el.closest("label")?.innerText.trim() ?? "";
+  if (wrap) return wrap.slice(0, 80);
+  const own = (el.innerText ?? "").trim();
+  return own ? own.slice(0, 80) : "";
+}
+
+function slugLabel(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+}
+
+/** Drop labels that just repeat the id (`submit` / `Submit`). */
+export function usefulLabel(id: string, raw: string): string | undefined {
+  const t = raw.trim();
+  if (!t) return undefined;
+  if (slugLabel(t) === id.toLowerCase()) return undefined;
+  return t.slice(0, 80);
+}
+
+export function clipContent(raw: string): string {
+  const t = raw.replace(/\s+$/u, "");
+  if (t.length <= CONTENT_MAX) return t;
+  const cut = t.slice(0, CONTENT_MAX);
+  const lastNl = cut.lastIndexOf("\n");
+  return `${lastNl > 0 ? cut.slice(0, lastNl) : cut}\n…`;
+}
+
+async function liveLabel(page: Page, widget: Widget): Promise<string | undefined> {
+  const loc = toPlaywrightLocator(page, locatorOf(widget));
+  if ((await loc.count()) === 0) return undefined;
+  const raw = await loc.evaluate(readLiveLabel).catch(() => "");
+  return usefulLabel(widget.id, raw);
+}
+
+async function firstVisibleSnapshot(loc: PwLocator): Promise<string | undefined> {
+  if ((await loc.count()) === 0) return undefined;
+  const first = loc.first();
+  if (!(await first.isVisible().catch(() => false))) return undefined;
+  try {
+    const snap = await first.ariaSnapshot({ timeout: 1000 });
+    const clipped = clipContent(snap);
+    return clipped.length > 0 ? clipped : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function liveContent(page: Page, surface: Surface | undefined): Promise<string | undefined> {
+  if (surface?.locator) {
+    const scoped = await firstVisibleSnapshot(toPlaywrightLocator(page, surface.locator));
+    if (scoped) return scoped;
+  }
+  const main = await firstVisibleSnapshot(page.locator("main, [role='main']"));
+  if (main) return main;
+  return firstVisibleSnapshot(page.locator("body"));
 }
 
 async function liveFieldValue(page: Page, field: Field): Promise<string> {
@@ -51,18 +145,34 @@ export async function buildView(state: {
     for (const field of surface.fields) {
       if (field.status !== "ok") continue;
       const value = await liveFieldValue(state.page, field);
+      const label = await liveLabel(state.page, field);
       shown.push({
         id: field.id,
         value,
         required: field.required,
         type: field.type,
+        ...(label ? { label } : {}),
       });
     }
     for (const action of surface.actions) {
       if (action.status !== "ok") continue;
-      actions.push(action.opens ? { id: action.id, opens: action.opens } : { id: action.id });
+      const label = await liveLabel(state.page, action);
+      actions.push({
+        id: action.id,
+        ...(action.opens ? { opens: action.opens } : {}),
+        ...(label ? { label } : {}),
+      });
     }
   }
+
+  const content = await liveContent(state.page, surface);
+  const auditRoot = surface?.locator
+    ? toPlaywrightLocator(state.page, surface.locator)
+    : state.page;
+  const audit = await auditVisible(state.page, auditRoot, {
+    excludeVisibleDialogs: surface?.kind !== "dialog",
+    checkMain: surface?.kind !== "dialog",
+  });
 
   return {
     page: state.pageId,
@@ -70,6 +180,10 @@ export async function buildView(state: {
     stack,
     shown,
     actions,
+    ...(content ? { content } : {}),
+    ...(audit.issues.length > 0
+      ? { testability: { insufficient: audit.insufficient, issues: audit.issues } }
+      : {}),
     ...(state.last ? { last: state.last } : {}),
   };
 }
@@ -84,11 +198,28 @@ export function formatView(view: View): string {
   for (const field of view.shown) {
     const flags = [field.required ? "required" : undefined, field.type].filter(Boolean).join(", ");
     const rendered = `  ${field.id}: ${JSON.stringify(field.value)}`;
-    lines.push(flags ? `${rendered}  [${flags}]` : rendered);
+    const withFlags = flags ? `${rendered}  [${flags}]` : rendered;
+    lines.push(field.label ? `${withFlags}  ${field.label}` : withFlags);
   }
   lines.push("actions:");
   for (const action of view.actions) {
-    lines.push(action.opens ? `  ${action.id} → ${action.opens}` : `  ${action.id}`);
+    const base = action.opens ? `  ${action.id} → ${action.opens}` : `  ${action.id}`;
+    lines.push(action.label ? `${base}  ${action.label}` : base);
+  }
+  if (view.content) {
+    lines.push("content:");
+    for (const line of view.content.split("\n")) lines.push(`  ${line}`);
+  }
+  if (view.testability && view.testability.issues.length > 0) {
+    lines.push(`testability: ${view.testability.insufficient ? "insufficient" : "warn"}`);
+    const shownIssues = view.testability.issues.slice(0, 20);
+    for (const issue of shownIssues) {
+      const extra = [issue.role, issue.inputType].filter(Boolean).join(" ");
+      lines.push(extra ? `  ${issue.code}  ${issue.tag}  ${extra}` : `  ${issue.code}  ${issue.tag}`);
+    }
+    if (view.testability.issues.length > shownIssues.length) {
+      lines.push(`  … ${view.testability.issues.length - shownIssues.length} more`);
+    }
   }
   if (view.last) {
     const outcome = view.last.ok ? "ok" : (view.last.finding ?? "fail");

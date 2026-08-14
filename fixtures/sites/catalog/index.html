@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Catalog</title>
+  </head>
+  <body>
+    <header>
+      <p>Site chrome that should stay out of a main-scoped snapshot.</p>
+      <a href="/account">Account</a>
+    </header>
+    <main data-testid="home">
+      <h1>Shop</h1>
+      <article>
+        <h2>Acme Wireless Headphones</h2>
+        <p>$79.99</p>
+        <p>Noise cancelling over-ear headphones with 30 hour battery.</p>
+        <label for="qty">Quantity</label>
+        <input id="qty" data-testid="qty" type="number" value="1" />
+        <button data-testid="add-to-cart">Add to bag</button>
+      </article>
+      <article>
+        <h2>Travel Case</h2>
+        <p>Hard shell case for the headphones.</p>
+        <a data-testid="view-case" href="#case">See details</a>
+      </article>
+    </main>
+    <footer>Copyright never belongs in the view.</footer>
+  </body>
+</html>

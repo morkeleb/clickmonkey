@@ -1,0 +1,207 @@
+import type { Locator as PwLocator, Page } from "playwright";
+import {
+  dedupeIssues,
+  isInsufficient,
+  type TestabilityIssue,
+} from "../schema/testability.js";
+
+export interface AuditOptions {
+  excludeVisibleDialogs?: boolean;
+  checkMain?: boolean;
+}
+
+export interface AuditResult {
+  issues: TestabilityIssue[];
+  insufficient: boolean;
+}
+
+type AuditFlags = {
+  excludeVisibleDialogs: boolean;
+  checkMain: boolean;
+};
+
+/**
+ * Function body (args: root, flags). Kept as source text so tsx/esbuild
+ * `__name` helpers are not serialized into the page.
+ */
+const AUDIT_SRC = `
+var DIALOG_SEL = "dialog, [role='dialog'], [aria-modal='true']";
+var FIELD_SEL = 'input, select, textarea, [contenteditable="true"]';
+var ACTION_SEL = 'button, a[href], [role="button"], input[type="submit"], input[type="button"]';
+var EXTRA_SEL = "[onclick], [tabindex]";
+var doc = document;
+var issues = [];
+var els;
+var i;
+var el;
+
+function shown(node) {
+  if (!node) return false;
+  if (typeof node.checkVisibility === "function") {
+    return node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+  }
+  return true;
+}
+function insideForeignDialog(node) {
+  var host = node.closest(DIALOG_SEL);
+  return Boolean(host && host !== node && host !== root);
+}
+function accName(node) {
+  var aria = node.getAttribute("aria-label");
+  if (aria && aria.trim()) return aria.trim();
+  var labelledBy = node.getAttribute("aria-labelledby");
+  if (labelledBy) {
+    var text = labelledBy.split(/\\s+/).map(function (id) {
+      var hit = doc.getElementById(id);
+      return hit ? hit.innerText : "";
+    }).join(" ").trim();
+    if (text) return text;
+  }
+  return (node.innerText || "").trim();
+}
+function labelText(node) {
+  if (node.id) {
+    var escaped = (typeof CSS !== "undefined" && CSS.escape) ? CSS.escape(node.id) : node.id;
+    var lab = doc.querySelector('label[for="' + escaped + '"]');
+    var t = lab ? lab.innerText.trim() : "";
+    if (t) return t;
+  }
+  var wrap = node.closest("label");
+  return wrap ? wrap.innerText.trim() : "";
+}
+function implicitRole(node) {
+  var roleAttr = node.getAttribute("role");
+  if (roleAttr && roleAttr.trim()) return roleAttr.trim();
+  var tag = node.tagName.toLowerCase();
+  var inputType = tag === "input" ? node.type || "text" : "";
+  if (tag === "button") return "button";
+  if (tag === "a" && node.hasAttribute("href")) return "link";
+  if (tag === "dialog") return "dialog";
+  if (tag === "select") return "combobox";
+  if (tag === "textarea") return "textbox";
+  if (tag === "input") {
+    if (["text", "email", "password", "search", "tel", "url"].indexOf(inputType) >= 0) return "textbox";
+    if (inputType === "checkbox") return "checkbox";
+    if (inputType === "radio") return "radio";
+    if (inputType === "number") return "spinbutton";
+    if (inputType === "submit" || inputType === "button") return "button";
+  }
+  return "";
+}
+function canLocate(kind, node) {
+  if (node.getAttribute("data-testid") && node.getAttribute("data-testid").trim()) return true;
+  if (kind === "field" && node.getAttribute("name") && node.getAttribute("name").trim()) return true;
+  if (implicitRole(node) && accName(node)) return true;
+  if (labelText(node)) return true;
+  return false;
+}
+function named(node) {
+  return Boolean(accName(node) || labelText(node));
+}
+function push(code, severity, node) {
+  var tag = node.tagName.toLowerCase();
+  var role = implicitRole(node);
+  var inputType = tag === "input" ? node.type || "text" : "";
+  var item = { code: code, severity: severity, tag: tag };
+  if (role) item.role = role;
+  if (inputType) item.inputType = inputType;
+  issues.push(item);
+}
+
+els = root.querySelectorAll(FIELD_SEL);
+for (i = 0; i < els.length; i++) {
+  el = els[i];
+  if (!shown(el)) continue;
+  if (flags.excludeVisibleDialogs && insideForeignDialog(el)) continue;
+  var fTag = el.tagName.toLowerCase();
+  var fType = fTag === "input" ? el.type || "text" : "";
+  if (fType === "hidden" || fType === "submit" || fType === "button") continue;
+  if (!canLocate("field", el)) push("opaqueControl", "block", el);
+  else if (!named(el)) push("unlabeledField", "warn", el);
+}
+
+els = root.querySelectorAll(ACTION_SEL);
+for (i = 0; i < els.length; i++) {
+  el = els[i];
+  if (!shown(el)) continue;
+  if (flags.excludeVisibleDialogs && insideForeignDialog(el)) continue;
+  if (!canLocate("action", el)) push("opaqueControl", "block", el);
+  else if (!named(el)) push("unnamedControl", "warn", el);
+}
+
+els = root.querySelectorAll(EXTRA_SEL);
+for (i = 0; i < els.length; i++) {
+  el = els[i];
+  if (!shown(el)) continue;
+  if (flags.excludeVisibleDialogs && insideForeignDialog(el)) continue;
+  var eTag = el.tagName.toLowerCase();
+  if (eTag === "input" || eTag === "select" || eTag === "textarea" || eTag === "button" || eTag === "a") continue;
+  if (el.getAttribute("role") === "button") continue;
+  if (el.tabIndex < 0 && !el.hasAttribute("onclick")) continue;
+  push("clickableNonWidget", "block", el);
+}
+
+var dialogRoots = [];
+var selfRole = root.getAttribute("role");
+var selfTag = root.tagName.toLowerCase();
+if (selfTag === "dialog" || selfRole === "dialog" || root.getAttribute("aria-modal") === "true") {
+  dialogRoots.push(root);
+}
+if (flags.checkMain) {
+  els = root.querySelectorAll(DIALOG_SEL);
+  for (i = 0; i < els.length; i++) {
+    if (shown(els[i])) dialogRoots.push(els[i]);
+  }
+}
+for (i = 0; i < dialogRoots.length; i++) {
+  el = dialogRoots[i];
+  var labelled = Boolean(
+    (el.getAttribute("data-testid") && el.getAttribute("data-testid").trim()) ||
+    (el.getAttribute("aria-label") && el.getAttribute("aria-label").trim()) ||
+    (el.getAttribute("aria-labelledby") && el.getAttribute("aria-labelledby").trim())
+  );
+  if (!labelled) push("unnamedDialog", "block", el);
+}
+
+if (flags.checkMain) {
+  var main = doc.querySelector("main, [role='main']");
+  if (!shown(main)) {
+    issues.push({ code: "noMain", severity: "warn", tag: "document" });
+  }
+}
+
+return issues;
+`;
+
+function isPage(root: Page | PwLocator): root is Page {
+  return typeof (root as Page).locator === "function" && typeof (root as Page).url === "function";
+}
+
+export async function auditVisible(
+  page: Page,
+  root: Page | PwLocator,
+  opts: AuditOptions = {},
+): Promise<AuditResult> {
+  const loc = isPage(root) ? page.locator("html") : root;
+  if ((await loc.count()) === 0) {
+    return { issues: [], insufficient: false };
+  }
+  const flags: AuditFlags = {
+    excludeVisibleDialogs: Boolean(opts.excludeVisibleDialogs),
+    checkMain: Boolean(opts.checkMain),
+  };
+  const raw = await loc.first().evaluate(
+    (el, arg) => new Function("root", "flags", arg.src)(el, arg.flags),
+    { src: AUDIT_SRC, flags },
+  );
+  const issues = dedupeIssues(raw as TestabilityIssue[]);
+  return { issues, insufficient: isInsufficient(issues) };
+}
+
+export function formatTestabilityLine(issues: TestabilityIssue[], insufficient: boolean): string {
+  if (issues.length === 0) return "";
+  const blocks = issues.filter((i) => i.severity === "block").length;
+  const warns = issues.length - blocks;
+  const flag = insufficient ? "insufficient" : "warn";
+  return `testability: ${flag} (${blocks} block, ${warns} warn)\n`;
+}

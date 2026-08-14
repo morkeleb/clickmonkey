@@ -5,7 +5,8 @@ UI, and keep a tape you can replay when something is wrong. v2 is that product
 without the JRE, the local proxy, or a WebdriverIO `intro` callback.
 
 One JSON file is the leash and the map. The log is a line DSL. The view is
-what a brain (human or model) sees — ids, values, actions — not HTML.
+what a brain (human or model) sees — ids, values, actions, and a scoped
+accessibility snapshot — not HTML.
 
 0.0.7 stays tagged. Those configs will not run here.
 

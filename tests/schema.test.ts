@@ -12,6 +12,8 @@ import {
   assertNotLegacyConfig,
   LegacyConfigError,
   Locator,
+  View,
+  TestabilityReport,
 } from "../src/schema/index.js";
 
 function fixture(name: string): unknown {
@@ -88,6 +90,56 @@ expect createDialog.name invalid
     assert.equal(
       formatStep({ kind: "fill", surface: "s", id: "name", value: "" }),
       'fill s.name ""',
+    );
+  });
+});
+
+describe("TestabilityReport schema", () => {
+  it("accepts a page mark and rejects extra keys", () => {
+    const report = TestabilityReport.parse({
+      schemaVersion: 1,
+      pages: [
+        {
+          path: "/",
+          foundAt: "2026-08-14T00:00:00.000Z",
+          insufficient: true,
+          issues: [{ code: "opaqueControl", severity: "block", tag: "button" }],
+        },
+      ],
+    });
+    assert.equal(report.pages[0]?.issues[0]?.code, "opaqueControl");
+    assert.throws(() =>
+      TestabilityReport.parse({
+        schemaVersion: 1,
+        pages: [],
+        score: 12,
+      }),
+    );
+  });
+});
+
+describe("View schema", () => {
+  it("accepts labels and content and rejects extra keys", () => {
+    const view = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [{ id: "qty", value: "1", type: "number", label: "Quantity" }],
+      actions: [{ id: "add_to_cart", label: "Add to bag" }],
+      content: '- heading "Shop" [level=1]',
+    });
+    assert.equal(view.shown[0]?.label, "Quantity");
+    assert.equal(view.actions[0]?.label, "Add to bag");
+    assert.equal(view.content, '- heading "Shop" [level=1]');
+    assert.throws(() =>
+      View.parse({
+        page: "home",
+        surface: "page",
+        stack: ["page"],
+        shown: [],
+        actions: [],
+        html: "<div>",
+      }),
     );
   });
 });

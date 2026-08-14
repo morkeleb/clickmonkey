@@ -8,6 +8,7 @@ import { saveConfig } from "../persist/config.js";
 import { writeLog, readLog } from "../persist/log.js";
 import { emptyConfig } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
+import { formatTestabilityLine } from "../surveyor/audit.js";
 import { inspectAndSaveConfig } from "../surveyor/inspect.js";
 import { compactLog, replayLog, ReplayLiveValidateError, runEmptyRequired } from "../playbooks/index.js";
 import {
@@ -54,23 +55,21 @@ export async function cmdInspect(opts: {
   const outDir = resolveOutDir();
   try {
     await withRun({ headed: opts.headed, timeout }, async (handle) => {
-      let pageId: string;
-      let surfaceIds: string[];
-      if (config.intro.length === 0) {
-        await handle.page.goto(config.url, { waitUntil: "domcontentloaded" });
-        const result = await inspectAndSaveConfig(handle.page, configPath);
-        pageId = result.pageId;
-        surfaceIds = result.model.pages.find((p) => p.id === result.pageId)?.surfaces.map((s) => s.id) ?? [];
-      } else {
+      if (config.intro.length > 0) {
         const state = await bootRun(handle, config, outDir, { configPath });
         const exec = createExecutor(state);
         await exec.runIntro();
-        const result = await inspectAndSaveConfig(handle.page, configPath);
-        pageId = result.pageId;
-        surfaceIds = result.model.pages.find((p) => p.id === result.pageId)?.surfaces.map((s) => s.id) ?? [];
+      } else {
+        await handle.page.goto(config.url, { waitUntil: "domcontentloaded" });
       }
-      process.stdout.write(`pageId: ${pageId}\n`);
+      const result = await inspectAndSaveConfig(handle.page, configPath);
+      const surfaceIds =
+        result.model.pages.find((p) => p.id === result.pageId)?.surfaces.map((s) => s.id) ?? [];
+      process.stdout.write(`pageId: ${result.pageId}\n`);
       process.stdout.write(`surfaces: ${surfaceIds.join(", ")}\n`);
+      process.stdout.write(
+        formatTestabilityLine(result.testability.issues, result.testability.insufficient),
+      );
     });
   } catch (err) {
     fail(EXIT_FINDINGS, errMessage(err));

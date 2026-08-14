@@ -5,6 +5,13 @@ import { toPlaywrightLocator } from "../executor/locators.js";
 import { isDocumentNotFound } from "../oracles/http.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
 import { loadConfig, persistSharedMap } from "../persist/config.js";
+import {
+  dedupeIssues,
+  isInsufficient,
+  type TestabilityIssue,
+} from "../schema/testability.js";
+import { persistTestabilityPage } from "../persist/testability.js";
+import { auditVisible } from "./audit.js";
 import { collectCandidates } from "./collect.js";
 import { identityKey, mergePageModel } from "./merge.js";
 import { createPageFromUrl, pathMatches, pathnameOf } from "./ready.js";
@@ -23,6 +30,7 @@ export interface InspectResult {
   surfaceStack: string[];
   candidatesFound: number;
   merged: boolean;
+  testability: { insufficient: boolean; issues: TestabilityIssue[] };
 }
 
 async function modelForPage(page: Page, ctx: SurveyorContext): Promise<{
@@ -63,6 +71,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
       surfaceStack: [fallback?.surfaces.find((s) => s.kind === "page")?.id ?? "page"],
       candidatesFound: 0,
       merged: false,
+      testability: { insufficient: false, issues: [] },
     };
   }
 
@@ -76,9 +85,15 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
   const startGen = model.generation;
   let candidatesFound = 0;
   let merged = createdPage;
+  const auditIssues: TestabilityIssue[] = [];
 
   for (const entry of bound.entries) {
     const root = entry.locator ? toPlaywrightLocator(page, entry.locator) : page;
+    const audit = await auditVisible(page, root, {
+      excludeVisibleDialogs: entry.kind === "page",
+      checkMain: entry.kind === "page",
+    });
+    auditIssues.push(...audit.issues);
     const candidates = await collectCandidates(root, {
       excludeVisibleDialogs: entry.kind === "page",
     });
@@ -127,6 +142,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
   }
 
   const parsed = PageModel.parse(model);
+  const issues = dedupeIssues(auditIssues);
   return {
     model: parsed,
     pageId,
@@ -134,6 +150,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
     surfaceStack: bound.stack,
     candidatesFound,
     merged: merged || parsed.generation !== startGen,
+    testability: { insufficient: isInsufficient(issues), issues },
   };
 }
 
@@ -147,6 +164,12 @@ export async function inspectAndSaveConfig(
     reportDocumentNotFound(configPath, page);
     return result;
   }
+  persistTestabilityPage(configPath, {
+    path: pathnameOf(page),
+    foundAt: new Date().toISOString(),
+    insufficient: result.testability.insufficient,
+    issues: result.testability.issues,
+  });
   const saved = persistSharedMap(configPath, result.model);
   return { ...result, model: saved.map };
 }
