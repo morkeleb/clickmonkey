@@ -10,7 +10,7 @@ import { emptyConfig } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
 import { inspectAndSaveConfig } from "../surveyor/inspect.js";
-import { compactLog, replayLog, ReplayLiveValidateError, runEmptyRequired } from "../playbooks/index.js";
+import { compactLog, replayLog, ReplayLiveValidateError, runEmptyRequired, runUnleash, UNLEASH_CLI_STEPS } from "../playbooks/index.js";
 import {
   EXIT_FINDINGS,
   EXIT_LIVE,
@@ -19,6 +19,7 @@ import {
   errMessage,
   fail,
   loadConfigOrExit,
+  parseSteps,
   parseTimeout,
   persistUrl,
   printUsage,
@@ -166,6 +167,37 @@ export async function cmdPlaybook(
       outDir,
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
+    });
+    process.stdout.write(`${result.logPath}\n`);
+    if (result.findings[0]) {
+      process.stderr.write(`${result.findings[0].kind}: ${result.findings[0].message}\n`);
+    }
+    return result.ok ? EXIT_OK : EXIT_FINDINGS;
+  } catch (err) {
+    fail(EXIT_FINDINGS, errMessage(err));
+  }
+}
+
+export async function cmdUnleash(opts: {
+  config?: string;
+  url?: string;
+  out?: string;
+  headed?: boolean;
+  timeout?: string;
+  steps?: string;
+}): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  const config = withUrl(loadConfigOrExit(configPath), opts.url);
+  const outDir = resolveOutDir(opts.out);
+  mkdirSync(outDir, { recursive: true });
+  try {
+    const result = await runUnleash({
+      config,
+      configPath,
+      outDir,
+      headed: opts.headed,
+      timeout: parseTimeout(opts.timeout),
+      steps: parseSteps(opts.steps, UNLEASH_CLI_STEPS),
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {

@@ -27,9 +27,12 @@ export { resolveSecret, resolveSecretAsync, isSecretToken } from "./executor/sec
 export { isPotentialWrite } from "./executor/write-policy.js";
 export {
   runEmptyRequired,
+  runUnleash,
   replayLog,
   ReplayLiveValidateError,
   compactLog,
   keysFromSteps,
 } from "./playbooks/index.js";
-export type { EmptyRequiredResult } from "./playbooks/index.js";
+export type { EmptyRequiredResult, UnleashResult } from "./playbooks/index.js";
+export { unleashBrain, decideUnleash } from "./brains/unleash.js";
+export type { Brain, BrainContext, BrainDecision } from "./brains/types.js";
