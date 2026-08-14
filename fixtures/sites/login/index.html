@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Login</title>
+  </head>
+  <body>
+    <main data-testid="login">
+      <form>
+        <input data-testid="user" name="user" />
+        <input data-testid="password" name="password" type="password" />
+        <button data-testid="submit" type="submit">Log in</button>
+      </form>
+    </main>
+    <script>
+      document.querySelector("form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const user = document.querySelector('[data-testid="user"]').value;
+        const password = document.querySelector('[data-testid="password"]').value;
+        if (user && password) {
+          location.href = "/app.html";
+        }
+      });
+    </script>
+  </body>
+</html>
