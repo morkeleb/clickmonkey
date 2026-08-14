@@ -1,0 +1,332 @@
+import type { Page } from "playwright";
+import type { FindingKind } from "../schema/finding.js";
+import type { Locator } from "../schema/locator.js";
+import type { Step } from "../schema/log.js";
+import type { Action, Field, Page as PageDef, Surface, Widget } from "../schema/page-model.js";
+import { toPlaywrightLocator } from "./locators.js";
+import type { RunState } from "./run.js";
+import { resolveSecretAsync } from "./secrets.js";
+import { isPotentialWrite } from "./write-policy.js";
+
+export type StepFailure = {
+  kind: FindingKind;
+  message: string;
+  widgetRef?: string;
+  url?: string;
+};
+
+export function widgetLocator(w: { by: Locator["by"]; value: string; name?: string }): Locator {
+  return w.name === undefined
+    ? { by: w.by, value: w.value }
+    : { by: w.by, value: w.value, name: w.name };
+}
+
+export function widgetKey(surfaceId: string, id: string): string {
+  return `${surfaceId}.${id}`;
+}
+
+export function readyKey(pageId: string): string {
+  return `page:${pageId}.ready`;
+}
+
+export function findPage(state: RunState, pageId = state.pageId): PageDef | undefined {
+  return state.model.pages.find((p) => p.id === pageId);
+}
+
+export function findSurface(state: RunState, surfaceId: string): Surface | undefined {
+  const current = findPage(state);
+  const fromCurrent = current?.surfaces.find((s) => s.id === surfaceId);
+  if (fromCurrent) return fromCurrent;
+  for (const page of state.model.pages) {
+    const s = page.surfaces.find((x) => x.id === surfaceId);
+    if (s) return s;
+  }
+  return undefined;
+}
+
+export function findWidget(
+  state: RunState,
+  surfaceId: string,
+  id: string,
+): { surface: Surface; widget: Widget } | undefined {
+  const surface = findSurface(state, surfaceId);
+  if (!surface) return undefined;
+  const widget =
+    surface.fields.find((f) => f.id === id) ?? surface.actions.find((a) => a.id === id);
+  if (!widget) return undefined;
+  return { surface, widget };
+}
+
+export function isField(w: Widget): w is Field {
+  return "type" in w;
+}
+
+function locatorFor(state: RunState, key: string, widget: { by: Locator["by"]; value: string; name?: string }): Locator {
+  if (state.replay && state.usedLocators[key]) return state.usedLocators[key];
+  return widgetLocator(widget);
+}
+
+export function recordLocator(state: RunState, key: string, loc: Locator): void {
+  state.usedLocators[key] = loc;
+  state.log.usedLocators[key] = loc;
+}
+
+export function requireActable(
+  state: RunState,
+  surfaceId: string,
+  id: string,
+): { ok: true; surface: Surface; widget: Widget; locator: Locator; key: string } | { ok: false; failure: StepFailure } {
+  const found = findWidget(state, surfaceId, id);
+  const ref = widgetKey(surfaceId, id);
+  if (!found) {
+    return {
+      ok: false,
+      failure: { kind: "unknownId", message: `unknown id ${ref}`, widgetRef: ref },
+    };
+  }
+  const key = ref;
+  const locator = locatorFor(state, key, found.widget);
+  if (!state.replay) {
+    if (found.widget.status === "unresolved") {
+      return {
+        ok: false,
+        failure: { kind: "unresolvedId", message: `unresolved id ${ref}`, widgetRef: ref },
+      };
+    }
+    if (found.widget.status === "drift") {
+      return {
+        ok: false,
+        failure: { kind: "driftId", message: `drift id ${ref}`, widgetRef: ref },
+      };
+    }
+  }
+  return { ok: true, surface: found.surface, widget: found.widget, locator, key };
+}
+
+export function pathnameMatches(pathname: string, template: string): boolean {
+  const norm = (p: string) => (p !== "/" && p.endsWith("/") ? p.slice(0, -1) : p || "/");
+  const path = norm(pathname);
+  const temp = norm(template);
+  if (path === temp) return true;
+  const pathParts = path.split("/");
+  const tempParts = temp.split("/");
+  if (pathParts.length !== tempParts.length) return false;
+  return tempParts.every((part, i) => part.startsWith(":") || part === pathParts[i]);
+}
+
+export function syncPageFromUrl(state: RunState): void {
+  let pathname: string;
+  try {
+    pathname = new URL(state.page.url()).pathname;
+  } catch {
+    return;
+  }
+  const matched = state.model.pages.find((p) => pathnameMatches(pathname, p.path));
+  if (!matched || matched.id === state.pageId) return;
+  state.pageId = matched.id;
+  const pageSurface = matched.surfaces.find((s) => s.kind === "page");
+  state.surfaceStack = [pageSurface?.id ?? matched.id];
+}
+
+export async function syncSurfaceStack(state: RunState): Promise<void> {
+  while (state.surfaceStack.length > 1) {
+    const top = state.surfaceStack[state.surfaceStack.length - 1];
+    if (!top) break;
+    const surface = findSurface(state, top);
+    if (!surface || surface.kind === "page") break;
+    if (!surface.locator) break;
+    const visible = await toPlaywrightLocator(state.page, surface.locator)
+      .isVisible()
+      .catch(() => false);
+    if (visible) break;
+    state.surfaceStack.pop();
+  }
+}
+
+async function domInputType(page: Page, loc: Locator): Promise<string | undefined> {
+  return toPlaywrightLocator(page, loc)
+    .evaluate((el) => {
+      const type = (el as { type?: unknown }).type;
+      return typeof type === "string" ? type : undefined;
+    })
+    .catch(() => undefined);
+}
+
+async function fieldEmpty(page: Page, field: Field, loc: Locator): Promise<boolean> {
+  const pw = toPlaywrightLocator(page, loc);
+  if (field.type === "checkbox") {
+    return !(await pw.isChecked().catch(() => false));
+  }
+  const value = await pw.inputValue().catch(() => "");
+  return value.trim() === "";
+}
+
+async function writePolicyBlocked(
+  state: RunState,
+  surface: Surface,
+  action: Action,
+  loc: Locator,
+): Promise<StepFailure | undefined> {
+  const inputType = await domInputType(state.page, loc);
+  if (!isPotentialWrite(action, inputType)) return undefined;
+  const required = surface.fields.filter((f) => f.required && (f.status ?? "ok") === "ok");
+  if (required.length === 0) return undefined;
+  for (const field of required) {
+    const key = widgetKey(surface.id, field.id);
+    const fieldLoc = locatorFor(state, key, field);
+    if (await fieldEmpty(state.page, field, fieldLoc)) return undefined;
+  }
+  return {
+    kind: "writePolicyBlocked",
+    message: `write policy blocked ${surface.id}.${action.id}: required fields are filled`,
+    widgetRef: widgetKey(surface.id, action.id),
+  };
+}
+
+async function performOpen(state: RunState, pageId: string): Promise<StepFailure | undefined> {
+  const pageDef = findPage(state, pageId);
+  if (!pageDef) {
+    return { kind: "unknownId", message: `unknown page ${pageId}`, widgetRef: `page:${pageId}` };
+  }
+  const target = new URL(pageDef.path, state.config.url).href;
+  await state.page.goto(target, { waitUntil: "domcontentloaded" });
+  const ready = locatorFor(state, readyKey(pageId), pageDef.ready);
+  await toPlaywrightLocator(state.page, ready).waitFor({ state: "attached" });
+  recordLocator(state, readyKey(pageId), ready);
+  state.pageId = pageDef.id;
+  const pageSurface = pageDef.surfaces.find((s) => s.kind === "page");
+  state.surfaceStack = [pageSurface?.id ?? pageDef.id];
+  return undefined;
+}
+
+async function performClick(
+  state: RunState,
+  surfaceId: string,
+  id: string,
+): Promise<StepFailure | undefined> {
+  const actable = requireActable(state, surfaceId, id);
+  if (!actable.ok) return actable.failure;
+  const pw = toPlaywrightLocator(state.page, actable.locator);
+  await pw.waitFor({ state: "visible" });
+  if (!isField(actable.widget)) {
+    const blocked = await writePolicyBlocked(state, actable.surface, actable.widget, actable.locator);
+    if (blocked) {
+      recordLocator(state, actable.key, actable.locator);
+      return blocked;
+    }
+  }
+  recordLocator(state, actable.key, actable.locator);
+  await pw.click();
+  if (!isField(actable.widget) && actable.widget.opens) {
+    const opened = findSurface(state, actable.widget.opens);
+    if (opened?.locator) {
+      await toPlaywrightLocator(state.page, opened.locator)
+        .waitFor({ state: "visible" })
+        .catch(() => undefined);
+    }
+    if (!state.surfaceStack.includes(actable.widget.opens)) {
+      state.surfaceStack.push(actable.widget.opens);
+    }
+  }
+  return undefined;
+}
+
+async function performFill(
+  state: RunState,
+  surfaceId: string,
+  id: string,
+  value: string,
+): Promise<StepFailure | undefined> {
+  const actable = requireActable(state, surfaceId, id);
+  if (!actable.ok) return actable.failure;
+  const resolved = await resolveSecretAsync(value);
+  const pw = toPlaywrightLocator(state.page, actable.locator);
+  recordLocator(state, actable.key, actable.locator);
+  const field = isField(actable.widget) ? actable.widget : undefined;
+  if (field?.type === "checkbox") {
+    if (resolved === "" || resolved === "false") await pw.uncheck();
+    else await pw.check();
+    return undefined;
+  }
+  if (field?.type === "select") {
+    await pw.selectOption(resolved);
+    return undefined;
+  }
+  await pw.fill("");
+  if (resolved !== "") await pw.fill(resolved);
+  return undefined;
+}
+
+async function performExpectInvalid(
+  state: RunState,
+  surfaceId: string,
+  id: string,
+): Promise<StepFailure | undefined> {
+  const actable = requireActable(state, surfaceId, id);
+  if (!actable.ok) return actable.failure;
+  const pw = toPlaywrightLocator(state.page, actable.locator);
+  const visible = await pw.isVisible().catch(() => false);
+  const ariaInvalid = (await pw.getAttribute("aria-invalid").catch(() => null)) === "true";
+  const errorVisible = await state.page
+    .getByTestId(`${id}-error`)
+    .isVisible()
+    .catch(() => false);
+  if (visible && (ariaInvalid || errorVisible)) return undefined;
+  return {
+    kind: "expectFailed",
+    message: `expected ${widgetKey(surfaceId, id)} invalid`,
+    widgetRef: widgetKey(surfaceId, id),
+  };
+}
+
+async function performExpectVisible(
+  state: RunState,
+  surfaceId: string,
+): Promise<StepFailure | undefined> {
+  const surface = findSurface(state, surfaceId);
+  const pageDef = findPage(state, surfaceId) ?? findPage(state);
+  let loc: Locator | undefined = surface?.locator;
+  if (!loc && pageDef) loc = pageDef.ready;
+  if (!loc) {
+    return { kind: "unknownId", message: `unknown surface ${surfaceId}`, widgetRef: surfaceId };
+  }
+  const visible = await toPlaywrightLocator(state.page, loc).isVisible().catch(() => false);
+  if (visible) return undefined;
+  return {
+    kind: "expectFailed",
+    message: `expected ${surfaceId} visible`,
+    widgetRef: surfaceId,
+  };
+}
+
+async function performExpectPath(state: RunState, path: string): Promise<StepFailure | undefined> {
+  let pathname: string;
+  try {
+    pathname = new URL(state.page.url()).pathname;
+  } catch {
+    pathname = state.page.url();
+  }
+  if (pathnameMatches(pathname, path)) return undefined;
+  return {
+    kind: "expectFailed",
+    message: `expected path ${path}, got ${pathname}`,
+    url: state.page.url(),
+  };
+}
+
+export async function performStep(state: RunState, step: Step): Promise<StepFailure | undefined> {
+  switch (step.kind) {
+    case "open":
+      return performOpen(state, step.page);
+    case "click":
+      return performClick(state, step.surface, step.id);
+    case "fill":
+      return performFill(state, step.surface, step.id, step.value);
+    case "expectInvalid":
+      return performExpectInvalid(state, step.surface, step.id);
+    case "expectVisible":
+      return performExpectVisible(state, step.surface);
+    case "expectPath":
+      return performExpectPath(state, step.path);
+  }
+}
