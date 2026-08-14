@@ -1,27 +1,16 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import { version } from "../index.js";
-
-const USAGE = `clickmonkey ${version}
-
-Usage:
-  clickmonkey <command> [options]
-
-Commands:
-  init        Create clickmonkey.json (fence + empty intro + empty map)
-  inspect     Survey the current page and grow the map
-  view        Print the compact view of the current surface
-  step        Run one DSL line and append it to the log
-  playbook    Run a named playbook (empty-required)
-  replay      Replay a log file (no brain)
-  compact     Shorten a log to the last open + following lines
-
-Run clickmonkey <command> --help for command options.
-`;
-
-function printUsage(): void {
-  process.stdout.write(USAGE);
-}
+import {
+  cmdCompact,
+  cmdInit,
+  cmdInspect,
+  cmdPlaybook,
+  cmdReplay,
+  cmdStep,
+  cmdView,
+} from "./commands.js";
+import { EXIT_USAGE, printUsage, USAGE } from "./common.js";
 
 try {
   const { values, positionals } = parseArgs({
@@ -31,6 +20,11 @@ try {
     options: {
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
+      url: { type: "string" },
+      config: { type: "string" },
+      headed: { type: "boolean" },
+      timeout: { type: "string" },
+      out: { type: "string" },
     },
   });
 
@@ -45,9 +39,38 @@ try {
     process.exit(command && values.help ? 0 : 2);
   }
 
-  printUsage();
-  process.stderr.write(`Unknown command: ${command}\n`);
-  process.exit(2);
+  const flags = {
+    url: typeof values.url === "string" ? values.url : undefined,
+    config: typeof values.config === "string" ? values.config : undefined,
+    headed: Boolean(values.headed),
+    timeout: typeof values.timeout === "string" ? values.timeout : undefined,
+    out: typeof values.out === "string" ? values.out : undefined,
+  };
+
+  const run = async (): Promise<number> => {
+    switch (command) {
+      case "init":
+        return cmdInit(flags);
+      case "inspect":
+        return cmdInspect(flags);
+      case "view":
+        return cmdView(flags);
+      case "step":
+        return cmdStep(positionals[1], flags);
+      case "playbook":
+        return cmdPlaybook(positionals[1], flags);
+      case "replay":
+        return cmdReplay(positionals[1], flags);
+      case "compact":
+        return cmdCompact(positionals[1], { out: flags.out });
+      default:
+        process.stdout.write(USAGE);
+        process.stderr.write(`Unknown command: ${command}\n`);
+        return EXIT_USAGE;
+    }
+  };
+
+  process.exit(await run());
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err);
   process.stderr.write(`${message}\n`);
