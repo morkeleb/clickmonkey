@@ -21,6 +21,7 @@ Commands:
   view        Print the compact view of the current surface
   step        Run one DSL line and append it to the log
   playbook    Run a named playbook (empty-required)
+  unleash     Random-walk legal map ids from the view
   replay      Replay a log file (no brain)
   compact     Shorten a log to the last open + following lines
 
@@ -69,6 +70,13 @@ export function parseTimeout(value?: string): number | undefined {
   if (value === undefined) return undefined;
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) fail(EXIT_USAGE, `invalid --timeout ${value}`);
+  return n;
+}
+
+export function parseSteps(value?: string, fallback = 200): number {
+  if (value === undefined) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) fail(EXIT_USAGE, `invalid --steps ${value}`);
   return n;
 }
 

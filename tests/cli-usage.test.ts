@@ -26,8 +26,13 @@ describe("clickmonkey CLI chassis", () => {
   });
 
   it("rejects an unknown command with exit 2", () => {
-    const result = run(["unleash"]);
+    const result = run(["explore"]);
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /Unknown command: unleash/);
+    assert.match(result.stderr, /Unknown command: explore/);
+  });
+
+  it("lists unleash in usage", () => {
+    const result = run([]);
+    assert.match(result.stdout, /unleash/);
   });
 });

@@ -8,6 +8,7 @@ import {
   cmdPlaybook,
   cmdReplay,
   cmdStep,
+  cmdUnleash,
   cmdView,
 } from "./commands.js";
 import { EXIT_USAGE, printUsage, USAGE } from "./common.js";
@@ -25,6 +26,7 @@ try {
       headed: { type: "boolean" },
       timeout: { type: "string" },
       out: { type: "string" },
+      steps: { type: "string" },
     },
   });
 
@@ -45,6 +47,7 @@ try {
     headed: Boolean(values.headed),
     timeout: typeof values.timeout === "string" ? values.timeout : undefined,
     out: typeof values.out === "string" ? values.out : undefined,
+    steps: typeof values.steps === "string" ? values.steps : undefined,
   };
 
   const run = async (): Promise<number> => {
@@ -59,6 +62,8 @@ try {
         return cmdStep(positionals[1], flags);
       case "playbook":
         return cmdPlaybook(positionals[1], flags);
+      case "unleash":
+        return cmdUnleash(flags);
       case "replay":
         return cmdReplay(positionals[1], flags);
       case "compact":
