@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
+import { persistFinding } from "../persist/finding.js";
 import { parseLine, formatStep } from "../schema/dsl.js";
 import { findingId, type Finding, type FindingKind } from "../schema/finding.js";
 import type { Locator } from "../schema/locator.js";
@@ -30,6 +31,8 @@ export interface RunState {
   outDir: string;
   afterStep?: AfterStep;
   replay?: boolean;
+  configPath?: string;
+  lastAction?: { surface: string; id: string; opens?: string };
 }
 
 export interface StepResult {
@@ -81,11 +84,25 @@ async function screenshotFinding(
   return finding;
 }
 
+function lastActionFromStep(state: RunState, step: Step): RunState["lastAction"] {
+  if (step.kind !== "click") return undefined;
+  for (const page of state.model.pages) {
+    const surface = page.surfaces.find((s) => s.id === step.surface);
+    const action = surface?.actions.find((a) => a.id === step.id);
+    if (!action) continue;
+    return action.opens
+      ? { surface: step.surface, id: step.id, opens: action.opens }
+      : { surface: step.surface, id: step.id };
+  }
+  return { surface: step.surface, id: step.id };
+}
+
 async function finish(
   state: RunState,
   step: Step,
   stepFailure?: StepFailure,
 ): Promise<StepResult> {
+  state.lastAction = lastActionFromStep(state, step);
   syncPageFromUrl(state);
   await syncSurfaceStack(state);
 
@@ -107,9 +124,11 @@ async function finish(
     if (stepFailure) {
       finding = await screenshotFinding(state, stepFailure);
     } else if (state.pendingFindings[0]) {
-      finding = await screenshotFinding(state, state.pendingFindings[0]);
+      finding = await screenshotFinding(state, state.pendingFindings.shift()!);
     }
   }
+
+  if (finding) persistFinding(state.outDir, finding);
 
   state.log.steps.push(step);
 
