@@ -7,6 +7,7 @@ import type { PageModel as PageModelType } from "../src/schema/page-model.js";
 import {
   identityKey,
   mergePageModel,
+  mergeTrees,
   offlineIdsExist,
   type Candidate,
   type MergeInput,
@@ -178,5 +179,34 @@ describe("mergePageModel", () => {
     assert.equal(still.actions[0]?.id, "submit");
     assert.equal(still.actions[0]?.status, "ok");
     assert.equal(omitted.model.generation, 0);
+  });
+});
+
+describe("mergeTrees", () => {
+  it("unions pages and widgets from two monkeys without reminting", () => {
+    const a = loadHome();
+    const b = structuredClone(a);
+    b.pages[0]!.surfaces[0]!.actions.push({
+      id: "site_footer",
+      by: "testId",
+      value: "site-footer",
+      status: "ok",
+    });
+    const extraPage = structuredClone(a.pages[0]!);
+    extraPage.id = "login";
+    extraPage.path = "/login";
+    extraPage.ready = { by: "testId", value: "login" };
+    extraPage.surfaces = [{ id: "page", kind: "page", fields: [], actions: [] }];
+    b.pages.push(extraPage);
+
+    const merged = mergeTrees(a, b);
+    assert.equal(merged.pages.length, 2);
+    assert.ok(merged.pages.some((p) => p.id === "login"));
+    const page = merged.pages.find((p) => p.id === "home");
+    assert.ok(page);
+    assert.ok(page.surfaces[0]?.actions.some((x) => x.id === "site_footer"));
+    assert.ok(page.surfaces[0]?.actions.some((x) => x.id === "openCreate"));
+    const submit = page.surfaces.find((s) => s.id === "createDialog")?.actions.filter((x) => x.value === "submit");
+    assert.equal(submit?.length, 1);
   });
 });

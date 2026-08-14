@@ -3,6 +3,7 @@ export * from "./schema/index.js";
 export * from "./surveyor/ids.js";
 export * from "./surveyor/merge.js";
 export * from "./persist/config.js";
+export * from "./persist/broken.js";
 export * from "./persist/log.js";
 export * from "./persist/finding.js";
 export * from "./persist/run-id.js";

@@ -12,6 +12,9 @@ dist/
 runs/
 auth.json
 playwright-report/
+*.json.lock
+*.json.tmp
+*.broken.json.lock
 
 # Runtime data
 pids

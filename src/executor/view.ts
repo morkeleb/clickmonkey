@@ -1,14 +1,8 @@
 import type { Page } from "playwright";
-import type { Locator } from "../schema/locator.js";
+import { locatorOf } from "../schema/locator.js";
 import type { Field, PageModel, PageModelDraft, Surface } from "../schema/page-model.js";
 import type { ShownAction, ShownField, View } from "../schema/view.js";
 import { toPlaywrightLocator } from "./locators.js";
-
-function widgetLocator(w: { by: Locator["by"]; value: string; name?: string }): Locator {
-  return w.name === undefined
-    ? { by: w.by, value: w.value }
-    : { by: w.by, value: w.value, name: w.name };
-}
 
 function currentSurface(
   model: PageModel | PageModelDraft,
@@ -26,7 +20,7 @@ function currentSurface(
 }
 
 async function liveFieldValue(page: Page, field: Field): Promise<string> {
-  const loc = toPlaywrightLocator(page, widgetLocator(field));
+  const loc = toPlaywrightLocator(page, locatorOf(field));
   if ((await loc.count()) === 0) return "";
   if (field.type === "password") {
     const raw = await loc.inputValue({ timeout: 0 }).catch(() => "");

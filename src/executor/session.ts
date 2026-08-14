@@ -1,4 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { trackDocumentResponses } from "../oracles/http.js";
 
 export interface RunHandle {
   browser: Browser;
@@ -23,6 +24,7 @@ export async function withRun<T>(
     });
     context.setDefaultTimeout(timeout);
     page = await context.newPage();
+    trackDocumentResponses(page);
     return await fn({ browser, context, page });
   } finally {
     if (page) await page.close().catch(() => undefined);

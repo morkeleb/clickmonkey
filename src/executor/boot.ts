@@ -1,12 +1,15 @@
 import { mkdirSync } from "node:fs";
-import { saveConfig } from "../persist/config.js";
+import { persistSharedMap } from "../persist/config.js";
+import { reportDocumentNotFound } from "../persist/broken.js";
+import { isDocumentNotFound } from "../oracles/http.js";
 import type { Config } from "../schema/config.js";
 import type { Locator } from "../schema/locator.js";
 import type { PageModel, PageModelDraft } from "../schema/page-model.js";
 import { inspect } from "../surveyor/inspect.js";
 import type { RunHandle } from "./session.js";
 import type { RunState } from "./run.js";
-import { readyKey, widgetKey, widgetLocator } from "./steps.js";
+import { locatorOf } from "../schema/locator.js";
+import { readyKey, widgetKey } from "../schema/refs.js";
 
 export function locatorsFromModel(model: PageModel | PageModelDraft): Record<string, Locator> {
   const out: Record<string, Locator> = {};
@@ -14,7 +17,7 @@ export function locatorsFromModel(model: PageModel | PageModelDraft): Record<str
     out[readyKey(page.id)] = { ...page.ready };
     for (const surface of page.surfaces) {
       for (const w of [...surface.fields, ...surface.actions]) {
-        out[widgetKey(surface.id, w.id)] = widgetLocator(w);
+        out[widgetKey(surface.id, w.id)] = locatorOf(w);
       }
     }
   }
@@ -23,12 +26,21 @@ export function locatorsFromModel(model: PageModel | PageModelDraft): Record<str
 
 export function attachInspectAfterStep(state: RunState): void {
   state.afterStep = async (s) => {
+    if (isDocumentNotFound(s.page)) {
+      if (s.configPath) reportDocumentNotFound(s.configPath, s.page);
+      return;
+    }
     const r = await inspect(s.page, { model: s.model, lastAction: s.lastAction });
     s.model = r.model;
     s.pageId = r.pageId;
     s.surfaceStack = r.surfaceStack;
-    s.config = { ...s.config, map: r.model };
-    if (s.configPath) saveConfig(s.configPath, s.config);
+    if (s.configPath) {
+      const saved = persistSharedMap(s.configPath, r.model);
+      s.config = saved;
+      s.model = saved.map;
+    } else {
+      s.config = { ...s.config, map: r.model };
+    }
   };
 }
 
@@ -58,6 +70,12 @@ export async function bootRun(
     configPath: opts?.configPath,
   };
   attachInspectAfterStep(state);
-  if (state.configPath) saveConfig(state.configPath, state.config);
+  if (state.configPath && !isDocumentNotFound(handle.page)) {
+    const saved = persistSharedMap(state.configPath, inspected.model);
+    state.config = saved;
+    state.model = saved.map;
+  } else if (state.configPath) {
+    reportDocumentNotFound(state.configPath, handle.page);
+  }
   return state;
 }

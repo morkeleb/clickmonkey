@@ -3,6 +3,7 @@ import { z } from "zod";
 export const FindingKind = z.enum([
   "expectFailed",
   "httpError",
+  "notFound",
   "pageError",
   "fenceViolation",
   "unresolvedId",

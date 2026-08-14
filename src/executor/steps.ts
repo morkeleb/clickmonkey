@@ -1,6 +1,8 @@
 import type { Page } from "playwright";
 import type { FindingKind } from "../schema/finding.js";
-import type { Locator } from "../schema/locator.js";
+import { locatorOf, type Locator } from "../schema/locator.js";
+import { readyKey, widgetKey } from "../schema/refs.js";
+import { pathMatches } from "../surveyor/ready.js";
 import type { Step } from "../schema/log.js";
 import type { Action, Field, Page as PageDef, Surface, Widget } from "../schema/page-model.js";
 import { toPlaywrightLocator } from "./locators.js";
@@ -15,19 +17,8 @@ export type StepFailure = {
   url?: string;
 };
 
-export function widgetLocator(w: { by: Locator["by"]; value: string; name?: string }): Locator {
-  return w.name === undefined
-    ? { by: w.by, value: w.value }
-    : { by: w.by, value: w.value, name: w.name };
-}
-
-export function widgetKey(surfaceId: string, id: string): string {
-  return `${surfaceId}.${id}`;
-}
-
-export function readyKey(pageId: string): string {
-  return `page:${pageId}.ready`;
-}
+export { locatorOf as widgetLocator } from "../schema/locator.js";
+export { readyKey, widgetKey } from "../schema/refs.js";
 
 export function findPage(state: RunState, pageId = state.pageId): PageDef | undefined {
   return state.model.pages.find((p) => p.id === pageId);
@@ -63,7 +54,7 @@ export function isField(w: Widget): w is Field {
 
 function locatorFor(state: RunState, key: string, widget: { by: Locator["by"]; value: string; name?: string }): Locator {
   if (state.replay && state.usedLocators[key]) return state.usedLocators[key];
-  return widgetLocator(widget);
+  return locatorOf(widget);
 }
 
 export function recordLocator(state: RunState, key: string, loc: Locator): void {
@@ -103,16 +94,7 @@ export function requireActable(
   return { ok: true, surface: found.surface, widget: found.widget, locator, key };
 }
 
-export function pathnameMatches(pathname: string, template: string): boolean {
-  const norm = (p: string) => (p !== "/" && p.endsWith("/") ? p.slice(0, -1) : p || "/");
-  const path = norm(pathname);
-  const temp = norm(template);
-  if (path === temp) return true;
-  const pathParts = path.split("/");
-  const tempParts = temp.split("/");
-  if (pathParts.length !== tempParts.length) return false;
-  return tempParts.every((part, i) => part.startsWith(":") || part === pathParts[i]);
-}
+export { pathMatches as pathnameMatches } from "../surveyor/ready.js";
 
 export function syncPageFromUrl(state: RunState): void {
   let pathname: string;
@@ -121,7 +103,7 @@ export function syncPageFromUrl(state: RunState): void {
   } catch {
     return;
   }
-  const matched = state.model.pages.find((p) => pathnameMatches(pathname, p.path));
+  const matched = state.model.pages.find((p) => pathMatches(p.path, pathname));
   if (!matched || matched.id === state.pageId) return;
   state.pageId = matched.id;
   const pageSurface = matched.surfaces.find((s) => s.kind === "page");
@@ -306,7 +288,7 @@ async function performExpectPath(state: RunState, path: string): Promise<StepFai
   } catch {
     pathname = state.page.url();
   }
-  if (pathnameMatches(pathname, path)) return undefined;
+  if (pathMatches(path, pathname)) return undefined;
   return {
     kind: "expectFailed",
     message: `expected path ${path}, got ${pathname}`,

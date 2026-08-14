@@ -9,7 +9,8 @@ import type { Log, Step } from "../schema/log.js";
 import type { Config } from "../schema/config.js";
 import type { PageModel, PageModelDraft } from "../schema/page-model.js";
 import type { View } from "../schema/view.js";
-import { attachHttpOracle, type OracleFinding } from "../oracles/http.js";
+import { attachHttpOracle, isDocumentNotFound, type OracleFinding } from "../oracles/http.js";
+import { reportDocumentNotFound } from "../persist/broken.js";
 import { attachPageErrorOracle } from "../oracles/page-error.js";
 import { checkFence } from "./fence.js";
 import { performStep, syncPageFromUrl, syncSurfaceStack, type StepFailure } from "./steps.js";
@@ -119,6 +120,19 @@ async function finish(
           : `URL left fence path: ${href}`,
       url: href,
     });
+  } else if (isDocumentNotFound(state.page)) {
+    if (state.configPath) reportDocumentNotFound(state.configPath, state.page);
+    const pending404 = state.pendingFindings.find((f) => f.kind === "notFound");
+    finding = await screenshotFinding(
+      state,
+      pending404 ?? {
+        kind: "notFound",
+        message: `HTTP 404 GET ${href}`,
+        httpStatus: 404,
+        url: href,
+      },
+    );
+    state.pendingFindings = state.pendingFindings.filter((f) => f !== pending404);
   } else {
     await state.afterStep?.(state);
     if (stepFailure) {

@@ -1,11 +1,15 @@
 import { Action, Field } from "../schema/page-model.js";
 import type {
+  Action as ActionT,
   FieldType,
+  Page as PageT,
   PageModel,
+  PageModelDraft,
   Surface,
   Widget,
 } from "../schema/page-model.js";
-import type { Locator } from "../schema/locator.js";
+import { locatorIdentity, type Locator } from "../schema/locator.js";
+import { readyKey } from "../schema/refs.js";
 import { mintedBase, uniqueMint } from "./ids.js";
 
 export function identityKey(
@@ -64,10 +68,6 @@ export function toFieldOrAction(id: string, c: Candidate): Field | Action {
   });
 }
 
-function widgetKey(surfaceId: string, w: { by: string; value: string; name?: string }): string {
-  return identityKey(surfaceId, w.by, w.value, w.name);
-}
-
 function isLabelDerived(w: { by: string; name?: string }): boolean {
   return w.by === "label" || (w.by === "role" && Boolean(w.name));
 }
@@ -119,9 +119,8 @@ export function offlineIdsExist(
 }
 
 function keyExists(model: PageModel, key: string): boolean {
-  const ready = /^page:([A-Za-z][A-Za-z0-9_]*)\.ready$/.exec(key);
-  if (ready?.[1]) {
-    return model.pages.some((p) => p.id === ready[1]);
+  for (const page of model.pages) {
+    if (key === readyKey(page.id)) return true;
   }
   const dot = key.lastIndexOf(".");
   if (dot <= 0 || dot === key.length - 1) return false;
@@ -136,6 +135,138 @@ function keyExists(model: PageModel, key: string): boolean {
     );
   }
   return false;
+}
+
+function preferStatus(
+  a: Widget["status"],
+  b: Widget["status"],
+): Widget["status"] {
+  if (a === "ok" || b === "ok") return "ok";
+  if (a === "drift" || b === "drift") return "drift";
+  return "unresolved";
+}
+
+function mergeWidget(keep: Widget, other: Widget): Widget {
+  const next = structuredClone(keep);
+  next.status = preferStatus(keep.status, other.status);
+  if (next.status === "ok") delete next.previousLabel;
+  else if (!next.previousLabel && other.previousLabel) next.previousLabel = other.previousLabel;
+  if ("required" in next && "required" in other) {
+    next.required = next.required || other.required;
+  }
+  if ("opens" in next || "opens" in other) {
+    const a = keep as ActionT;
+    const b = other as ActionT;
+    if (!a.opens && b.opens) (next as ActionT).opens = b.opens;
+  }
+  return next;
+}
+
+function mergeSurface(keep: Surface, other: Surface): { surface: Surface; added: number } {
+  const surface = structuredClone(keep);
+  if (!surface.locator && other.locator) surface.locator = structuredClone(other.locator);
+  const byIdentity = new Map<string, Widget>();
+  for (const w of surface.fields) byIdentity.set(identityKey(surface.id, w.by, w.value, w.name), w);
+  for (const w of surface.actions) byIdentity.set(identityKey(surface.id, w.by, w.value, w.name), w);
+  const used = new Set<string>([...surface.fields.map((f) => f.id), ...surface.actions.map((a) => a.id)]);
+  let added = 0;
+
+  const take = (w: Widget, kind: "field" | "action") => {
+    const key = identityKey(surface.id, w.by, w.value, w.name);
+    const found = byIdentity.get(key);
+    if (found) {
+      const merged = mergeWidget(found, w);
+      if (kind === "field") {
+        const i = surface.fields.indexOf(found as Field);
+        if (i >= 0) surface.fields[i] = merged as Field;
+      } else {
+        const i = surface.actions.indexOf(found as Action);
+        if (i >= 0) surface.actions[i] = merged as Action;
+      }
+      byIdentity.set(key, merged);
+      return;
+    }
+    const id = uniqueMint(w.id, used);
+    const copy = structuredClone(w);
+    copy.id = id;
+    if (kind === "field") surface.fields.push(copy as Field);
+    else surface.actions.push(copy as Action);
+    byIdentity.set(key, copy);
+    added += 1;
+  };
+
+  for (const f of other.fields) take(f, "field");
+  for (const a of other.actions) take(a, "action");
+  return { surface, added };
+}
+
+function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number } {
+  const page = structuredClone(keep);
+  const used = new Set(page.surfaces.map((s) => s.id));
+  const byKey = new Map<string, number>();
+  page.surfaces.forEach((s, i) => {
+    byKey.set(`id:${s.id}`, i);
+    if (s.locator) byKey.set(`loc:${locatorIdentity(s.locator)}`, i);
+  });
+  let added = 0;
+
+  for (const incoming of other.surfaces) {
+    const idx =
+      byKey.get(`id:${incoming.id}`) ??
+      (incoming.locator ? byKey.get(`loc:${locatorIdentity(incoming.locator)}`) : undefined);
+    if (idx !== undefined) {
+      const merged = mergeSurface(page.surfaces[idx]!, incoming);
+      page.surfaces[idx] = merged.surface;
+      added += merged.added;
+      continue;
+    }
+    const copy = structuredClone(incoming);
+    copy.id = uniqueMint(copy.id, used);
+    page.surfaces.push(copy);
+    used.add(copy.id);
+    added += 1;
+  }
+  return { page, added };
+}
+
+/**
+ * Union two maps. Same locator → same id. Extra pages/surfaces/widgets from
+ * either side are kept. Used when several monkeys write one clickmonkey.json.
+ * Does not apply leftover/unresolved — that is live inspect only.
+ */
+export function mergeTrees(base: PageModelDraft, incoming: PageModelDraft): PageModelDraft {
+  const pages: PageT[] = structuredClone(base.pages);
+  const usedIds = new Set(pages.map((p) => p.id));
+  let added = 0;
+
+  const indexByPath = new Map(pages.map((p, i) => [p.path, i] as const));
+  const indexById = new Map(pages.map((p, i) => [p.id, i] as const));
+
+  for (const other of incoming.pages) {
+    const idx = indexByPath.get(other.path) ?? indexById.get(other.id);
+    if (idx !== undefined) {
+      const merged = mergePageDef(pages[idx]!, other);
+      pages[idx] = merged.page;
+      added += merged.added;
+      continue;
+    }
+    const copy = structuredClone(other);
+    copy.id = uniqueMint(copy.id, usedIds);
+    usedIds.add(copy.id);
+    pages.push(copy);
+    indexByPath.set(copy.path, pages.length - 1);
+    indexById.set(copy.id, pages.length - 1);
+    added += 1;
+  }
+
+  const generation = Math.max(base.generation, incoming.generation) + added;
+
+  return {
+    schemaVersion: 1,
+    app: base.app || incoming.app,
+    generation,
+    pages,
+  };
 }
 
 export function mergePageModel(model: PageModel, input: MergeInput): MergeResult {
@@ -177,8 +308,8 @@ export function mergePageModel(model: PageModel, input: MergeInput): MergeResult
   applyLastOpensHint(next, input);
 
   const byIdentity = new Map<string, Widget>();
-  for (const w of surface.fields) byIdentity.set(widgetKey(input.surfaceId, w), w);
-  for (const w of surface.actions) byIdentity.set(widgetKey(input.surfaceId, w), w);
+  for (const w of surface.fields) byIdentity.set(identityKey(input.surfaceId, w.by, w.value, w.name), w);
+  for (const w of surface.actions) byIdentity.set(identityKey(input.surfaceId, w.by, w.value, w.name), w);
 
   const candidateKeys = new Set(
     input.candidates.map((c) => identityKey(input.surfaceId, c.by, c.value, c.name)),
@@ -210,7 +341,7 @@ export function mergePageModel(model: PageModel, input: MergeInput): MergeResult
   }
 
   for (const w of [...surface.fields, ...surface.actions]) {
-    const key = widgetKey(input.surfaceId, w);
+    const key = identityKey(input.surfaceId, w.by, w.value, w.name);
     if (candidateKeys.has(key)) continue;
     applyLeftover(w, key, input.leftoverResolves);
   }

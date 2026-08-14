@@ -1,14 +1,12 @@
 import type { Page } from "playwright";
-import type { Locator } from "../schema/locator.js";
-import {
-  PageModel,
-  type PageModelDraft,
-  type Widget,
-} from "../schema/page-model.js";
+import { locatorOf } from "../schema/locator.js";
+import { PageModel, type PageModelDraft } from "../schema/page-model.js";
 import { toPlaywrightLocator } from "../executor/locators.js";
-import { loadConfig, saveConfig } from "../persist/config.js";
+import { isDocumentNotFound } from "../oracles/http.js";
+import { reportDocumentNotFound } from "../persist/broken.js";
+import { loadConfig, persistSharedMap } from "../persist/config.js";
 import { collectCandidates } from "./collect.js";
-import { identityKey, mergePageModel, type Candidate } from "./merge.js";
+import { identityKey, mergePageModel } from "./merge.js";
 import { createPageFromUrl, pathMatches, pathnameOf } from "./ready.js";
 import { resolveCount } from "./resolve.js";
 import { bindSurfaces } from "./surfaces.js";
@@ -19,24 +17,12 @@ export interface SurveyorContext {
 }
 
 export interface InspectResult {
-  model: PageModel;
+  model: PageModel | PageModelDraft;
   pageId: string;
   currentSurface: string;
   surfaceStack: string[];
   candidatesFound: number;
   merged: boolean;
-}
-
-function candidateLocator(c: Candidate): Locator {
-  return c.name === undefined
-    ? { by: c.by, value: c.value }
-    : { by: c.by, value: c.value, name: c.name };
-}
-
-function widgetLocator(w: Widget): Locator {
-  return w.name === undefined
-    ? { by: w.by, value: w.value }
-    : { by: w.by, value: w.value, name: w.name };
 }
 
 async function modelForPage(page: Page, ctx: SurveyorContext): Promise<{
@@ -68,6 +54,18 @@ async function modelForPage(page: Page, ctx: SurveyorContext): Promise<{
 }
 
 export async function inspect(page: Page, ctx: SurveyorContext): Promise<InspectResult> {
+  if (isDocumentNotFound(page)) {
+    const fallback = ctx.model.pages[0];
+    return {
+      model: ctx.model,
+      pageId: fallback?.id ?? "home",
+      currentSurface: fallback?.surfaces.find((s) => s.kind === "page")?.id ?? "page",
+      surfaceStack: [fallback?.surfaces.find((s) => s.kind === "page")?.id ?? "page"],
+      candidatesFound: 0,
+      merged: false,
+    };
+  }
+
   let { model, createdPage } = await modelForPage(page, ctx);
   const pathname = pathnameOf(page);
   const modelPage = model.pages.find((p) => pathMatches(p.path, pathname));
@@ -87,7 +85,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
     candidatesFound += candidates.length;
 
     for (const c of candidates) {
-      c.resolves = (await resolveCount(root, candidateLocator(c))).count === 1;
+      c.resolves = (await resolveCount(root, locatorOf(c))).count === 1;
     }
 
     const current = model.pages.find((p) => p.id === pageId);
@@ -100,7 +98,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
       for (const w of [...surface.fields, ...surface.actions]) {
         const key = identityKey(entry.surfaceId, w.by, w.value, w.name);
         if (candKeys.has(key)) continue;
-        leftoverResolves[key] = (await resolveCount(root, widgetLocator(w))).count === 1;
+        leftoverResolves[key] = (await resolveCount(root, locatorOf(w))).count === 1;
       }
     }
 
@@ -145,6 +143,10 @@ export async function inspectAndSaveConfig(
 ): Promise<InspectResult> {
   const config = loadConfig(configPath);
   const result = await inspect(page, { model: config.map });
-  saveConfig(configPath, { ...config, map: result.model });
-  return result;
+  if (isDocumentNotFound(page)) {
+    reportDocumentNotFound(configPath, page);
+    return result;
+  }
+  const saved = persistSharedMap(configPath, result.model);
+  return { ...result, model: saved.map };
 }
