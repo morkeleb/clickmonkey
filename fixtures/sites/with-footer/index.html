@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>With footer</title>
+  </head>
+  <body>
+    <main data-testid="home">
+      <button data-testid="open-create">Create</button>
+      <dialog data-testid="create-dialog" aria-label="Create">
+        <form novalidate>
+          <input data-testid="name" name="name" required />
+          <p data-testid="name-error" hidden>Name is required</p>
+          <button data-testid="submit" type="submit">Submit</button>
+        </form>
+      </dialog>
+      <a data-testid="site-footer" href="#footer">Footer</a>
+    </main>
+    <script>
+      const dialog = document.querySelector('[data-testid="create-dialog"]');
+      const name = document.querySelector('[data-testid="name"]');
+      const error = document.querySelector('[data-testid="name-error"]');
+      document.querySelector('[data-testid="open-create"]').addEventListener("click", () => {
+        dialog.showModal();
+      });
+      dialog.querySelector("form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!name.value) {
+          name.setAttribute("aria-invalid", "true");
+          error.hidden = false;
+          return;
+        }
+        dialog.close();
+      });
+    </script>
+  </body>
+</html>

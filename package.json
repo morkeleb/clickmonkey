@@ -15,8 +15,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts",
-    "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts",
+    "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/fixtures-server.test.ts",
+    "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/fixtures-server.test.ts",
     "clickmonkey": "node --import tsx src/cli/index.ts"
   },
   "devDependencies": {
