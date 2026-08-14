@@ -17,7 +17,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts",
     "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts",
-    "test:live": "node --import tsx --test tests/live-validate.test.ts",
+    "test:live": "node --import tsx --test tests/live-validate.test.ts tests/surveyor.test.ts tests/dialog-inspect.test.ts",
     "clickmonkey": "node --import tsx src/cli/index.ts"
   },
   "devDependencies": {

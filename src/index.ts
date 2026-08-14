@@ -13,3 +13,5 @@ export { toPlaywrightLocator } from "./executor/locators.js";
 export { liveValidate } from "./executor/live-validate.js";
 export type { LiveFailure } from "./executor/live-validate.js";
 export { resolveCount } from "./surveyor/resolve.js";
+export { inspect, inspectAndSaveConfig } from "./surveyor/inspect.js";
+export type { InspectResult, SurveyorContext } from "./surveyor/inspect.js";
