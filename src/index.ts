@@ -13,3 +13,10 @@ export { toPlaywrightLocator } from "./executor/locators.js";
 export { liveValidate } from "./executor/live-validate.js";
 export type { LiveFailure } from "./executor/live-validate.js";
 export { resolveCount } from "./surveyor/resolve.js";
+export { createExecutor } from "./executor/run.js";
+export type { AfterStep, RunState, StepResult } from "./executor/run.js";
+export { buildView, formatView } from "./executor/view.js";
+export { checkFence, pathPrefixMatch } from "./executor/fence.js";
+export { resolveSecret, resolveSecretAsync, isSecretToken } from "./executor/secrets.js";
+export { isPotentialWrite } from "./executor/write-policy.js";
+
