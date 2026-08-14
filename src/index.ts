@@ -17,7 +17,16 @@ export { inspect, inspectAndSaveConfig } from "./surveyor/inspect.js";
 export type { InspectResult, SurveyorContext } from "./surveyor/inspect.js";
 export { createExecutor } from "./executor/run.js";
 export type { AfterStep, RunState, StepResult } from "./executor/run.js";
+export { bootRun, locatorsFromModel, attachInspectAfterStep } from "./executor/boot.js";
 export { buildView, formatView } from "./executor/view.js";
 export { checkFence, pathPrefixMatch } from "./executor/fence.js";
 export { resolveSecret, resolveSecretAsync, isSecretToken } from "./executor/secrets.js";
 export { isPotentialWrite } from "./executor/write-policy.js";
+export {
+  runEmptyRequired,
+  replayLog,
+  ReplayLiveValidateError,
+  compactLog,
+  keysFromSteps,
+} from "./playbooks/index.js";
+export type { EmptyRequiredResult } from "./playbooks/index.js";

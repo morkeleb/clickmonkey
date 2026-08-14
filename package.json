@@ -15,9 +15,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts",
-    "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts",
-    "test:live": "node --import tsx --test tests/live-validate.test.ts tests/surveyor.test.ts tests/dialog-inspect.test.ts tests/fence.test.ts tests/view.test.ts tests/intro.test.ts",
+    "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts",
+    "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts",
+    "test:live": "node --import tsx --test tests/live-validate.test.ts tests/surveyor.test.ts tests/dialog-inspect.test.ts tests/fence.test.ts tests/view.test.ts tests/intro.test.ts tests/empty-required.test.ts tests/replay.test.ts tests/cli.test.ts",
     "clickmonkey": "node --import tsx src/cli/index.ts"
   },
   "devDependencies": {

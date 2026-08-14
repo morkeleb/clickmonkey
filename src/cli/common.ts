@@ -1,0 +1,77 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { loadConfig, saveConfig } from "../persist/config.js";
+import { newRunId } from "../persist/run-id.js";
+import { Config, LegacyConfigError } from "../schema/config.js";
+import { version } from "../index.js";
+
+export const EXIT_OK = 0;
+export const EXIT_FINDINGS = 1;
+export const EXIT_USAGE = 2;
+export const EXIT_LIVE = 3;
+
+export const USAGE = `clickmonkey ${version}
+
+Usage:
+  clickmonkey <command> [options]
+
+Commands:
+  init        Create clickmonkey.json (fence + empty intro + empty map)
+  inspect     Survey the current page and grow the map
+  view        Print the compact view of the current surface
+  step        Run one DSL line and append it to the log
+  playbook    Run a named playbook (empty-required)
+  replay      Replay a log file (no brain)
+  compact     Shorten a log to the last open + following lines
+
+Run clickmonkey <command> --help for command options.
+`;
+
+export function printUsage(extra?: string): void {
+  process.stdout.write(extra ? `${extra}\n` : USAGE);
+}
+
+export function resolveConfigPath(value?: string): string {
+  return resolve(process.cwd(), value ?? "clickmonkey.json");
+}
+
+export function resolveOutDir(value?: string): string {
+  return value ? resolve(process.cwd(), value) : resolve(process.cwd(), "runs", newRunId());
+}
+
+export function fail(code: number, message: string): never {
+  process.stderr.write(`${message}\n`);
+  process.exit(code);
+}
+
+export function loadConfigOrExit(path: string): Config {
+  if (!existsSync(path)) fail(EXIT_USAGE, `config not found: ${path}`);
+  try {
+    return loadConfig(path);
+  } catch (err) {
+    if (err instanceof LegacyConfigError) fail(EXIT_USAGE, err.message);
+    fail(EXIT_USAGE, err instanceof Error ? err.message : String(err));
+  }
+}
+
+export function withUrl(config: Config, url?: string): Config {
+  if (!url) return config;
+  return Config.parse({ ...config, url });
+}
+
+export function persistUrl(configPath: string, config: Config, url?: string): Config {
+  const next = withUrl(config, url);
+  if (url) saveConfig(configPath, next);
+  return next;
+}
+
+export function parseTimeout(value?: string): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) fail(EXIT_USAGE, `invalid --timeout ${value}`);
+  return n;
+}
+
+export function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
