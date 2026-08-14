@@ -9,8 +9,12 @@ import { emptyConfig } from "../src/schema/config.js";
 import { serveSite } from "./helpers/fixture-server.js";
 
 function findingFiles(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((name) => name.startsWith("fnd_") && name.endsWith(".json"));
+  const root = join(dir, "findings");
+  if (!existsSync(root)) return [];
+  return readdirSync(root)
+    .filter((name) => name.startsWith("fnd_"))
+    .map((name) => join(root, name, "finding.json"))
+    .filter((path) => existsSync(path));
 }
 
 describe("empty-required playbook", () => {
