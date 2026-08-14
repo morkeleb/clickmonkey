@@ -17,6 +17,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts",
     "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts",
+    "test:live": "node --import tsx --test tests/live-validate.test.ts",
     "clickmonkey": "node --import tsx src/cli/index.ts"
   },
   "devDependencies": {
@@ -25,6 +26,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "playwright": "^1.62.1",
     "zod": "^4.4.3"
   }
 }

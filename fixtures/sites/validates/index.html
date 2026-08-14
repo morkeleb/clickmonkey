@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Validates</title>
+  </head>
+  <body>
+    <main data-testid="home">
+      <button type="button" data-testid="open-create">Create</button>
+      <dialog aria-label="Create">
+        <form novalidate>
+          <input data-testid="name" name="name" type="text" required />
+          <button type="submit" data-testid="submit">Submit</button>
+        </form>
+      </dialog>
+    </main>
+  </body>
+</html>
