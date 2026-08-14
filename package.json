@@ -1,26 +1,27 @@
 {
   "name": "clickmonkey",
-  "version": "0.0.7",
-  "description": "bot that clicks through webpages",
-  "main": "index.js",
+  "version": "2.0.0-alpha.0",
+  "description": "QA agent that maps a site and drives it through a line DSL",
+  "type": "module",
+  "main": "dist/index.js",
   "repository": "github:morkeleb/clickmonkey",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node clickmonkey.js"
-  },
-  "author": "Morten Nielsen",
   "license": "MIT",
-  "bin": {
-    "clickmonkey": "./clickmonkey.js"
+  "author": "Morten Nielsen",
+  "engines": {
+    "node": ">=22"
   },
-  "dependencies": {
-    "chance": "^1.0.4",
-    "commander": "^2.9.0",
-    "extend": "^3.0.0",
-    "http-proxy": "^1.14.0",
-    "node-status": "1.0.0",
-    "phantomjs-prebuilt": "^2.1.7",
-    "selenium-standalone": "^6.5.0",
-    "webdriverio": "^4.13.2"
+  "bin": {
+    "clickmonkey": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test tests/cli-usage.test.ts",
+    "test:unit": "node --import tsx --test tests/cli-usage.test.ts",
+    "clickmonkey": "node --import tsx src/cli/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
   }
 }

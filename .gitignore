@@ -5,6 +5,13 @@ npm-debug.log*
 
 # default clickmonkey settings file
 clickmoney.js
+clickmonkey.js
+
+# ClickMonkey 2
+dist/
+runs/
+auth.json
+playwright-report/
 
 # Runtime data
 pids
