@@ -67,6 +67,21 @@ export function parseLine(line: string, lineNo = 1): Step | { comment: string } 
   const expectPath = trimmed.match(/^expect\s+path\s+(\S+)$/);
   if (expectPath?.[1]) return { kind: "expectPath", path: expectPath[1] };
 
+  if (trimmed === "screenshot") return { kind: "screenshot" };
+  const shotUi = trimmed.match(/^screenshot\s+ui(?:\s+(.+))?$/);
+  if (shotUi) {
+    const raw = shotUi[1]?.trim();
+    return {
+      kind: "screenshot",
+      ui: true,
+      ...(raw ? { label: parseFillValue(raw, lineNo) } : {}),
+    };
+  }
+  const shot = trimmed.match(/^screenshot\s+(.+)$/);
+  if (shot?.[1]) {
+    return { kind: "screenshot", label: parseFillValue(shot[1], lineNo) };
+  }
+
   throw new DslParseError(lineNo, `unknown step ${JSON.stringify(trimmed)}`);
 }
 
@@ -86,6 +101,15 @@ export function formatStep(step: Step): string {
       return `expect ${step.surface} visible`;
     case "expectPath":
       return `expect path ${step.path}`;
+    case "screenshot": {
+      const quoted = step.label
+        ? /\s/.test(step.label)
+          ? JSON.stringify(step.label)
+          : step.label
+        : undefined;
+      if (step.ui) return quoted ? `screenshot ui ${quoted}` : "screenshot ui";
+      return quoted ? `screenshot ${quoted}` : "screenshot";
+    }
   }
 }
 

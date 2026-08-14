@@ -5,6 +5,9 @@ import { readyKey, widgetKey } from "../schema/refs.js";
 import { pathMatches } from "../surveyor/ready.js";
 import type { Step } from "../schema/log.js";
 import type { Action, Field, Page as PageDef, Surface, Widget } from "../schema/page-model.js";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { slug } from "../surveyor/ids.js";
 import { toPlaywrightLocator } from "./locators.js";
 import type { RunState } from "./run.js";
 import { resolveSecretAsync } from "./secrets.js";
@@ -281,6 +284,26 @@ async function performExpectVisible(
   };
 }
 
+async function performScreenshot(
+  state: RunState,
+  label?: string,
+  ui?: boolean,
+): Promise<StepFailure | undefined> {
+  const dir = join(state.outDir, "shots");
+  mkdirSync(dir, { recursive: true });
+  const n = String(state.log.steps.length).padStart(3, "0");
+  const tail = label ? `-${slug(label)}` : "";
+  const path = join(dir, `step-${n}${tail}.png`);
+  await state.page.screenshot({ path, fullPage: true }).catch(() => undefined);
+  state.lastScreenshotPath = path;
+  if (!ui) return undefined;
+  return {
+    kind: "uiIssue",
+    message: label?.trim() || "UI issue captured",
+    url: state.page.url(),
+  };
+}
+
 async function performExpectPath(state: RunState, path: string): Promise<StepFailure | undefined> {
   let pathname: string;
   try {
@@ -310,5 +333,7 @@ export async function performStep(state: RunState, step: Step): Promise<StepFail
       return performExpectVisible(state, step.surface);
     case "expectPath":
       return performExpectPath(state, step.path);
+    case "screenshot":
+      return performScreenshot(state, step.label, step.ui);
   }
 }

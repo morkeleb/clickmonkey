@@ -92,6 +92,22 @@ expect createDialog.name invalid
       'fill s.name ""',
     );
   });
+
+  it("round-trips screenshot lines", () => {
+    assert.deepEqual(parseLine("screenshot", 1), { kind: "screenshot" });
+    assert.equal(formatStep({ kind: "screenshot" }), "screenshot");
+    assert.equal(
+      formatStep({ kind: "screenshot", ui: true, label: "overlap on price" }),
+      'screenshot ui "overlap on price"',
+    );
+    const step = parseLine('screenshot ui "overlap on price"', 1);
+    assert.ok(step && !("comment" in step));
+    assert.equal(step.kind, "screenshot");
+    if (step.kind === "screenshot") {
+      assert.equal(step.ui, true);
+      assert.equal(step.label, "overlap on price");
+    }
+  });
 });
 
 describe("TestabilityReport schema", () => {

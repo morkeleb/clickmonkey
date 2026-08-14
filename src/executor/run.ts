@@ -35,6 +35,7 @@ export interface RunState {
   replay?: boolean;
   configPath?: string;
   lastAction?: { surface: string; id: string; opens?: string };
+  lastScreenshotPath?: string;
 }
 
 export interface StepResult {
@@ -64,8 +65,11 @@ async function screenshotFinding(
   const kind = partial.kind;
   const id = findingId(stepIndex, kind);
   mkdirSync(state.outDir, { recursive: true });
-  const screenshotPath = join(state.outDir, `.shot-${id}.png`);
-  await state.page.screenshot({ path: screenshotPath }).catch(() => undefined);
+  let screenshotPath = state.lastScreenshotPath;
+  if (!screenshotPath) {
+    screenshotPath = join(state.outDir, `.shot-${id}.png`);
+    await state.page.screenshot({ path: screenshotPath }).catch(() => undefined);
+  }
   const finding: Finding = {
     schemaVersion: 1,
     id,

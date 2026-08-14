@@ -11,6 +11,7 @@ export const FindingKind = z.enum([
   "driftId",
   "writePolicyBlocked",
   "locatorAmbiguous",
+  "uiIssue",
 ]);
 export type FindingKind = z.infer<typeof FindingKind>;
 
@@ -32,6 +33,8 @@ export function severityForKind(kind: FindingKind): FindingSeverity {
     case "driftId":
     case "locatorAmbiguous":
       return "minor";
+    case "uiIssue":
+      return "suggestion";
   }
 }
 

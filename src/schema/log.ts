@@ -50,6 +50,15 @@ export const ExpectPathStep = z
   .strict();
 export type ExpectPathStep = z.infer<typeof ExpectPathStep>;
 
+export const ScreenshotStep = z
+  .object({
+    kind: z.literal("screenshot"),
+    label: z.string().min(1).optional(),
+    ui: z.boolean().optional(),
+  })
+  .strict();
+export type ScreenshotStep = z.infer<typeof ScreenshotStep>;
+
 export const Step = z.discriminatedUnion("kind", [
   OpenStep,
   ClickStep,
@@ -57,6 +66,7 @@ export const Step = z.discriminatedUnion("kind", [
   ExpectInvalidStep,
   ExpectVisibleStep,
   ExpectPathStep,
+  ScreenshotStep,
 ]);
 export type Step = z.infer<typeof Step>;
 
