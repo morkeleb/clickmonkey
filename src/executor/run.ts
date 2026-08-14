@@ -2,8 +2,9 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { persistFinding } from "../persist/finding.js";
-import { parseLine, formatStep } from "../schema/dsl.js";
-import { findingId, type Finding, type FindingKind } from "../schema/finding.js";
+import { compactLog } from "../playbooks/compact.js";
+import { parseLine, formatLog, formatStep } from "../schema/dsl.js";
+import { findingId, severityForKind, type Finding, type FindingKind } from "../schema/finding.js";
 import type { Locator } from "../schema/locator.js";
 import type { Log, Step } from "../schema/log.js";
 import type { Config } from "../schema/config.js";
@@ -62,14 +63,14 @@ async function screenshotFinding(
   const stepIndex = state.log.steps.length;
   const kind = partial.kind;
   const id = findingId(stepIndex, kind);
-  const screenshotRel = `screenshots/step-${String(stepIndex).padStart(3, "0")}-${kind}.png`;
-  const screenshotPath = join(state.outDir, screenshotRel);
-  mkdirSync(join(state.outDir, "screenshots"), { recursive: true });
+  mkdirSync(state.outDir, { recursive: true });
+  const screenshotPath = join(state.outDir, `.shot-${id}.png`);
   await state.page.screenshot({ path: screenshotPath }).catch(() => undefined);
   const finding: Finding = {
     schemaVersion: 1,
     id,
     kind,
+    severity: severityForKind(kind),
     message: partial.message,
     tapePath: join(state.outDir, "replay.log"),
     screenshotPath,
@@ -142,7 +143,22 @@ async function finish(
     }
   }
 
-  if (finding) persistFinding(state.outDir, finding);
+  if (finding) {
+    persistFinding(state.outDir, finding, {
+      screenshotPath: finding.screenshotPath,
+      replayLog: formatLog(
+        compactLog({
+          schemaVersion: 1,
+          bug: finding.message,
+          found: new Date().toISOString(),
+          comments: state.log.comments,
+          steps: [...state.log.steps, step],
+          usedLocators: { ...state.usedLocators },
+          result: "failed",
+        }),
+      ),
+    });
+  }
 
   state.log.steps.push(step);
 
