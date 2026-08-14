@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "app": "fixture",
+  "generation": 0,
+  "theme": "dark",
+  "pages": [
+    {
+      "id": "home",
+      "path": "/",
+      "params": [],
+      "ready": { "by": "testId", "value": "home" },
+      "surfaces": [
+        {
+          "id": "page",
+          "kind": "page",
+          "fields": [],
+          "actions": []
+        }
+      ]
+    }
+  ]
+}

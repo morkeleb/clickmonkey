@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "app": "fixture",
+  "generation": 0,
+  "pages": [
+    {
+      "id": "home",
+      "path": "/",
+      "params": [],
+      "surfaces": [
+        {
+          "id": "page",
+          "kind": "page",
+          "fields": [],
+          "actions": []
+        }
+      ]
+    }
+  ]
+}

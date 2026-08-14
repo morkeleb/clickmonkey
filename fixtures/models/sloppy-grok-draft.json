@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "app": "fixture",
+  "pages": [
+    {
+      "id": "home",
+      "path": "/",
+      "ready": { "by": "css", "value": "#home" },
+      "xpath": "//div",
+      "widgets": [{ "css": ".btn" }]
+    }
+  ]
+}
