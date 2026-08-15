@@ -21,7 +21,7 @@ Commands:
   view        Print the compact view of the current surface
   step        Run one DSL line and append it to the log
   playbook    Run a named playbook (empty-required)
-  unleash     Random-walk legal map ids from the view
+  unleash     Random-walk legal map ids from the view [--nasty]
   replay      Replay a log file (no brain)
   compact     Shorten a log to the last open + following lines
 

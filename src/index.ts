@@ -35,4 +35,5 @@ export {
 } from "./playbooks/index.js";
 export type { EmptyRequiredResult, UnleashResult } from "./playbooks/index.js";
 export { unleashBrain, decideUnleash } from "./brains/unleash.js";
+export { pickNasty, decideUnleashNasty } from "./brains/nasty.js";
 export type { Brain, BrainContext, BrainDecision } from "./brains/types.js";

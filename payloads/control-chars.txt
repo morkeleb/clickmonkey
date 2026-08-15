@@ -1,0 +1,6 @@
+# Control characters as visible tokens. pickNasty interprets {{NUL}} as U+0000.
+{{NUL}}
+{{CR}}
+{{LF}}
+{{TAB}}
+{{CR}}{{LF}}

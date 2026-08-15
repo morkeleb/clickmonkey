@@ -185,6 +185,7 @@ export async function cmdUnleash(opts: {
   headed?: boolean;
   timeout?: string;
   steps?: string;
+  nasty?: boolean;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
@@ -198,6 +199,7 @@ export async function cmdUnleash(opts: {
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
       steps: parseSteps(opts.steps, UNLEASH_CLI_STEPS),
+      nasty: opts.nasty,
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
