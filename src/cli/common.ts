@@ -22,6 +22,7 @@ Commands:
   step        Run one DSL line and append it to the log
   playbook    Run a named playbook (empty-required)
   unleash     Random-walk legal map ids from the view
+  explore     Charter-driven LLM walk of legal map ids
   replay      Replay a log file (no brain)
   compact     Shorten a log to the last open + following lines
 
@@ -79,6 +80,26 @@ export function parseSteps(value?: string, fallback = 200): number {
   if (!Number.isInteger(n) || n < 1) fail(EXIT_USAGE, `invalid --steps ${value}`);
   return n;
 }
+
+export function parseMinutes(value?: string, fallback = 20): number {
+  if (value === undefined) return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) fail(EXIT_USAGE, `invalid --minutes ${value}`);
+  return n;
+}
+
+export const BRAIN_HELP = `explore requires brain.baseUrl and brain.model in clickmonkey.json.
+
+  Provider    baseUrl                         apiKeyEnv
+  Ollama      http://127.0.0.1:11434/v1
+  MLX         http://127.0.0.1:8080/v1
+  xAI         https://api.x.ai/v1             XAI_API_KEY
+  OpenAI      https://api.openai.com/v1       OPENAI_API_KEY
+  Anthropic   https://api.anthropic.com       ANTHROPIC_API_KEY
+
+Example:
+  "brain": { "baseUrl": "http://127.0.0.1:11434/v1", "model": "llama3.2" }
+`;
 
 export function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

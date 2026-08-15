@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -26,13 +29,28 @@ describe("clickmonkey CLI chassis", () => {
   });
 
   it("rejects an unknown command with exit 2", () => {
-    const result = run(["explore"]);
+    const result = run(["xyzzy"]);
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /Unknown command: explore/);
+    assert.match(result.stderr, /Unknown command: xyzzy/);
   });
 
-  it("lists unleash in usage", () => {
+  it("lists unleash and explore in usage", () => {
     const result = run([]);
     assert.match(result.stdout, /unleash/);
+    assert.match(result.stdout, /explore/);
+  });
+
+  it("explore without brain exits 2 with a provider table", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-explore-nobrain-"));
+    const cfg = join(dir, "clickmonkey.json");
+    writeFileSync(
+      cfg,
+      `${JSON.stringify({ url: "http://127.0.0.1:4173/", map: { schemaVersion: 1, app: "x", pages: [] } })}\n`,
+    );
+    const result = run(["explore", "--config", cfg]);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /Ollama/);
+    assert.match(result.stderr, /OpenAI/);
+    assert.match(result.stderr, /Anthropic/);
   });
 });

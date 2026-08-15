@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { persistFinding } from "../src/persist/finding.js";
+import { appendFindingReport, persistFinding } from "../src/persist/finding.js";
 import { cannedReport } from "../src/reports/canned.js";
 import { Finding, findingId } from "../src/schema/finding.js";
 
@@ -37,5 +37,22 @@ describe("finding folder", () => {
     assert.equal(parsed.screenshotPath, join(dir, "screenshot.png"));
     assert.ok(existsSync(join(dir, "replay.log")));
     assert.equal(parsed.tapePath, join(dir, "replay.log"));
+  });
+
+  it("appends extra markdown to report.md", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-append-"));
+    const finding: Finding = {
+      schemaVersion: 1,
+      id: findingId(1, "uiIssue"),
+      kind: "uiIssue",
+      message: "overlap",
+      tapePath: join(outDir, "replay.log"),
+      stepIndex: 1,
+    };
+    persistFinding(outDir, finding);
+    appendFindingReport(outDir, finding.id, "What happened: buttons overlap.");
+    const report = readFileSync(join(outDir, "findings", finding.id, "report.md"), "utf8");
+    assert.match(report, /UI issue captured from an explicit screenshot step/);
+    assert.match(report, /What happened: buttons overlap/);
   });
 });

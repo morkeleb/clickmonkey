@@ -9,6 +9,8 @@ export interface BrainContext {
   view: View;
   stepsUsed: number;
   last?: { ok: boolean; finding?: string };
+  charter?: string;
+  notes?: string[];
 }
 
 export interface Brain {

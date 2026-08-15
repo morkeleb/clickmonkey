@@ -12,6 +12,15 @@ export type Fence = z.infer<typeof Fence>;
 export const WritePolicy = z.enum(["validationOnly"]);
 export type WritePolicy = z.infer<typeof WritePolicy>;
 
+export const BrainConfig = z
+  .object({
+    baseUrl: z.string().url(),
+    model: z.string().min(1),
+    apiKeyEnv: z.string().min(1).optional(),
+  })
+  .strict();
+export type BrainConfig = z.infer<typeof BrainConfig>;
+
 export const Config = z
   .object({
     url: z.string().url(),
@@ -19,6 +28,7 @@ export const Config = z
     intro: z.array(z.string()).default([]),
     writePolicy: WritePolicy.default("validationOnly"),
     map: PageModelDraft,
+    brain: BrainConfig.optional(),
   })
   .strict();
 export type Config = z.infer<typeof Config>;

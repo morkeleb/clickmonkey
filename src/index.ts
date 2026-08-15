@@ -28,11 +28,15 @@ export { isPotentialWrite } from "./executor/write-policy.js";
 export {
   runEmptyRequired,
   runUnleash,
+  runExplore,
   replayLog,
   ReplayLiveValidateError,
   compactLog,
   keysFromSteps,
 } from "./playbooks/index.js";
-export type { EmptyRequiredResult, UnleashResult } from "./playbooks/index.js";
+export type { EmptyRequiredResult, UnleashResult, ExploreResult } from "./playbooks/index.js";
 export { unleashBrain, decideUnleash } from "./brains/unleash.js";
+export { createExploreBrain } from "./brains/explore.js";
+export { chat } from "./brains/chat.js";
+export type { ChatClient, ChatMessage, ChatRequest } from "./brains/chat.js";
 export type { Brain, BrainContext, BrainDecision } from "./brains/types.js";

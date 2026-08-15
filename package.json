@@ -15,9 +15,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts tests/persist-shared.test.ts tests/broken-report.test.ts tests/testability-report.test.ts tests/finding-folder.test.ts",
-    "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts tests/persist-shared.test.ts tests/broken-report.test.ts tests/testability-report.test.ts tests/finding-folder.test.ts",
-    "test:live": "node --import tsx --test tests/live-validate.test.ts tests/surveyor.test.ts tests/dialog-inspect.test.ts tests/fence.test.ts tests/view.test.ts tests/intro.test.ts tests/empty-required.test.ts tests/replay.test.ts tests/cli.test.ts tests/broken.test.ts tests/testability.test.ts tests/screenshot.test.ts tests/finding-folder.test.ts tests/unleash.test.ts",
+    "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts tests/persist-shared.test.ts tests/broken-report.test.ts tests/testability-report.test.ts tests/finding-folder.test.ts tests/chat.test.ts",
+    "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts tests/persist-shared.test.ts tests/broken-report.test.ts tests/testability-report.test.ts tests/finding-folder.test.ts tests/chat.test.ts",
+    "test:live": "node --import tsx --test tests/live-validate.test.ts tests/surveyor.test.ts tests/dialog-inspect.test.ts tests/fence.test.ts tests/view.test.ts tests/intro.test.ts tests/empty-required.test.ts tests/replay.test.ts tests/cli.test.ts tests/broken.test.ts tests/testability.test.ts tests/screenshot.test.ts tests/finding-folder.test.ts tests/unleash.test.ts tests/explore.test.ts",
     "clickmonkey": "node --import tsx src/cli/index.ts"
   },
   "devDependencies": {

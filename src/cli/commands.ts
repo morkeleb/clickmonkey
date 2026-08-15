@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { bootRun } from "../executor/boot.js";
 import { createExecutor } from "../executor/run.js";
@@ -10,8 +10,19 @@ import { emptyConfig } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
 import { inspectAndSaveConfig } from "../surveyor/inspect.js";
-import { compactLog, replayLog, ReplayLiveValidateError, runEmptyRequired, runUnleash, UNLEASH_CLI_STEPS } from "../playbooks/index.js";
 import {
+  compactLog,
+  replayLog,
+  ReplayLiveValidateError,
+  runEmptyRequired,
+  runExplore,
+  runUnleash,
+  EXPLORE_DEFAULT_MINUTES,
+  EXPLORE_DEFAULT_STEPS,
+  UNLEASH_CLI_STEPS,
+} from "../playbooks/index.js";
+import {
+  BRAIN_HELP,
   EXIT_FINDINGS,
   EXIT_LIVE,
   EXIT_OK,
@@ -19,6 +30,7 @@ import {
   errMessage,
   fail,
   loadConfigOrExit,
+  parseMinutes,
   parseSteps,
   parseTimeout,
   persistUrl,
@@ -198,6 +210,53 @@ export async function cmdUnleash(opts: {
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
       steps: parseSteps(opts.steps, UNLEASH_CLI_STEPS),
+    });
+    process.stdout.write(`${result.logPath}\n`);
+    if (result.findings[0]) {
+      process.stderr.write(`${result.findings[0].kind}: ${result.findings[0].message}\n`);
+    }
+    return result.ok ? EXIT_OK : EXIT_FINDINGS;
+  } catch (err) {
+    fail(EXIT_FINDINGS, errMessage(err));
+  }
+}
+
+export async function cmdExplore(opts: {
+  config?: string;
+  url?: string;
+  out?: string;
+  headed?: boolean;
+  timeout?: string;
+  steps?: string;
+  minutes?: string;
+  charter?: string;
+  skills?: string;
+}): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  const config = withUrl(loadConfigOrExit(configPath), opts.url);
+  if (!config.brain) {
+    process.stderr.write(BRAIN_HELP);
+    return EXIT_USAGE;
+  }
+  let skills: string | undefined;
+  if (opts.skills) {
+    const path = resolve(process.cwd(), opts.skills);
+    if (!existsSync(path)) fail(EXIT_USAGE, `skills not found: ${path}`);
+    skills = readFileSync(path, "utf8");
+  }
+  const outDir = resolveOutDir(opts.out);
+  mkdirSync(outDir, { recursive: true });
+  try {
+    const result = await runExplore({
+      config,
+      configPath,
+      outDir,
+      headed: opts.headed,
+      timeout: parseTimeout(opts.timeout),
+      steps: parseSteps(opts.steps, EXPLORE_DEFAULT_STEPS),
+      minutes: parseMinutes(opts.minutes, EXPLORE_DEFAULT_MINUTES),
+      charter: opts.charter,
+      skills,
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
