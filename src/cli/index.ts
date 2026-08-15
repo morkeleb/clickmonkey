@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { version } from "../index.js";
 import {
   cmdCompact,
+  cmdExplore,
   cmdInit,
   cmdInspect,
   cmdPlaybook,
@@ -28,6 +29,9 @@ try {
       out: { type: "string" },
       steps: { type: "string" },
       nasty: { type: "boolean" },
+      charter: { type: "string" },
+      skills: { type: "string" },
+      minutes: { type: "string" },
     },
   });
 
@@ -50,6 +54,9 @@ try {
     out: typeof values.out === "string" ? values.out : undefined,
     steps: typeof values.steps === "string" ? values.steps : undefined,
     nasty: Boolean(values.nasty),
+    charter: typeof values.charter === "string" ? values.charter : undefined,
+    skills: typeof values.skills === "string" ? values.skills : undefined,
+    minutes: typeof values.minutes === "string" ? values.minutes : undefined,
   };
 
   const run = async (): Promise<number> => {
@@ -66,6 +73,8 @@ try {
         return cmdPlaybook(positionals[1], flags);
       case "unleash":
         return cmdUnleash(flags);
+      case "explore":
+        return cmdExplore(flags);
       case "replay":
         return cmdReplay(positionals[1], flags);
       case "compact":

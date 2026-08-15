@@ -9,6 +9,7 @@ import {
   formatStep,
   parseLine,
   Config,
+  emptyConfig,
   assertNotLegacyConfig,
   LegacyConfigError,
   Locator,
@@ -169,6 +170,23 @@ describe("config", () => {
     });
     assert.equal(cfg.writePolicy, "validationOnly");
     assert.equal(cfg.map.pages.length, 0);
+  });
+
+  it("accepts optional brain and does not require it on emptyConfig", () => {
+    const cfg = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+      brain: { baseUrl: "http://127.0.0.1:11434/v1", model: "llama3.2" },
+    });
+    assert.equal(cfg.brain?.model, "llama3.2");
+    assert.equal(emptyConfig("http://127.0.0.1:4173/").brain, undefined);
+    assert.throws(() =>
+      Config.parse({
+        url: "http://127.0.0.1:4173/",
+        map: { schemaVersion: 1, app: "fixture", pages: [] },
+        brain: { baseUrl: "http://127.0.0.1:11434/v1", model: "x", extra: true },
+      }),
+    );
   });
 
   it("rejects 0.0.7 intro/proxy_port", () => {

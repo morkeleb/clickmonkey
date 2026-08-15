@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cannedReport } from "../reports/canned.js";
 import { severityForKind, type Finding } from "../schema/finding.js";
@@ -41,4 +41,11 @@ export function persistFinding(
 
   writeFinding(join(dir, "finding.json"), finding);
   writeFileSync(join(dir, "report.md"), cannedReport(finding), "utf8");
+}
+
+export function appendFindingReport(outDir: string, findingId: string, extraMarkdown: string): void {
+  const path = join(outDir, "findings", findingId, "report.md");
+  const extra = extraMarkdown.trim();
+  if (!extra || !existsSync(path)) return;
+  appendFileSync(path, extra.endsWith("\n") ? `\n${extra}` : `\n${extra}\n`, "utf8");
 }
