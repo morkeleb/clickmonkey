@@ -1,0 +1,8 @@
+# Format / template injection probes. Not env secrets.
+%s %s
+%s%s%s%s
+%n%n%n
+${7*7}
+{{constructor}}
+{{constructor.constructor}}
+#{7*7}

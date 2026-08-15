@@ -27,6 +27,7 @@ try {
       timeout: { type: "string" },
       out: { type: "string" },
       steps: { type: "string" },
+      nasty: { type: "boolean" },
     },
   });
 
@@ -48,6 +49,7 @@ try {
     timeout: typeof values.timeout === "string" ? values.timeout : undefined,
     out: typeof values.out === "string" ? values.out : undefined,
     steps: typeof values.steps === "string" ? values.steps : undefined,
+    nasty: Boolean(values.nasty),
   };
 
   const run = async (): Promise<number> => {

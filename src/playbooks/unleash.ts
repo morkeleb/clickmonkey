@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { decideUnleashNasty } from "../brains/nasty.js";
 import { unleashBrain } from "../brains/unleash.js";
 import type { Brain } from "../brains/types.js";
 import { bootRun } from "../executor/boot.js";
@@ -48,9 +49,14 @@ export async function runUnleash(opts: {
   timeout?: number;
   steps?: number;
   brain?: Brain;
+  nasty?: boolean;
 }): Promise<UnleashResult> {
   const steps = opts.steps ?? UNLEASH_DEFAULT_STEPS;
-  const brain = opts.brain ?? unleashBrain;
+  const brain =
+    opts.brain ??
+    (opts.nasty
+      ? { name: "unleash-nasty", decide: (ctx) => decideUnleashNasty(ctx) }
+      : unleashBrain);
   const logPath = join(opts.outDir, "log.txt");
 
   return withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {

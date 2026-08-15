@@ -99,9 +99,12 @@ clickmonkey inspect [--config] [--url] [--headed] [--timeout]
 clickmonkey view [--config] [--url] [--headed]
 clickmonkey step '<line>' [--config] [--url] [--out]
 clickmonkey playbook empty-required [--config] [--url] [--out]
+clickmonkey unleash [--config] [--url] [--out] [--steps] [--nasty]
 clickmonkey replay <log> [--config] [--url] [--out]
 clickmonkey compact <log> [--out <file>]
 ```
+
+`--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 
 Defaults: config `clickmonkey.json`, out `runs/<id>/`.
 
