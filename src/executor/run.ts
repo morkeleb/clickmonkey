@@ -36,6 +36,8 @@ export interface RunState {
   configPath?: string;
   lastAction?: { surface: string; id: string; opens?: string };
   lastScreenshotPath?: string;
+  /** Intro is how we enter the leash; fence applies after it. */
+  inIntro?: boolean;
 }
 
 export interface StepResult {
@@ -113,7 +115,7 @@ async function finish(
   await syncSurfaceStack(state);
 
   const href = state.page.url();
-  const fenceHit = checkFence(href, state.config.fence);
+  const fenceHit = state.inIntro ? "ok" : checkFence(href, state.config.fence);
 
   let finding: Finding | undefined;
   if (fenceHit !== "ok") {
@@ -210,14 +212,26 @@ export function createExecutor(state: RunState): {
   }
 
   async function runIntro(): Promise<void> {
-    for (const line of state.config.intro) {
-      const parsed = parseLine(line);
-      if (!parsed || "comment" in parsed) continue;
-      const result = await runStep(parsed);
-      if (!result.ok) {
-        throw new Error(result.finding?.message ?? `intro step failed: ${formatStep(parsed)}`);
+    state.inIntro = true;
+    const startHref = state.page.url();
+    try {
+      for (const line of state.config.intro) {
+        const parsed = parseLine(line);
+        if (!parsed || "comment" in parsed) continue;
+        const result = await runStep(parsed);
+        if (!result.ok) {
+          throw new Error(result.finding?.message ?? `intro step failed: ${formatStep(parsed)}`);
+        }
       }
+      if (state.page.url() === startHref) {
+        await state.page
+          .waitForURL((u) => u.href !== startHref, { timeout: 10_000 })
+          .catch(() => undefined);
+      }
+    } finally {
+      state.inIntro = false;
     }
+    await state.afterStep?.(state);
   }
 
   return { runStep, runLine, runIntro };

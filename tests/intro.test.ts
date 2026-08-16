@@ -53,6 +53,7 @@ describe("intro", () => {
         await page.goto(baseUrl);
         const config = Config.parse({
           url: baseUrl,
+          fence: { blacklist: ["app.html"] },
           intro: [
             "fill login.user $CLICKMONKEY_USER",
             "fill login.password $CLICKMONKEY_PASSWORD",
