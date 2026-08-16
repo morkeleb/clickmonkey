@@ -67,6 +67,22 @@ export async function determineReady(page: Page): Promise<Locator> {
   const mainRole = await resolveCount(page, { by: "role", value: "main" });
   if (mainRole.count === 1) return { by: "role", value: "main" };
 
+  for (const role of ["searchbox", "search", "banner"] as const) {
+    const hit = await resolveCount(page, { by: "role", value: role });
+    if (hit.count === 1) return { by: "role", value: role };
+  }
+
+  const headings = page.locator("h1");
+  const headingCount = await headings.count();
+  for (let i = 0; i < headingCount; i++) {
+    const el = headings.nth(i);
+    if (!(await el.isVisible())) continue;
+    const name = ((await el.innerText()) ?? "").replace(/\s+/g, " ").trim();
+    if (!name) continue;
+    const loc = { by: "role" as const, value: "heading", name };
+    if ((await resolveCount(page, loc)).count === 1) return loc;
+  }
+
   throw new Error("cannot determine page.ready; add data-testid on main");
 }
 

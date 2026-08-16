@@ -36,6 +36,10 @@ clickmonkey playbook empty-required
 clickmonkey replay runs/<id>/replay.log
 ```
 
+Pages without `data-testid` still inspect: `page.ready` falls back to a unique
+`main`, `searchbox`/`search`/`banner`, or a unique `h1`. Google and example.com
+work. Prefer `data-testid` on your own apps.
+
 `fixtures/sites/accepts-empty` is the same form without client-side validation.
 The playbook should fail there and write `replay.log` plus a finding JSON.
 

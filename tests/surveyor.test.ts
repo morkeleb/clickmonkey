@@ -6,6 +6,7 @@ import { withRun } from "../src/executor/session.js";
 import { emptyDraft, PageModel } from "../src/schema/index.js";
 import type { PageModel as PageModelType } from "../src/schema/page-model.js";
 import { inspect } from "../src/surveyor/inspect.js";
+import { determineReady } from "../src/surveyor/ready.js";
 import { serveSite } from "./helpers/fixture-server.js";
 
 function loadHome(): PageModelType {
@@ -74,6 +75,27 @@ describe("inspect", () => {
         assert.ok(dialog);
         assert.equal(dialog.fields[0]?.id, "name");
         assert.equal(dialog.fields[0]?.status, "ok");
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("starts a map on a page with only an h1 (no testid or main)", async () => {
+    const { baseUrl, close } = await serveSite("plain");
+    try {
+      await withRun({}, async ({ page }) => {
+        await page.goto(`${baseUrl}/`);
+        const ready = await determineReady(page);
+        assert.equal(ready.by, "role");
+        assert.equal(ready.value, "heading");
+        assert.equal(ready.name, "Example Domain");
+
+        const result = await inspect(page, { model: emptyDraft("plain") });
+        assert.equal(result.pageId, "home");
+        assert.equal(result.model.pages[0]?.ready.by, "role");
+        assert.equal(result.model.pages[0]?.ready.value, "heading");
+        assert.ok(result.model.pages[0]?.surfaces.some((s) => s.kind === "page"));
       });
     } finally {
       await close();
