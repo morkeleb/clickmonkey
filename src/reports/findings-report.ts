@@ -91,7 +91,7 @@ function renderCase(
   ];
   if (c.pageId) lines.push(`- **page:** ${c.pageId}`);
   if (url) lines.push(`- **url:** ${url}`);
-  else if (path) lines.push(`- **path:** ${path}`);
+  if (path) lines.push(`- **path:** ${path}`);
   lines.push("");
   if (extra?.expected) {
     lines.push(`**Expected:** ${extra.expected}`, "");

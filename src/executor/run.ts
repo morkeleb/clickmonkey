@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { persistFinding } from "../persist/finding.js";
 import { touchPresence } from "../persist/presence.js";
 import { persistQualityRuntime } from "../persist/quality.js";
 import { normalizeQualityMessage } from "../schema/quality.js";
-import { compactLog } from "../playbooks/compact.js";
+import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { parseLine, formatLog, formatStep } from "../schema/dsl.js";
 import { findingId, severityForKind, type Finding, type FindingKind } from "../schema/finding.js";
 import type { Locator } from "../schema/locator.js";
@@ -256,15 +256,20 @@ async function finish(
     persistFinding(state.outDir, finding, {
       screenshotPath: finding.screenshotPath,
       replayLog: formatLog(
-        compactLog({
-          schemaVersion: 1,
-          bug: finding.message,
-          found: new Date().toISOString(),
-          comments: state.log.comments,
-          steps: [...state.log.steps, step],
-          usedLocators: { ...state.usedLocators },
-          result: "failed",
-        }),
+        compactLog(
+          {
+            schemaVersion: 1,
+            bug: finding.message,
+            found: new Date().toISOString(),
+            comments: state.log.comments,
+            steps: [...state.log.steps, step],
+            usedLocators: { ...state.usedLocators },
+            result: "failed",
+          },
+          state.navLogPath && existsSync(state.navLogPath)
+            ? { hopped: hoppedStepIndexes(readFileSync(state.navLogPath, "utf8")) }
+            : undefined,
+        ),
       ),
     });
     if (step.kind === "screenshot" && finding.screenshotPath) {

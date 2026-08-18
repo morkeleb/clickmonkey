@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { compactLog } from "../playbooks/compact.js";
+import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { formatLog, parseLog } from "../schema/dsl.js";
 import { Finding, severityForKind, type FindingSeverity } from "../schema/finding.js";
 import { runsDir } from "./workspace.js";
@@ -25,26 +25,46 @@ export interface FindingCase {
   url?: string;
 }
 
-function contextAtStep(runDir: string, stepIndex: number): { pageId?: string; url?: string } {
+export function contextAtStep(runDir: string, stepIndex: number): { pageId?: string; url?: string } {
   const nav = join(runDir, "nav.jsonl");
   if (!existsSync(nav)) return {};
   let n = -1;
   let pageId: string | undefined;
   let url: string | undefined;
+  let inTarget = false;
+  let sawHop = false;
   for (const raw of readFileSync(nav, "utf8").split(/\r?\n/)) {
     if (!raw.trim()) continue;
-    let ev: { type?: unknown; pageId?: unknown; to?: unknown; url?: unknown };
+    let ev: { type?: unknown; pageId?: unknown; from?: unknown; to?: unknown; url?: unknown };
     try {
-      ev = JSON.parse(raw) as { type?: unknown; pageId?: unknown; to?: unknown; url?: unknown };
+      ev = JSON.parse(raw) as { type?: unknown; pageId?: unknown; from?: unknown; to?: unknown; url?: unknown };
     } catch {
       continue;
     }
-    if (ev.type === "nav" && typeof ev.to === "string") url = ev.to;
-    if (ev.type === "land" && typeof ev.url === "string") url = ev.url;
+    if (ev.type === "nav" && typeof ev.to === "string") {
+      if (inTarget && (typeof ev.from !== "string" || ev.from !== ev.to)) sawHop = true;
+      url = ev.to;
+    }
+    if (ev.type === "land") {
+      if (typeof ev.url === "string") {
+        if (inTarget) sawHop = true;
+        url = ev.url;
+      }
+      if (typeof ev.pageId === "string" && ev.pageId) pageId = ev.pageId;
+    }
     if (ev.type === "step") {
+      if (inTarget) {
+        if (sawHop && typeof ev.pageId === "string" && ev.pageId) pageId = ev.pageId;
+        break;
+      }
       n += 1;
       if (typeof ev.pageId === "string" && ev.pageId) pageId = ev.pageId;
-      if (n === stepIndex) return { ...(pageId ? { pageId } : {}), ...(url ? { url } : {}) };
+      if (n === stepIndex) inTarget = true;
+      continue;
+    }
+    if (ev.type === "stepDone" && inTarget && n === stepIndex) {
+      // keep scanning for a following land / next step pageId
+      continue;
     }
   }
   return { ...(pageId ? { pageId } : {}), ...(url ? { url } : {}) };
@@ -118,7 +138,12 @@ export function collectFindingCases(runDirs: string[]): FindingCase[] {
       if (tapePath) {
         const raw = readFileSync(tapePath, "utf8");
         try {
-          tape = formatLog(compactLog(parseLog(raw)));
+          const navPath = join(runDir, "nav.jsonl");
+          const hopped =
+            basename(tapePath) === "log.txt" && existsSync(navPath)
+              ? hoppedStepIndexes(readFileSync(navPath, "utf8"))
+              : undefined;
+          tape = formatLog(compactLog(parseLog(raw), hopped ? { hopped } : undefined));
         } catch {
           tape = raw;
         }

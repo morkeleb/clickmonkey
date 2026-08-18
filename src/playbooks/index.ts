@@ -1,7 +1,13 @@
 export { runEmptyRequired, type EmptyRequiredResult } from "./empty-required.js";
 export { replayLog, ReplayLiveValidateError, keysFromSteps } from "./replay.js";
 export { replayReport, formatReplayReport, type ReplayReportResult } from "./replay-report.js";
-export { compactLog } from "./compact.js";
+export {
+  compactLog,
+  hoppedStepIndexes,
+  introPrefixLength,
+  matchingIntroLength,
+  replayableSteps,
+} from "./compact.js";
 export {
   runUnleash,
   UNLEASH_CLI_STEPS,

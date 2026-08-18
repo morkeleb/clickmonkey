@@ -49,6 +49,8 @@ export {
   replayReport,
   ReplayLiveValidateError,
   compactLog,
+  hoppedStepIndexes,
+  replayableSteps,
   keysFromSteps,
 } from "./playbooks/index.js";
 export type { EmptyRequiredResult, UnleashResult, ExploreResult, ReplayReportResult } from "./playbooks/index.js";

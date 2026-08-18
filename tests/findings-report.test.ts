@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { collectFindingCases } from "../src/persist/runs.js";
+import { collectFindingCases, contextAtStep } from "../src/persist/runs.js";
 import { extractClickmonkeyFences } from "../src/reports/fences.js";
 import { caseKey, enrichWithBrain, isChromeRow, renderFindingsReport } from "../src/reports/findings-report.js";
 import { findingId } from "../src/schema/finding.js";
@@ -54,6 +54,64 @@ describe("findings report", () => {
     const fences = extractClickmonkeyFences(md);
     assert.equal(fences.length, 1);
     assert.equal(fences[0]?.log.steps.some((s) => s.kind === "expectInvalid"), true);
+  });
+
+  it("attaches url and path from hops after the step starts", () => {
+    const root = mkdtempSync(join(tmpdir(), "cm-rep-ctx-"));
+    const runDir = join(root, "runs", "20260818T000000Z-hop");
+    const folder = join(runDir, "findings", "fnd_0_pageError");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, "finding.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: findingId(0, "pageError"),
+        kind: "pageError",
+        severity: "critical",
+        message: "Ga(...) is not a function",
+        tapePath: join(folder, "replay.log"),
+        stepIndex: 0,
+      })}\n`,
+    );
+    writeFileSync(join(folder, "replay.log"), "click page.closing_routines nav\n");
+    writeFileSync(
+      join(runDir, "nav.jsonl"),
+      [
+        JSON.stringify({
+          type: "step",
+          line: "click page.closing_routines nav",
+          pageId: "home",
+        }),
+        JSON.stringify({
+          type: "nav",
+          from: "https://app.example/",
+          to: "https://app.example/accounting/closing-routines",
+          via: "commit",
+        }),
+        JSON.stringify({ type: "stepDone", line: "click page.closing_routines nav", ok: true, ms: 80 }),
+        JSON.stringify({
+          type: "step",
+          line: "click page.invoice_workspace",
+          pageId: "accounting_closing_routines",
+        }),
+      ].join("\n"),
+    );
+    const ctx = contextAtStep(runDir, 0);
+    assert.equal(ctx.url, "https://app.example/accounting/closing-routines");
+    assert.equal(ctx.pageId, "accounting_closing_routines");
+    const cases = collectFindingCases([runDir]);
+    assert.equal(cases[0]?.url, "https://app.example/accounting/closing-routines");
+    const md = renderFindingsReport(
+      cases,
+      {
+        url: "https://app.example/",
+        generatedAt: "t",
+        runIds: ["20260818T000000Z-hop"],
+      },
+      join(root, "findings.md"),
+    );
+    assert.match(md, /\*\*url:\*\* https:\/\/app\.example\/accounting\/closing-routines/);
+    assert.match(md, /\*\*path:\*\* \/accounting\/closing-routines/);
   });
 
   it("rolls quality into unique rules and omits preload noise", () => {

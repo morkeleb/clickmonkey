@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { compactLog } from "../src/playbooks/compact.js";
+import {
+  compactLog,
+  hoppedStepIndexes,
+  introPrefixLength,
+  matchingIntroLength,
+  replayableSteps,
+} from "../src/playbooks/compact.js";
 import { parseLog, formatLog } from "../src/schema/dsl.js";
 
 describe("compactLog", () => {
@@ -50,14 +56,25 @@ click page.go
     assert.ok(compacted.steps.some((s) => s.kind === "click" && s.id === "open_form"));
   });
 
-  it("drops wander before the last nav-landmark click", () => {
+  it("does not treat open + $ENV fill as intro", () => {
+    const log = parseLog(`open home
+fill page.matter $CLICKMONKEY_USER
+click page.save
+`);
+    assert.equal(introPrefixLength(log.steps), 0);
+    const compacted = compactLog(log);
+    assert.equal(compacted.steps.length, 3);
+    assert.ok(compacted.steps.some((s) => s.kind === "fill" && s.value === "$CLICKMONKEY_USER"));
+  });
+
+  it("drops wander before a hopped nav-landmark click", () => {
     const log = parseLog(`fill page.q "x"
 click page.search
 click page.settings nav
 fill page.name "y"
 click page.save
 `);
-    const compacted = compactLog(log);
+    const compacted = compactLog(log, { hopped: new Set([2]) });
     assert.equal(compacted.steps.length, 3);
     assert.equal(compacted.steps[0]?.kind, "click");
     if (compacted.steps[0]?.kind === "click") {
@@ -71,15 +88,78 @@ click page.save
     );
   });
 
-  it("keeps from the later of last open and last nav click", () => {
+  it("keeps fills before a nav click that did not hop", () => {
+    const log = parseLog(`fill page.q "x"
+click page.account nav
+fill page.name "y"
+click page.save
+`);
+    const compacted = compactLog(log);
+    assert.equal(compacted.steps.length, 4);
+    assert.ok(compacted.steps.some((s) => s.kind === "fill" && s.id === "q"));
+  });
+
+  it("keeps from the later of last open and last hopped nav click", () => {
     const log = parseLog(`open home
 click page.projects nav
 fill page.title "x"
 click page.save
 `);
-    const compacted = compactLog(log);
+    const compacted = compactLog(log, { hopped: new Set([1]) });
     assert.equal(compacted.steps.length, 3);
     assert.equal(compacted.steps[0]?.kind, "click");
     if (compacted.steps[0]?.kind === "click") assert.equal(compacted.steps[0].id, "projects");
+  });
+});
+
+describe("replayableSteps", () => {
+  it("strips only a prefix that matches config intro", () => {
+    const log = parseLog(`click page.auth0_login_button
+fill page.username $CLICKMONKEY_USER
+fill page.password $CLICKMONKEY_PASSWORD
+click page.button_continue
+click page.go
+`);
+    const intro = [
+      "click page.auth0_login_button",
+      "fill page.username $CLICKMONKEY_USER",
+      "fill page.password $CLICKMONKEY_PASSWORD",
+      "click page.button_continue",
+    ];
+    assert.equal(matchingIntroLength(log.steps, intro), 4);
+    const steps = replayableSteps(log.steps, intro);
+    assert.equal(steps.length, 1);
+    assert.equal(steps[0]?.kind, "click");
+    if (steps[0]?.kind === "click") assert.equal(steps[0].id, "go");
+  });
+
+  it("keeps a post-landing tape that uses $ENV as data", () => {
+    const log = parseLog(`open home
+fill page.matter $CLICKMONKEY_USER
+click page.save
+`);
+    const intro = [
+      "click page.auth0_login_button",
+      "fill page.username $CLICKMONKEY_USER",
+      "click page.button_continue",
+    ];
+    const steps = replayableSteps(log.steps, intro);
+    assert.equal(steps.length, 3);
+    assert.equal(steps[0]?.kind, "open");
+  });
+});
+
+describe("hoppedStepIndexes", () => {
+  it("marks a step whose window contains a URL change", () => {
+    const hopped = hoppedStepIndexes(
+      [
+        JSON.stringify({ type: "step", line: "click page.go", pageId: "home" }),
+        JSON.stringify({ type: "nav", from: "https://app.example/", to: "https://app.example/settings", via: "commit" }),
+        JSON.stringify({ type: "stepDone", line: "click page.go", ok: true, ms: 10 }),
+        JSON.stringify({ type: "step", line: "click page.account", pageId: "settings" }),
+        JSON.stringify({ type: "stepDone", line: "click page.account", ok: true, ms: 5 }),
+      ].join("\n"),
+    );
+    assert.deepEqual([...hopped], [0]);
   });
 });

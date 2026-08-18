@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { bootRun } from "../executor/boot.js";
 import { attachOracles, createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
@@ -21,6 +21,7 @@ import { inspectAndSaveConfig } from "../surveyor/inspect.js";
 import { originOfHref } from "../surveyor/ready.js";
 import {
   compactLog,
+  hoppedStepIndexes,
   replayLog,
   replayReport,
   formatReplayReport,
@@ -515,6 +516,12 @@ export async function cmdUi(opts: {
   return EXIT_OK;
 }
 
+function compactOptsFor(logPath: string): { hopped: Set<number> } | undefined {
+  const sibling = join(dirname(logPath), "nav.jsonl");
+  if (!existsSync(sibling)) return undefined;
+  return { hopped: hoppedStepIndexes(readFileSync(sibling, "utf8")) };
+}
+
 export async function cmdCompact(logPath: string | undefined, opts: { out?: string }): Promise<number> {
   if (!logPath) {
     printUsage("Usage: clickmonkey compact <log> [--out <file>]");
@@ -523,7 +530,7 @@ export async function cmdCompact(logPath: string | undefined, opts: { out?: stri
   const resolvedLog = resolve(process.cwd(), logPath);
   if (!existsSync(resolvedLog)) fail(EXIT_USAGE, `log not found: ${resolvedLog}`);
   try {
-    const compacted = compactLog(readLog(resolvedLog));
+    const compacted = compactLog(readLog(resolvedLog), compactOptsFor(resolvedLog));
     const text = formatLog(compacted);
     if (opts.out) writeFileSync(resolve(process.cwd(), opts.out), text, "utf8");
     else process.stdout.write(text);
