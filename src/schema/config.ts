@@ -21,11 +21,28 @@ export const BrainConfig = z
   .strict();
 export type BrainConfig = z.infer<typeof BrainConfig>;
 
+/** On-disk leash. load still accepts an inline map so one-file leashes work. */
+export const LeashFile = z
+  .object({
+    url: z.string().url(),
+    fence: Fence.optional(),
+    intro: z.array(z.string()).default([]),
+    /** Substrings of widget id or label the walker will not click (logout, close panel, …). */
+    skip: z.array(z.string().min(1)).default([]),
+    writePolicy: WritePolicy.default("validationOnly"),
+    map: PageModelDraft.optional(),
+    brain: BrainConfig.optional(),
+  })
+  .strict();
+export type LeashFile = z.infer<typeof LeashFile>;
+
+/** Runtime config. `map` is always filled after load. */
 export const Config = z
   .object({
     url: z.string().url(),
     fence: Fence.optional(),
     intro: z.array(z.string()).default([]),
+    skip: z.array(z.string().min(1)).default([]),
     writePolicy: WritePolicy.default("validationOnly"),
     map: PageModelDraft,
     brain: BrainConfig.optional(),

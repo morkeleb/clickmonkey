@@ -8,16 +8,17 @@
   "license": "MIT",
   "author": "Morten Nielsen",
   "engines": {
-    "node": ">=22"
+    "node": "^22.22.0 || >=24.8.0"
   },
   "bin": {
-    "clickmonkey": "dist/cli/index.js"
+    "clickmonkey": "bin/clickmonkey.mjs"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts tests/persist-shared.test.ts tests/broken-report.test.ts tests/testability-report.test.ts tests/finding-folder.test.ts tests/nasty.test.ts tests/chat.test.ts",
-    "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts tests/persist-shared.test.ts tests/broken-report.test.ts tests/testability-report.test.ts tests/finding-folder.test.ts tests/nasty.test.ts tests/chat.test.ts",
-    "test:live": "node --import tsx --test tests/live-validate.test.ts tests/surveyor.test.ts tests/dialog-inspect.test.ts tests/fence.test.ts tests/view.test.ts tests/intro.test.ts tests/empty-required.test.ts tests/replay.test.ts tests/cli.test.ts tests/broken.test.ts tests/testability.test.ts tests/screenshot.test.ts tests/finding-folder.test.ts tests/unleash.test.ts tests/explore.test.ts",
+    "link": "npm link && node scripts/install-completions.mjs",
+    "test": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/origin.unit.test.ts tests/nav-log.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts tests/persist-shared.test.ts tests/broken-report.test.ts tests/testability-report.test.ts tests/finding-folder.test.ts tests/nasty.test.ts tests/chat.test.ts tests/look.unit.test.ts tests/workspace.test.ts tests/fences.test.ts tests/findings-report.test.ts tests/comparison.test.ts tests/quality.unit.test.ts",
+    "test:unit": "node --import tsx --test tests/cli-usage.test.ts tests/schema.test.ts tests/merge.unit.test.ts tests/origin.unit.test.ts tests/nav-log.unit.test.ts tests/fixtures-server.test.ts tests/secrets.test.ts tests/compact.test.ts tests/persist-shared.test.ts tests/broken-report.test.ts tests/testability-report.test.ts tests/finding-folder.test.ts tests/nasty.test.ts tests/chat.test.ts tests/look.unit.test.ts tests/workspace.test.ts tests/fences.test.ts tests/findings-report.test.ts tests/comparison.test.ts tests/quality.unit.test.ts",
+    "test:live": "node --import tsx --test tests/live-validate.test.ts tests/surveyor.test.ts tests/dialog-inspect.test.ts tests/fence.test.ts tests/view.test.ts tests/intro.test.ts tests/empty-required.test.ts tests/replay.test.ts tests/cli.test.ts tests/broken.test.ts tests/testability.test.ts tests/screenshot.test.ts tests/finding-folder.test.ts tests/unleash.test.ts tests/explore.test.ts tests/look.test.ts tests/report.test.ts tests/origin.test.ts tests/nav-log.test.ts tests/dup-role.test.ts tests/verbose.test.ts tests/quality.test.ts",
     "clickmonkey": "node --import tsx src/cli/index.ts"
   },
   "devDependencies": {
@@ -26,6 +27,8 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "html-validate": "^11.8.0",
     "playwright": "^1.62.1",
     "zod": "^4.4.3"
   }

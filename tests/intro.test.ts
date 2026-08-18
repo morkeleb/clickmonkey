@@ -23,10 +23,10 @@ const loginModel = PageModel.parse({
           id: "login",
           kind: "page",
           fields: [
-            { id: "user", required: false, type: "text", by: "testId", value: "user", status: "ok" },
+            { id: "user", required: true, type: "text", by: "testId", value: "user", status: "ok" },
             {
               id: "password",
-              required: false,
+              required: true,
               type: "password",
               by: "testId",
               value: "password",

@@ -9,6 +9,7 @@ import type { Finding } from "../schema/finding.js";
 import type { Log, Step } from "../schema/log.js";
 import type { Action, Page as PageDef, Surface } from "../schema/page-model.js";
 import { compactLog } from "./compact.js";
+import { pickSeedPageId } from "./seed.js";
 
 export interface EmptyRequiredResult {
   ok: boolean;
@@ -85,15 +86,19 @@ export async function runEmptyRequired(opts: {
   outDir: string;
   headed?: boolean;
   timeout?: number;
+  verbose?: boolean;
 }): Promise<EmptyRequiredResult> {
   const logPath = join(opts.outDir, "replay.log");
 
   return withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
-    const state = await bootRun(handle, opts.config, opts.outDir, { configPath: opts.configPath });
+    const state = await bootRun(handle, opts.config, opts.outDir, {
+      configPath: opts.configPath,
+      verbose: opts.verbose,
+    });
     const exec = createExecutor(state);
     if (state.config.intro.length > 0) await exec.runIntro();
 
-    const seedPageId = state.pageId;
+    const seedPageId = pickSeedPageId(state, state.pageId) ?? state.pageId;
     const findings: Finding[] = [];
     let replay: Log | undefined;
 

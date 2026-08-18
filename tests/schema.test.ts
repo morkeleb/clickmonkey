@@ -9,6 +9,7 @@ import {
   formatStep,
   parseLine,
   Config,
+  LeashFile,
   emptyConfig,
   assertNotLegacyConfig,
   LegacyConfigError,
@@ -50,6 +51,40 @@ describe("PageModel schema", () => {
     assert.throws(() =>
       Locator.parse({ by: "testId", value: "home", name: "x" }),
     );
+  });
+
+  it("accepts an optional origin on a page", () => {
+    const model = PageModel.parse({
+      schemaVersion: 1,
+      app: "x",
+      pages: [
+        {
+          id: "u_login",
+          path: "/u/login",
+          origin: "https://idp.example.com",
+          ready: { by: "name", value: "username" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+        },
+      ],
+    });
+    assert.equal(model.pages[0]?.origin, "https://idp.example.com");
+  });
+
+  it("accepts entry on a page", () => {
+    const model = PageModel.parse({
+      schemaVersion: 1,
+      app: "x",
+      pages: [
+        {
+          id: "login",
+          path: "/login",
+          entry: true,
+          ready: { by: "testId", value: "login" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+        },
+      ],
+    });
+    assert.equal(model.pages[0]?.entry, true);
   });
 
   it("rejects a page without surfaces", () => {
@@ -148,6 +183,28 @@ describe("View schema", () => {
     assert.equal(view.shown[0]?.label, "Quantity");
     assert.equal(view.actions[0]?.label, "Add to bag");
     assert.equal(view.content, '- heading "Shop" [level=1]');
+    const withPages = View.parse({
+      page: "home",
+      pages: ["home", "about_html"],
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [],
+    });
+    assert.deepEqual(withPages.pages, ["home", "about_html"]);
+    const withLook = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [{ id: "go" }],
+      look: {
+        fonts: [{ family: "Arial", size: "16px", weight: "400", count: 3 }],
+        covered: [{ id: "go", by: "blocker" }],
+      },
+    });
+    assert.equal(withLook.look?.fonts[0]?.family, "Arial");
+    assert.equal(withLook.look?.covered[0]?.by, "blocker");
     assert.throws(() =>
       View.parse({
         page: "home",
@@ -170,6 +227,24 @@ describe("config", () => {
     });
     assert.equal(cfg.writePolicy, "validationOnly");
     assert.equal(cfg.map.pages.length, 0);
+  });
+
+  it("accepts skip on a leash", () => {
+    const cfg = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      skip: ["sign out", "close panel"],
+      map: { schemaVersion: 1, app: "x", pages: [] },
+    });
+    assert.deepEqual(cfg.skip, ["sign out", "close panel"]);
+  });
+
+  it("accepts a leash file with no map", () => {
+    const leash = LeashFile.parse({
+      url: "http://127.0.0.1:4173/",
+      intro: [],
+    });
+    assert.equal(leash.map, undefined);
+    assert.equal(leash.writePolicy, "validationOnly");
   });
 
   it("accepts optional brain and does not require it on emptyConfig", () => {

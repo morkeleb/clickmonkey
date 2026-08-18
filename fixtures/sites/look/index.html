@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Look</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        font-size: 16px;
+        font-weight: 400;
+        margin: 0;
+      }
+      h1 {
+        font-family: "Times New Roman", Times, serif;
+        font-size: 20px;
+        font-weight: 700;
+        margin: 0 0 8px;
+      }
+      p {
+        font-family: Arial, sans-serif;
+        font-size: 16px;
+        margin: 0 0 8px;
+      }
+      button {
+        font-family: Arial, sans-serif;
+        font-size: 16px;
+      }
+      .blocker {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 80px;
+        background: rgba(0, 0, 0, 0.35);
+        z-index: 10;
+      }
+      #go {
+        position: absolute;
+        top: 20px;
+        left: 16px;
+        z-index: 1;
+      }
+      #ok {
+        margin-top: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="blocker" data-testid="blocker">Banner</div>
+    <main data-testid="home">
+      <h1>Title</h1>
+      <p>Body copy in Arial.</p>
+      <button id="go" data-testid="go">Go</button>
+      <button id="ok" data-testid="ok">Ok</button>
+    </main>
+  </body>
+</html>

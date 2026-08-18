@@ -6,7 +6,10 @@ export const TestabilityCode = z.enum([
   "unnamedDialog",
   "unlabeledField",
   "unnamedControl",
+  "missingStableId",
   "noMain",
+  "occludedWidget",
+  "duplicateName",
 ]);
 export type TestabilityCode = z.infer<typeof TestabilityCode>;
 
@@ -27,6 +30,8 @@ export type TestabilityIssue = z.infer<typeof TestabilityIssue>;
 export const TestabilityPage = z
   .object({
     path: z.string().min(1),
+    /** Set when the page is not on the leash origin. */
+    origin: z.string().min(1).optional(),
     foundAt: z.string().min(1),
     insufficient: z.boolean(),
     issues: z.array(TestabilityIssue).default([]),
@@ -34,7 +39,7 @@ export const TestabilityPage = z
   .strict();
 export type TestabilityPage = z.infer<typeof TestabilityPage>;
 
-/** Sibling of clickmonkey.json — not part of the page map. */
+/** clickmonkey/testability.json — not the page map. */
 export const TestabilityReport = z
   .object({
     schemaVersion: z.literal(1),
@@ -67,12 +72,22 @@ export function isInsufficient(issues: TestabilityIssue[]): boolean {
   return issues.some((i) => i.severity === "block");
 }
 
+export function sameLedgerPage(
+  a: { path: string; origin?: string },
+  b: { path: string; origin?: string },
+): boolean {
+  return a.path === b.path && (a.origin ?? "") === (b.origin ?? "");
+}
+
 export function upsertTestabilityPage(
   report: TestabilityReport,
   page: TestabilityPage,
 ): TestabilityReport {
-  const pages = report.pages.filter((p) => p.path !== page.path);
+  const pages = report.pages.filter((p) => !sameLedgerPage(p, page));
   pages.push(page);
-  pages.sort((a, b) => a.path.localeCompare(b.path));
+  pages.sort((a, b) => {
+    const o = (a.origin ?? "").localeCompare(b.origin ?? "");
+    return o !== 0 ? o : a.path.localeCompare(b.path);
+  });
   return { schemaVersion: 1, pages };
 }

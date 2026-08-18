@@ -11,7 +11,7 @@ export const BrokenEntry = z
   .strict();
 export type BrokenEntry = z.infer<typeof BrokenEntry>;
 
-/** Sibling of clickmonkey.json — not part of the page map. */
+/** clickmonkey/broken.json — not the page map. */
 export const BrokenReport = z
   .object({
     schemaVersion: z.literal(1),

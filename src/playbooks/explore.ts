@@ -10,9 +10,10 @@ import {
 } from "../brains/explore.js";
 import type { Brain } from "../brains/types.js";
 import { bootRun } from "../executor/boot.js";
-import { createExecutor, type RunState } from "../executor/run.js";
+import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
+import { pickSeedPageId, resetToSeed } from "./seed.js";
 import { appendFindingReport } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
 import type { Config } from "../schema/config.js";
@@ -48,24 +49,6 @@ function requireBrain(config: Config): { baseUrl: string; model: string; apiKeyE
     throw new Error("explore requires config.brain.baseUrl and config.brain.model");
   }
   return brain;
-}
-
-async function resetToSeed(
-  exec: ReturnType<typeof createExecutor>,
-  state: RunState,
-  seedPageId: string,
-): Promise<View> {
-  if (state.model.pages.some((p) => p.id === seedPageId)) {
-    const reset = await exec.runLine(`open ${seedPageId}`);
-    return reset.view;
-  }
-  await state.page.goto(state.config.url, { waitUntil: "domcontentloaded" });
-  return buildView({
-    page: state.page,
-    pageId: state.pageId,
-    surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
-    model: state.model,
-  });
 }
 
 function listFindings(items: Finding[]): string {
@@ -173,6 +156,7 @@ export async function runExplore(opts: {
   skills?: string;
   chat?: ChatClient;
   brain?: Brain;
+  verbose?: boolean;
 }): Promise<ExploreResult> {
   const brainCfg = requireBrain(opts.config);
   const apiKey = resolveApiKey(brainCfg.apiKeyEnv);
@@ -195,11 +179,14 @@ export async function runExplore(opts: {
   const brain = opts.brain ?? createExploreBrain({ chat: boundChat, charter, skills, startedAt, minutes });
 
   return withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
-    const state = await bootRun(handle, opts.config, opts.outDir, { configPath: opts.configPath });
+    const state = await bootRun(handle, opts.config, opts.outDir, {
+      configPath: opts.configPath,
+      verbose: opts.verbose,
+    });
     const exec = createExecutor(state);
     if (state.config.intro.length > 0) await exec.runIntro();
 
-    const seedPageId = state.pageId;
+    const seedPageId = pickSeedPageId(state, state.pageId) ?? state.pageId;
     const findings: Finding[] = [];
 
     let view = await buildView({
@@ -207,6 +194,10 @@ export async function runExplore(opts: {
       pageId: state.pageId,
       surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
       model: state.model,
+      appUrl: state.config.url,
+      fence: state.config.fence,
+      intro: state.config.intro,
+      skip: state.config.skip,
     });
 
     let stepsUsed = 0;

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Quality</title>
+    <script>
+      console.warn("cm-quality-warn");
+      console.error("cm-quality-error");
+      throw new Error("cm-quality-boom");
+    </script>
+  </head>
+  <body>
+    <p><div>implicit close</div></p>
+    <img src="missing.png" />
+    <button id="dup" data-testid="go">Go</button>
+    <span id="dup">also</span>
+  </body>
+</html>

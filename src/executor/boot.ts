@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { persistSharedMap } from "../persist/config.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
 import { isDocumentNotFound } from "../oracles/http.js";
@@ -6,8 +7,13 @@ import type { Config } from "../schema/config.js";
 import type { Locator } from "../schema/locator.js";
 import type { PageModel, PageModelDraft } from "../schema/page-model.js";
 import { inspect } from "../surveyor/inspect.js";
+import { recordPageLedgers } from "../surveyor/record.js";
+import { originOfHref } from "../surveyor/ready.js";
+import { attachNavLog, type NavMeta } from "./nav-log.js";
+import { dumpVerboseState } from "./verbose.js";
+import { buildView } from "./view.js";
 import type { RunHandle } from "./session.js";
-import type { RunState } from "./run.js";
+import { attachOracles, type RunState } from "./run.js";
 import { locatorOf } from "../schema/locator.js";
 import { readyKey, widgetKey } from "../schema/refs.js";
 
@@ -30,7 +36,12 @@ export function attachInspectAfterStep(state: RunState): void {
       if (s.configPath) reportDocumentNotFound(s.configPath, s.page);
       return;
     }
-    const r = await inspect(s.page, { model: s.model, lastAction: s.lastAction });
+    const r = await inspect(s.page, {
+      model: s.model,
+      lastAction: s.lastAction,
+      appOrigin: originOfHref(s.config.url),
+      inIntro: Boolean(s.inIntro),
+    });
     s.model = r.model;
     s.pageId = r.pageId;
     s.surfaceStack = r.surfaceStack;
@@ -38,6 +49,11 @@ export function attachInspectAfterStep(state: RunState): void {
       const saved = persistSharedMap(s.configPath, r.model);
       s.config = saved;
       s.model = saved.map;
+      if (!s.replay) {
+        await recordPageLedgers(s.configPath, s.page, r.testability, {
+          appOrigin: originOfHref(s.config.url),
+        });
+      }
     } else {
       s.config = { ...s.config, map: r.model };
     }
@@ -48,12 +64,40 @@ export async function bootRun(
   handle: RunHandle,
   config: Config,
   outDir: string,
-  opts?: { configPath?: string; replay?: boolean; usedLocators?: Record<string, Locator> },
+  opts?: {
+    configPath?: string;
+    replay?: boolean;
+    usedLocators?: Record<string, Locator>;
+    verbose?: boolean;
+  },
 ): Promise<RunState> {
   mkdirSync(outDir, { recursive: true });
+  const navLogPath = join(outDir, "nav.jsonl");
+  const navMeta: NavMeta = { phase: "boot" };
+  const pendingFindings: RunState["pendingFindings"] = [];
+  attachOracles({
+    page: handle.page,
+    pendingFindings,
+    configPath: opts?.configPath,
+    replay: opts?.replay,
+    appOrigin: originOfHref(config.url),
+  });
+  await attachNavLog(handle.page, {
+    path: navLogPath,
+    echo: process.stderr,
+    meta: navMeta,
+  });
   await handle.page.goto(config.url, { waitUntil: "domcontentloaded" });
-  const inspected = await inspect(handle.page, { model: config.map });
+  const inspected = await inspect(handle.page, {
+    model: config.map,
+    appOrigin: originOfHref(config.url),
+  });
+  if (config.intro.length > 0) {
+    const start = inspected.model.pages.find((p) => p.id === inspected.pageId);
+    if (start && !start.entry) start.entry = true;
+  }
   const usedLocators = { ...(opts?.usedLocators ?? {}) };
+  navMeta.pageId = inspected.pageId;
   const state: RunState = {
     page: handle.page,
     context: handle.context,
@@ -64,18 +108,40 @@ export async function bootRun(
     surfaceStack: inspected.surfaceStack,
     log: { schemaVersion: 1, steps: [], comments: [], usedLocators },
     usedLocators,
-    pendingFindings: [],
+    pendingFindings,
     outDir,
     replay: opts?.replay,
     configPath: opts?.configPath,
+    navMeta,
+    navLogPath,
+    verbose: Boolean(opts?.verbose),
+    verboseSeq: 0,
   };
   attachInspectAfterStep(state);
   if (state.configPath && !isDocumentNotFound(handle.page)) {
     const saved = persistSharedMap(state.configPath, inspected.model);
     state.config = saved;
     state.model = saved.map;
+    if (!state.replay) {
+      await recordPageLedgers(state.configPath, handle.page, inspected.testability, {
+        appOrigin: originOfHref(state.config.url),
+      });
+    }
   } else if (state.configPath) {
     reportDocumentNotFound(state.configPath, handle.page);
+  }
+  if (state.verbose) {
+    const bootView = await buildView({
+      page: state.page,
+      pageId: state.pageId,
+      surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
+      model: state.model,
+      appUrl: state.config.url,
+      fence: state.config.fence,
+      intro: state.config.intro,
+      skip: state.config.skip,
+    });
+    await dumpVerboseState(state, "boot", bootView);
   }
   return state;
 }

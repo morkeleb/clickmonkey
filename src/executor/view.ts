@@ -2,11 +2,32 @@ import type { Locator as PwLocator, Page } from "playwright";
 import { locatorOf } from "../schema/locator.js";
 import type { Field, PageModel, PageModelDraft, Surface, Widget } from "../schema/page-model.js";
 import type { ShownAction, ShownField, View } from "../schema/view.js";
+import {
+  dedupeIssues,
+  isInsufficient,
+} from "../schema/testability.js";
+import type { Fence } from "../schema/config.js";
 import { auditVisible } from "../surveyor/audit.js";
-import { toPlaywrightLocator } from "./locators.js";
+import { isLeaveAction, matchesSkip } from "../brains/unleash.js";
+import { hoppablePages } from "./hop.js";
+import { formatFont, lookIsEmpty, readLook } from "./look.js";
+import {
+  toPlaywrightLocator,
+  widgetLocator,
+  isLiveWidget,
+  isPresentWidget,
+  pickActable,
+  widgetInNav,
+} from "./locators.js";
 
 /** Keep the snapshot inside a brain's context. Cut on a line boundary. */
 export const CONTENT_MAX = 8000;
+
+async function lookScope(page: Page): Promise<PwLocator> {
+  const main = page.locator("main, [role='main']");
+  if ((await main.count()) > 0) return main.first();
+  return page.locator("body");
+}
 
 function currentSurface(
   model: PageModel | PageModelDraft,
@@ -83,9 +104,22 @@ export function clipContent(raw: string): string {
   return `${lastNl > 0 ? cut.slice(0, lastNl) : cut}\n…`;
 }
 
-async function liveLabel(page: Page, widget: Widget): Promise<string | undefined> {
-  const loc = toPlaywrightLocator(page, locatorOf(widget));
-  if ((await loc.count()) === 0) return undefined;
+/** Unique and visible right now. Hidden chrome from an earlier inspect is not legal. */
+async function liveActable(
+  page: Page,
+  surface: Surface | undefined,
+  widget: Widget,
+): Promise<boolean> {
+  return isLiveWidget(widgetLocator(page, surface, locatorOf(widget)), page);
+}
+
+async function liveLabel(
+  page: Page,
+  surface: Surface | undefined,
+  widget: Widget,
+): Promise<string | undefined> {
+  const loc = await pickActable(widgetLocator(page, surface, locatorOf(widget)), page);
+  if (!loc) return undefined;
   const raw = await loc.evaluate(readLiveLabel).catch(() => "");
   return usefulLabel(widget.id, raw);
 }
@@ -113,9 +147,13 @@ async function liveContent(page: Page, surface: Surface | undefined): Promise<st
   return firstVisibleSnapshot(page.locator("body"));
 }
 
-async function liveFieldValue(page: Page, field: Field): Promise<string> {
-  const loc = toPlaywrightLocator(page, locatorOf(field));
-  if ((await loc.count()) === 0) return "";
+async function liveFieldValue(
+  page: Page,
+  surface: Surface | undefined,
+  field: Field,
+): Promise<string> {
+  const loc = await pickActable(widgetLocator(page, surface, locatorOf(field)), page);
+  if (!loc) return "";
   if (field.type === "password") {
     const raw = await loc.inputValue({ timeout: 0 }).catch(() => "");
     return raw ? "••••" : "";
@@ -133,6 +171,11 @@ export async function buildView(state: {
   surfaceStack: string[];
   model: PageModel | PageModelDraft;
   last?: { step: string; ok: boolean; finding?: string };
+  /** Leash `url`. Hop targets are this origin only. */
+  appUrl?: string;
+  fence?: Fence;
+  intro?: readonly string[];
+  skip?: readonly string[];
 }): Promise<View> {
   const stack = state.surfaceStack.length > 0 ? [...state.surfaceStack] : [state.pageId];
   const surfaceId = stack[stack.length - 1] ?? state.pageId;
@@ -144,8 +187,9 @@ export async function buildView(state: {
   if (surface) {
     for (const field of surface.fields) {
       if (field.status !== "ok") continue;
-      const value = await liveFieldValue(state.page, field);
-      const label = await liveLabel(state.page, field);
+      if (!(await liveActable(state.page, surface, field))) continue;
+      const value = await liveFieldValue(state.page, surface, field);
+      const label = await liveLabel(state.page, surface, field);
       shown.push({
         id: field.id,
         value,
@@ -156,11 +200,16 @@ export async function buildView(state: {
     }
     for (const action of surface.actions) {
       if (action.status !== "ok") continue;
-      const label = await liveLabel(state.page, action);
+      if (isLeaveAction(action) || matchesSkip(action, state.skip)) continue;
+      if (!(await liveActable(state.page, surface, action))) continue;
+      const label = await liveLabel(state.page, surface, action);
+      const loc = widgetLocator(state.page, surface, locatorOf(action));
+      const inNav = await widgetInNav(loc, state.page);
       actions.push({
         id: action.id,
         ...(action.opens ? { opens: action.opens } : {}),
         ...(label ? { label } : {}),
+        ...(inNav ? { nav: true } : {}),
       });
     }
   }
@@ -169,20 +218,51 @@ export async function buildView(state: {
   const auditRoot = surface?.locator
     ? toPlaywrightLocator(state.page, surface.locator)
     : state.page;
+  const lookRoot = surface?.locator
+    ? toPlaywrightLocator(state.page, surface.locator)
+    : await lookScope(state.page);
   const audit = await auditVisible(state.page, auditRoot, {
     excludeVisibleDialogs: surface?.kind !== "dialog",
     checkMain: surface?.kind !== "dialog",
   });
 
+  const widgets: Array<{ id: string; loc: ReturnType<typeof toPlaywrightLocator> }> = [];
+  if (surface) {
+    for (const w of [...surface.fields, ...surface.actions]) {
+      if (w.status !== "ok") continue;
+      const loc = widgetLocator(state.page, surface, locatorOf(w));
+      if (!(await isPresentWidget(loc, state.page))) continue;
+      widgets.push({ id: w.id, loc });
+    }
+  }
+  const look = await readLook({ root: lookRoot, widgets });
+
+  const issues = [...audit.issues];
+  if (look.covered.length > 0) {
+    issues.push({ code: "occludedWidget", severity: "warn", tag: "widget" });
+  }
+  const testabilityIssues = dedupeIssues(issues);
+
+  const hopPages = state.appUrl
+    ? hoppablePages(state.model.pages, {
+        appUrl: state.appUrl,
+        fence: state.fence,
+        intro: state.intro,
+        currentHref: state.page.url(),
+      }).map((p) => p.id)
+    : state.model.pages.map((p) => p.id);
+
   return {
     page: state.pageId,
+    pages: hopPages,
     surface: surfaceId,
     stack,
     shown,
     actions,
+    ...(!lookIsEmpty(look) ? { look } : {}),
     ...(content ? { content } : {}),
-    ...(audit.issues.length > 0
-      ? { testability: { insufficient: audit.insufficient, issues: audit.issues } }
+    ...(testabilityIssues.length > 0
+      ? { testability: { insufficient: isInsufficient(testabilityIssues), issues: testabilityIssues } }
       : {}),
     ...(state.last ? { last: state.last } : {}),
   };
@@ -191,6 +271,7 @@ export async function buildView(state: {
 export function formatView(view: View): string {
   const lines: string[] = [
     `page: ${view.page}`,
+    ...(view.pages && view.pages.length > 0 ? [`pages: ${view.pages.join(", ")}`] : []),
     `surface: ${view.surface}`,
     `stack: ${view.stack.join(" > ")}`,
     "shown:",
@@ -205,6 +286,17 @@ export function formatView(view: View): string {
   for (const action of view.actions) {
     const base = action.opens ? `  ${action.id} → ${action.opens}` : `  ${action.id}`;
     lines.push(action.label ? `${base}  ${action.label}` : base);
+  }
+  if (view.look && !lookIsEmpty(view.look)) {
+    lines.push("look:");
+    if (view.look.fonts.length > 0) {
+      lines.push(`  fonts: ${view.look.fonts.map(formatFont).join(", ")}`);
+    }
+    if (view.look.covered.length > 0) {
+      lines.push(
+        `  covered: ${view.look.covered.map((c) => `${c.id} ← ${c.by}`).join(", ")}`,
+      );
+    }
   }
   if (view.content) {
     lines.push("content:");

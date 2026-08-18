@@ -7,4 +7,5 @@ export * from "./log.js";
 export * from "./config.js";
 export * from "./broken.js";
 export * from "./testability.js";
+export * from "./quality.js";
 export * from "./dsl.js";

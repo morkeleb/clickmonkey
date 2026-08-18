@@ -98,6 +98,16 @@ function canLocate(kind, node) {
 function named(node) {
   return Boolean(accName(node) || labelText(node));
 }
+function hasStableId(node) {
+  if (node.id && String(node.id).trim()) return true;
+  var hooks = ["data-testid", "data-test-id", "data-test", "data-cy"];
+  var h;
+  for (h = 0; h < hooks.length; h++) {
+    var hook = node.getAttribute(hooks[h]);
+    if (hook && hook.trim()) return true;
+  }
+  return false;
+}
 function push(code, severity, node) {
   var tag = node.tagName.toLowerCase();
   var role = implicitRole(node);
@@ -118,15 +128,30 @@ for (i = 0; i < els.length; i++) {
   if (fType === "hidden" || fType === "submit" || fType === "button") continue;
   if (!canLocate("field", el)) push("opaqueControl", "block", el);
   else if (!named(el)) push("unlabeledField", "warn", el);
+  if (!hasStableId(el)) push("missingStableId", "warn", el);
 }
 
 els = root.querySelectorAll(ACTION_SEL);
+var nameCounts = {};
 for (i = 0; i < els.length; i++) {
   el = els[i];
   if (!shown(el)) continue;
   if (flags.excludeVisibleDialogs && insideForeignDialog(el)) continue;
   if (!canLocate("action", el)) push("opaqueControl", "block", el);
   else if (!named(el)) push("unnamedControl", "warn", el);
+  if (!hasStableId(el)) push("missingStableId", "warn", el);
+  var dupName = (accName(el) || labelText(el) || "").replace(/\\s+/g, " ").trim().toLowerCase();
+  var dupRole = implicitRole(el) || el.tagName.toLowerCase();
+  if (dupName) {
+    var dupKey = dupRole + "\\0" + dupName;
+    if (!nameCounts[dupKey]) nameCounts[dupKey] = 0;
+    nameCounts[dupKey] += 1;
+  }
+}
+var dupKeys = Object.keys(nameCounts);
+for (i = 0; i < dupKeys.length; i++) {
+  if (nameCounts[dupKeys[i]] < 2) continue;
+  issues.push({ code: "duplicateName", severity: "warn", tag: "widget", role: dupKeys[i].split("\\0")[0] });
 }
 
 els = root.querySelectorAll(EXTRA_SEL);

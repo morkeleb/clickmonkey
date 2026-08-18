@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const cli = fileURLToPath(new URL("../src/cli/index.ts", import.meta.url));
+const bin = fileURLToPath(new URL("../bin/clickmonkey.mjs", import.meta.url));
 
 function run(args: string[]) {
   return spawnSync(process.execPath, ["--import", "tsx", cli, ...args], {
@@ -34,10 +35,13 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stderr, /Unknown command: xyzzy/);
   });
 
-  it("lists unleash and explore in usage", () => {
+  it("lists map, unleash, explore and report in usage", () => {
     const result = run([]);
+    assert.match(result.stdout, /map/);
     assert.match(result.stdout, /unleash/);
     assert.match(result.stdout, /explore/);
+    assert.match(result.stdout, /report/);
+    assert.match(result.stdout, /--verbose/);
   });
 
   it("explore without brain exits 2 with a provider table", () => {
@@ -52,5 +56,15 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stderr, /Ollama/);
     assert.match(result.stderr, /OpenAI/);
     assert.match(result.stderr, /Anthropic/);
+  });
+
+  it("init from another cwd writes the leash there", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-init-cwd-"));
+    const result = spawnSync(process.execPath, [bin, "init", "--url", "http://127.0.0.1:4173/"], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.ok(existsSync(join(dir, "clickmonkey.json")));
   });
 });

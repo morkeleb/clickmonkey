@@ -44,6 +44,8 @@ describe("screenshot step", () => {
         assert.equal(result.ok, false);
         assert.equal(result.finding?.kind, "uiIssue");
         assert.ok(result.finding?.screenshotPath && existsSync(result.finding.screenshotPath));
+        assert.ok(state.lastScreenshotPath && existsSync(state.lastScreenshotPath));
+        assert.equal(state.lastScreenshotPath, result.finding.screenshotPath);
         assert.ok(existsSync(join(tmp, "findings", result.finding!.id, "report.md")));
       });
     } finally {

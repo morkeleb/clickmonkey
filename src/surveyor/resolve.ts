@@ -7,5 +7,5 @@ export async function resolveCount(
   loc: Locator,
 ): Promise<{ status: "ok" | "unresolved"; count: number }> {
   const count = await toPlaywrightLocator(root, loc).count();
-  return { status: count === 1 ? "ok" : "unresolved", count };
+  return { status: count >= 1 ? "ok" : "unresolved", count };
 }

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig, saveConfig } from "../persist/config.js";
 import { newRunId } from "../persist/run-id.js";
+import { runsDir, WORKSPACE_DIR } from "../persist/workspace.js";
 import { Config, LegacyConfigError } from "../schema/config.js";
 import { version } from "../index.js";
 
@@ -16,15 +17,20 @@ Usage:
   clickmonkey <command> [options]
 
 Commands:
-  init        Create clickmonkey.json (fence + empty intro + empty map)
+  init        Create clickmonkey.json + clickmonkey/ (leash, empty map)
   inspect     Survey the current page and grow the map
   view        Print the compact view of the current surface
   step        Run one DSL line and append it to the log
   playbook    Run a named playbook (empty-required)
-  unleash     Random-walk legal map ids from the view [--nasty]
+  map         Navigate-only random walk — lift fog of war, no fill/submit
+  unleash     Random-walk legal map ids, including fill/submit [--nasty]
   explore     Charter-driven LLM walk of legal map ids
-  replay      Replay a log file (no brain)
+  report      Markdown findings report from selected runs
+  replay      Replay a log file or a findings-report markdown file
   compact     Shorten a log to the last open + following lines
+
+Options:
+  --verbose   Write per-step HTML + view dumps under <run>/verbose/
 
 Run clickmonkey <command> --help for command options.
 `;
@@ -37,8 +43,10 @@ export function resolveConfigPath(value?: string): string {
   return resolve(process.cwd(), value ?? "clickmonkey.json");
 }
 
-export function resolveOutDir(value?: string): string {
-  return value ? resolve(process.cwd(), value) : resolve(process.cwd(), "runs", newRunId());
+export function resolveOutDir(value?: string, configPath?: string): string {
+  if (value) return resolve(process.cwd(), value);
+  const root = configPath ? runsDir(configPath) : resolve(process.cwd(), WORKSPACE_DIR, "runs");
+  return resolve(root, newRunId());
 }
 
 export function fail(code: number, message: string): never {

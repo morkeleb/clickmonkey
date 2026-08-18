@@ -14,6 +14,9 @@ type BrowserEl = {
   tagName: string;
   id: string;
   innerText: string;
+  nodeType?: number;
+  textContent?: string | null;
+  childNodes?: ArrayLike<BrowserEl>;
   type?: string;
   required?: boolean;
   getAttribute(name: string): string | null;
@@ -80,8 +83,27 @@ function readWidget(el: BrowserEl): WidgetRead {
     }
   }
   if (!accName) {
-    const text = (el.innerText ?? "").trim();
+    const parts: string[] = [];
+    const stack: BrowserEl[] = [el];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node) continue;
+      if (node.nodeType === 3) {
+        const t = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+        if (t) parts.push(t);
+        continue;
+      }
+      if (node.getAttribute && node.getAttribute("aria-hidden") === "true") continue;
+      const kids = node.childNodes;
+      if (!kids) continue;
+      for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
+    }
+    const text = parts.join(" ").trim();
     if (text) accName = text.slice(0, 80);
+  }
+  if (!accName) {
+    const title = el.getAttribute("title")?.trim();
+    if (title) accName = title.slice(0, 80);
   }
 
   let labelText = "";

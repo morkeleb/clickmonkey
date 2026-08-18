@@ -10,17 +10,25 @@ import {
   isInsufficient,
   type TestabilityIssue,
 } from "../schema/testability.js";
-import { persistTestabilityPage } from "../persist/testability.js";
+import { recordPageLedgers } from "./record.js";
 import { auditVisible } from "./audit.js";
 import { collectCandidates } from "./collect.js";
 import { identityKey, mergePageModel } from "./merge.js";
-import { createPageFromUrl, pathMatches, pathnameOf } from "./ready.js";
+import {
+  createPageFromUrl,
+  findPageForHref,
+  originOfHref,
+} from "./ready.js";
 import { resolveCount } from "./resolve.js";
 import { bindSurfaces } from "./surfaces.js";
 
 export interface SurveyorContext {
   model: PageModel | PageModelDraft;
   lastAction?: { surface: string; id: string; opens?: string };
+  /** Origin of the leash `url`. Off-leash pages get `page.origin`. */
+  appOrigin?: string;
+  /** Pages first seen during intro are entry pages, not hop targets. */
+  inIntro?: boolean;
 }
 
 export interface InspectResult {
@@ -36,10 +44,13 @@ export interface InspectResult {
 async function modelForPage(page: Page, ctx: SurveyorContext): Promise<{
   model: PageModel;
   createdPage: boolean;
+  stamped: boolean;
 }> {
+  const appOrigin = ctx.appOrigin ?? originOfHref(page.url());
+  const entry = Boolean(ctx.inIntro);
   if (ctx.model.pages.length === 0) {
     const url = new URL(page.url());
-    const created = await createPageFromUrl(page, new Set());
+    const created = await createPageFromUrl(page, new Set(), appOrigin, { entry });
     return {
       model: {
         schemaVersion: 1,
@@ -48,17 +59,30 @@ async function modelForPage(page: Page, ctx: SurveyorContext): Promise<{
         pages: [created],
       },
       createdPage: true,
+      stamped: false,
     };
   }
 
   const model = PageModel.parse(structuredClone(ctx.model));
-  const pathname = pathnameOf(page);
-  if (model.pages.some((p) => pathMatches(p.path, pathname))) {
-    return { model, createdPage: false };
+  const existing = appOrigin
+    ? findPageForHref(model.pages, page.url(), appOrigin)
+    : undefined;
+  if (existing) {
+    let stamped = false;
+    const live = originOfHref(page.url());
+    if (appOrigin && live && live !== appOrigin && !existing.origin) {
+      existing.origin = live;
+      stamped = true;
+    }
+    if (entry && !existing.entry) {
+      existing.entry = true;
+      stamped = true;
+    }
+    return { model, createdPage: false, stamped };
   }
   const used = new Set(model.pages.map((p) => p.id));
-  model.pages.push(await createPageFromUrl(page, used));
-  return { model, createdPage: true };
+  model.pages.push(await createPageFromUrl(page, used, appOrigin, { entry }));
+  return { model, createdPage: true, stamped: false };
 }
 
 export async function inspect(page: Page, ctx: SurveyorContext): Promise<InspectResult> {
@@ -75,9 +99,11 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
     };
   }
 
-  let { model, createdPage } = await modelForPage(page, ctx);
-  const pathname = pathnameOf(page);
-  const modelPage = model.pages.find((p) => pathMatches(p.path, pathname));
+  let { model, createdPage, stamped } = await modelForPage(page, ctx);
+  const appOrigin = ctx.appOrigin ?? originOfHref(page.url());
+  const modelPage = appOrigin
+    ? findPageForHref(model.pages, page.url(), appOrigin)
+    : undefined;
   if (!modelPage) throw new Error("internal: page missing after create");
   const pageId = modelPage.id;
 
@@ -100,7 +126,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
     candidatesFound += candidates.length;
 
     for (const c of candidates) {
-      c.resolves = (await resolveCount(root, locatorOf(c))).count === 1;
+      c.resolves = (await resolveCount(root, locatorOf(c))).count >= 1;
     }
 
     const current = model.pages.find((p) => p.id === pageId);
@@ -113,7 +139,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
       for (const w of [...surface.fields, ...surface.actions]) {
         const key = identityKey(entry.surfaceId, w.by, w.value, w.name);
         if (candKeys.has(key)) continue;
-        leftoverResolves[key] = (await resolveCount(root, locatorOf(w))).count === 1;
+        leftoverResolves[key] = (await resolveCount(root, locatorOf(w))).count >= 1;
       }
     }
 
@@ -149,7 +175,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
     currentSurface: bound.stack[bound.stack.length - 1] ?? bound.pageSurfaceId,
     surfaceStack: bound.stack,
     candidatesFound,
-    merged: merged || parsed.generation !== startGen,
+    merged: merged || stamped || parsed.generation !== startGen,
     testability: { insufficient: isInsufficient(issues), issues },
   };
 }
@@ -159,16 +185,16 @@ export async function inspectAndSaveConfig(
   configPath: string,
 ): Promise<InspectResult> {
   const config = loadConfig(configPath);
-  const result = await inspect(page, { model: config.map });
+  const result = await inspect(page, {
+    model: config.map,
+    appOrigin: originOfHref(config.url),
+  });
   if (isDocumentNotFound(page)) {
     reportDocumentNotFound(configPath, page);
     return result;
   }
-  persistTestabilityPage(configPath, {
-    path: pathnameOf(page),
-    foundAt: new Date().toISOString(),
-    insufficient: result.testability.insufficient,
-    issues: result.testability.issues,
+  await recordPageLedgers(configPath, page, result.testability, {
+    appOrigin: originOfHref(config.url),
   });
   const saved = persistSharedMap(configPath, result.model);
   return { ...result, model: saved.map };

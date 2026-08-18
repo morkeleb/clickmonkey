@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Duplicate role names</title>
+  </head>
+  <body>
+    <main data-testid="home">
+      <button type="button">Settings</button>
+      <button data-testid="open-tabs" type="button">Active tabs</button>
+      <dialog data-testid="tabs-dialog" aria-label="Active tabs: 1">
+        <button type="button" data-testid="popover-settings">Settings</button>
+      </dialog>
+    </main>
+    <script>
+      const dialog = document.querySelector("[data-testid='tabs-dialog']");
+      document.querySelector("[data-testid='open-tabs']").addEventListener("click", () => {
+        dialog.showModal();
+      });
+      document.querySelector("[data-testid='popover-settings']").addEventListener("click", () => {
+        dialog.dataset.picked = "popover";
+      });
+    </script>
+  </body>
+</html>

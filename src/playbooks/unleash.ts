@@ -1,19 +1,22 @@
 import { join } from "node:path";
 import { decideUnleashNasty } from "../brains/nasty.js";
-import { unleashBrain } from "../brains/unleash.js";
+import { mapBrain, unleashBrain } from "../brains/unleash.js";
 import type { Brain } from "../brains/types.js";
 import { bootRun } from "../executor/boot.js";
-import { createExecutor, type RunState } from "../executor/run.js";
+import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
 import { writeLog } from "../persist/log.js";
 import type { Config } from "../schema/config.js";
 import type { Finding } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
-import type { View } from "../schema/view.js";
+import { pickSeedPageId, resetToSeed } from "./seed.js";
 
 export const UNLEASH_DEFAULT_STEPS = 50;
 export const UNLEASH_CLI_STEPS = 200;
+export const MAP_CLI_STEPS = 200;
+
+export type UnleashMode = "navigate" | "mutate";
 
 export interface UnleashResult {
   ok: boolean;
@@ -21,24 +24,6 @@ export interface UnleashResult {
   log: Log;
   logPath: string;
   stepsUsed: number;
-}
-
-async function resetToSeed(
-  exec: ReturnType<typeof createExecutor>,
-  state: RunState,
-  seedPageId: string,
-): Promise<View> {
-  if (state.model.pages.some((p) => p.id === seedPageId)) {
-    const reset = await exec.runLine(`open ${seedPageId}`);
-    return reset.view;
-  }
-  await state.page.goto(state.config.url, { waitUntil: "domcontentloaded" });
-  return buildView({
-    page: state.page,
-    pageId: state.pageId,
-    surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
-    model: state.model,
-  });
 }
 
 export async function runUnleash(opts: {
@@ -50,21 +35,29 @@ export async function runUnleash(opts: {
   steps?: number;
   brain?: Brain;
   nasty?: boolean;
+  mode?: UnleashMode;
+  verbose?: boolean;
 }): Promise<UnleashResult> {
   const steps = opts.steps ?? UNLEASH_DEFAULT_STEPS;
+  const mode = opts.mode ?? "mutate";
   const brain =
     opts.brain ??
-    (opts.nasty
-      ? { name: "unleash-nasty", decide: (ctx) => decideUnleashNasty(ctx) }
-      : unleashBrain);
+    (mode === "navigate"
+      ? mapBrain
+      : opts.nasty
+        ? { name: "unleash-nasty", decide: (ctx) => decideUnleashNasty(ctx) }
+        : unleashBrain);
   const logPath = join(opts.outDir, "log.txt");
 
   return withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
-    const state = await bootRun(handle, opts.config, opts.outDir, { configPath: opts.configPath });
+    const state = await bootRun(handle, opts.config, opts.outDir, {
+      configPath: opts.configPath,
+      verbose: opts.verbose,
+    });
     const exec = createExecutor(state);
     if (state.config.intro.length > 0) await exec.runIntro();
 
-    const seedPageId = state.pageId;
+    const seedPageId = pickSeedPageId(state, state.pageId) ?? state.pageId;
     const findings: Finding[] = [];
 
     let view = await buildView({
@@ -72,6 +65,10 @@ export async function runUnleash(opts: {
       pageId: state.pageId,
       surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
       model: state.model,
+      appUrl: state.config.url,
+      fence: state.config.fence,
+      intro: state.config.intro,
+      skip: state.config.skip,
     });
 
     let stepsUsed = 0;

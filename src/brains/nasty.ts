@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatStep } from "../schema/dsl.js";
 import type { BrainContext, BrainDecision } from "./types.js";
+import { hopPage } from "./unleash.js";
 
 const defaultDir = join(dirname(fileURLToPath(import.meta.url)), "../../payloads");
 
@@ -89,9 +90,7 @@ export function decideUnleashNasty(ctx: BrainContext, rng: () => number = Math.r
   const fields = view.shown;
   const surface = view.surface;
 
-  if (actions.length === 0 && fields.length === 0) {
-    return { line: formatStep({ kind: "open", page: view.page }), note: "no legal widgets" };
-  }
+  if (actions.length === 0 && fields.length === 0) return hopPage(view, rng);
 
   const roll = rng();
   const wantFill = fields.length > 0 && roll >= 0.5 && roll < 0.8;

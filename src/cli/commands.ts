@@ -1,24 +1,35 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { bootRun } from "../executor/boot.js";
-import { createExecutor } from "../executor/run.js";
+import { attachOracles, createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView, formatView } from "../executor/view.js";
 import { saveConfig } from "../persist/config.js";
 import { writeLog, readLog } from "../persist/log.js";
+import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
+import { collectFindingCases, listRuns, resolveRunDirs } from "../persist/runs.js";
+import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
+import { newRunId } from "../persist/run-id.js";
+import { replaysDir, workspaceDir } from "../persist/workspace.js";
+import { isFindingsReport } from "../reports/fences.js";
+import { enrichWithBrain, renderFindingsReport } from "../reports/findings-report.js";
 import { emptyConfig } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
 import { inspectAndSaveConfig } from "../surveyor/inspect.js";
+import { originOfHref } from "../surveyor/ready.js";
 import {
   compactLog,
   replayLog,
+  replayReport,
+  formatReplayReport,
   ReplayLiveValidateError,
   runEmptyRequired,
   runExplore,
   runUnleash,
   EXPLORE_DEFAULT_MINUTES,
   EXPLORE_DEFAULT_STEPS,
+  MAP_CLI_STEPS,
   UNLEASH_CLI_STEPS,
 } from "../playbooks/index.js";
 import {
@@ -61,18 +72,28 @@ export async function cmdInspect(opts: {
   url?: string;
   headed?: boolean;
   timeout?: string;
+  verbose?: boolean;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = persistUrl(configPath, loadConfigOrExit(configPath), opts.url);
   const timeout = parseTimeout(opts.timeout);
-  const outDir = resolveOutDir();
+  const outDir = resolveOutDir(undefined, configPath);
   try {
     await withRun({ headed: opts.headed, timeout }, async (handle) => {
       if (config.intro.length > 0) {
-        const state = await bootRun(handle, config, outDir, { configPath });
+        const state = await bootRun(handle, config, outDir, {
+          configPath,
+          verbose: opts.verbose,
+        });
         const exec = createExecutor(state);
         await exec.runIntro();
       } else {
+        attachOracles({
+          page: handle.page,
+          pendingFindings: [],
+          configPath,
+          appOrigin: originOfHref(config.url),
+        });
         await handle.page.goto(config.url, { waitUntil: "domcontentloaded" });
       }
       const result = await inspectAndSaveConfig(handle.page, configPath);
@@ -95,14 +116,18 @@ export async function cmdView(opts: {
   url?: string;
   headed?: boolean;
   timeout?: string;
+  verbose?: boolean;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
   const timeout = parseTimeout(opts.timeout);
-  const outDir = resolveOutDir();
+  const outDir = resolveOutDir(undefined, configPath);
   try {
     await withRun({ headed: opts.headed, timeout }, async (handle) => {
-      const state = await bootRun(handle, config, outDir, { configPath });
+      const state = await bootRun(handle, config, outDir, {
+        configPath,
+        verbose: opts.verbose,
+      });
       const exec = createExecutor(state);
       if (state.config.intro.length > 0) await exec.runIntro();
       const view = await buildView({
@@ -110,6 +135,10 @@ export async function cmdView(opts: {
         pageId: state.pageId,
         surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
         model: state.model,
+        appUrl: state.config.url,
+        fence: state.config.fence,
+        intro: state.config.intro,
+        skip: state.config.skip,
       });
       process.stdout.write(formatView(view));
     });
@@ -121,7 +150,14 @@ export async function cmdView(opts: {
 
 export async function cmdStep(
   line: string | undefined,
-  opts: { config?: string; url?: string; out?: string; headed?: boolean; timeout?: string },
+  opts: {
+    config?: string;
+    url?: string;
+    out?: string;
+    headed?: boolean;
+    timeout?: string;
+    verbose?: boolean;
+  },
 ): Promise<number> {
   if (!line) {
     printUsage("Usage: clickmonkey step '<line>' [--config] [--url] [--out]");
@@ -129,12 +165,15 @@ export async function cmdStep(
   }
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
-  const outDir = resolveOutDir(opts.out);
+  const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   const timeout = parseTimeout(opts.timeout);
   try {
     return await withRun({ headed: opts.headed, timeout }, async (handle) => {
-      const state = await bootRun(handle, config, outDir, { configPath });
+      const state = await bootRun(handle, config, outDir, {
+        configPath,
+        verbose: opts.verbose,
+      });
       const exec = createExecutor(state);
       if (state.config.intro.length > 0) await exec.runIntro();
       const result = await exec.runLine(line);
@@ -161,7 +200,14 @@ export async function cmdStep(
 
 export async function cmdPlaybook(
   name: string | undefined,
-  opts: { config?: string; url?: string; out?: string; headed?: boolean; timeout?: string },
+  opts: {
+    config?: string;
+    url?: string;
+    out?: string;
+    headed?: boolean;
+    timeout?: string;
+    verbose?: boolean;
+  },
 ): Promise<number> {
   if (!name) {
     printUsage("Usage: clickmonkey playbook empty-required [--config] [--url] [--out]");
@@ -170,7 +216,7 @@ export async function cmdPlaybook(
   if (name !== "empty-required") fail(EXIT_USAGE, `Unknown playbook: ${name}`);
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
-  const outDir = resolveOutDir(opts.out);
+  const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
     const result = await runEmptyRequired({
@@ -179,6 +225,41 @@ export async function cmdPlaybook(
       outDir,
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
+      verbose: opts.verbose,
+    });
+    process.stdout.write(`${result.logPath}\n`);
+    if (result.findings[0]) {
+      process.stderr.write(`${result.findings[0].kind}: ${result.findings[0].message}\n`);
+    }
+    return result.ok ? EXIT_OK : EXIT_FINDINGS;
+  } catch (err) {
+    fail(EXIT_FINDINGS, errMessage(err));
+  }
+}
+
+export async function cmdMap(opts: {
+  config?: string;
+  url?: string;
+  out?: string;
+  headed?: boolean;
+  timeout?: string;
+  steps?: string;
+  verbose?: boolean;
+}): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  const config = withUrl(loadConfigOrExit(configPath), opts.url);
+  const outDir = resolveOutDir(opts.out, configPath);
+  mkdirSync(outDir, { recursive: true });
+  try {
+    const result = await runUnleash({
+      config,
+      configPath,
+      outDir,
+      headed: opts.headed,
+      timeout: parseTimeout(opts.timeout),
+      steps: parseSteps(opts.steps, MAP_CLI_STEPS),
+      mode: "navigate",
+      verbose: opts.verbose,
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
@@ -198,10 +279,11 @@ export async function cmdUnleash(opts: {
   timeout?: string;
   steps?: string;
   nasty?: boolean;
+  verbose?: boolean;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
-  const outDir = resolveOutDir(opts.out);
+  const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
     const result = await runUnleash({
@@ -212,6 +294,7 @@ export async function cmdUnleash(opts: {
       timeout: parseTimeout(opts.timeout),
       steps: parseSteps(opts.steps, UNLEASH_CLI_STEPS),
       nasty: opts.nasty,
+      verbose: opts.verbose,
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
@@ -233,6 +316,7 @@ export async function cmdExplore(opts: {
   minutes?: string;
   charter?: string;
   skills?: string;
+  verbose?: boolean;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
@@ -246,7 +330,7 @@ export async function cmdExplore(opts: {
     if (!existsSync(path)) fail(EXIT_USAGE, `skills not found: ${path}`);
     skills = readFileSync(path, "utf8");
   }
-  const outDir = resolveOutDir(opts.out);
+  const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
     const result = await runExplore({
@@ -259,6 +343,7 @@ export async function cmdExplore(opts: {
       minutes: parseMinutes(opts.minutes, EXPLORE_DEFAULT_MINUTES),
       charter: opts.charter,
       skills,
+      verbose: opts.verbose,
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
@@ -270,21 +355,110 @@ export async function cmdExplore(opts: {
   }
 }
 
+export async function cmdReport(opts: {
+  config?: string;
+  out?: string;
+  runs?: string;
+  all?: boolean;
+}): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  const config = loadConfigOrExit(configPath);
+  const listed = listRuns(configPath);
+  let selectors: string[];
+  if (opts.runs) {
+    selectors = opts.runs.split(",").map((s) => s.trim()).filter(Boolean);
+  } else if (opts.all) {
+    selectors = listed.filter((r) => r.findingCount > 0).map((r) => r.id);
+  } else {
+    const { promptRuns } = await import("./prompt-runs.js");
+    try {
+      selectors = await promptRuns(listed);
+    } catch (err) {
+      fail(EXIT_USAGE, errMessage(err));
+    }
+  }
+  if (selectors.length === 0) fail(EXIT_USAGE, "no runs selected (use --all, --runs, or pick interactively)");
+  let runDirs: string[];
+  try {
+    runDirs = resolveRunDirs(configPath, selectors);
+  } catch (err) {
+    fail(EXIT_USAGE, errMessage(err));
+  }
+  const cases = collectFindingCases(runDirs);
+  const outPath = opts.out
+    ? resolve(process.cwd(), opts.out)
+    : resolve(workspaceDir(configPath), "findings.md");
+  mkdirSync(dirname(outPath), { recursive: true });
+  let summary: string | undefined;
+  let extras: Map<string, { title?: string; expected?: string; actual?: string; why?: string }> | undefined;
+  if (config.brain) {
+    try {
+      const enriched = await enrichWithBrain(cases, config);
+      summary = enriched.summary || undefined;
+      extras = enriched.extras;
+    } catch (err) {
+      process.stderr.write(`brain skipped: ${errMessage(err)}\n`);
+    }
+  }
+  const markdown = renderFindingsReport(
+    cases,
+    {
+      url: config.url,
+      generatedAt: new Date().toISOString(),
+      runIds: runDirs.map((d) => d.split(/[/\\]/).pop() ?? d),
+      ...(config.brain?.model ? { brain: config.brain.model } : {}),
+      testability: loadTestabilityReport(testabilityReportPath(configPath)),
+      quality: loadQualityReport(qualityReportPath(configPath)),
+    },
+    outPath,
+    extras,
+    summary,
+  );
+  writeFileSync(outPath, markdown, "utf8");
+  process.stdout.write(`${outPath}\n`);
+  return cases.length > 0 ? EXIT_FINDINGS : EXIT_OK;
+}
+
 export async function cmdReplay(
   logPath: string | undefined,
-  opts: { config?: string; url?: string; out?: string; headed?: boolean; timeout?: string },
+  opts: {
+    config?: string;
+    url?: string;
+    out?: string;
+    headed?: boolean;
+    timeout?: string;
+    verbose?: boolean;
+  },
 ): Promise<number> {
   if (!logPath) {
-    printUsage("Usage: clickmonkey replay <log> [--config] [--url] [--out]");
+    printUsage("Usage: clickmonkey replay <log|report.md> [--config] [--url] [--out]");
     return EXIT_USAGE;
   }
   const resolvedLog = resolve(process.cwd(), logPath);
   if (!existsSync(resolvedLog)) fail(EXIT_USAGE, `log not found: ${resolvedLog}`);
   const configPath = resolveConfigPath(opts.config);
-  const outDir = resolveOutDir(opts.out);
-  mkdirSync(outDir, { recursive: true });
+  const text = readFileSync(resolvedLog, "utf8");
   try {
     const config = withUrl(loadConfigOrExit(configPath), opts.url);
+    if (isFindingsReport(text)) {
+      const outDir = opts.out
+        ? resolve(process.cwd(), opts.out)
+        : resolve(replaysDir(configPath), newRunId());
+      mkdirSync(outDir, { recursive: true });
+      const result = await replayReport({
+        markdown: text,
+        reportPath: resolvedLog,
+        config,
+        configPath,
+        outDir,
+        headed: opts.headed,
+        timeout: parseTimeout(opts.timeout),
+      });
+      process.stdout.write(formatReplayReport(result));
+      return result.ok ? EXIT_OK : EXIT_FINDINGS;
+    }
+    const outDir = resolveOutDir(opts.out, configPath);
+    mkdirSync(outDir, { recursive: true });
     const result = await replayLog({
       config,
       configPath,
@@ -292,6 +466,7 @@ export async function cmdReplay(
       outDir,
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
+      verbose: opts.verbose,
     });
     if (result.reproduced) {
       process.stderr.write(`reproduced ${result.reproduced.kind} at step ${result.reproduced.stepIndex}\n`);

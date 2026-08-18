@@ -101,4 +101,41 @@ describe("inspect", () => {
       await close();
     }
   });
+
+  it("names icon+label buttons by visible text, not aria-hidden ligatures", async () => {
+    const { baseUrl, close } = await serveSite("icon-nav");
+    try {
+      await withRun({}, async ({ page }) => {
+        await page.goto(`${baseUrl}/`);
+        const result = await inspect(page, { model: emptyDraft("icon") });
+        const pageSurf = result.model.pages[0]?.surfaces.find((s) => s.kind === "page");
+        assert.ok(pageSurf);
+        const names = pageSurf.actions.map((a) => a.name ?? a.value);
+        assert.ok(names.includes("Banking"), `got ${names.join(",")}`);
+        assert.ok(names.includes("Action Items"), `got ${names.join(",")}`);
+        assert.ok(!names.some((n) => n.includes("account_balance") || n.includes("expand_more")));
+        const banking = pageSurf.actions.find((a) => a.name === "Banking");
+        assert.equal(banking?.by, "role");
+        assert.equal(banking?.value, "button");
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("picks a role locator on a page with no testid, main, or heading", async () => {
+    const { baseUrl, close } = await serveSite("bare");
+    try {
+      await withRun({}, async ({ page }) => {
+        await page.goto(`${baseUrl}/`);
+        const ready = await determineReady(page);
+        assert.equal(ready.by, "role");
+        const result = await inspect(page, { model: emptyDraft("bare") });
+        assert.equal(result.pageId, "home");
+        assert.equal(result.model.pages[0]?.ready.by, "role");
+      });
+    } finally {
+      await close();
+    }
+  });
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { PageModel } from "../src/schema/index.js";
+import { emptyDraft, PageModel } from "../src/schema/index.js";
 import type { PageModel as PageModelType } from "../src/schema/page-model.js";
 import {
   identityKey,
@@ -208,5 +208,54 @@ describe("mergeTrees", () => {
     assert.ok(page.surfaces[0]?.actions.some((x) => x.id === "openCreate"));
     const submit = page.surfaces.find((s) => s.id === "createDialog")?.actions.filter((x) => x.value === "submit");
     assert.equal(submit?.length, 1);
+  });
+
+  it("keeps same-path pages on different origins apart and stamps origin onto a legacy page", () => {
+    const base = loadHome();
+    const idp = structuredClone(base.pages[0]!);
+    idp.id = "u_login";
+    idp.path = "/u/login";
+    idp.origin = "https://idp.example.com";
+    idp.ready = { by: "name", value: "username" };
+    idp.surfaces = [{ id: "page", kind: "page", fields: [], actions: [] }];
+    const incoming = structuredClone(base);
+    incoming.pages = [idp];
+    const merged = mergeTrees(base, incoming);
+    assert.equal(merged.pages.length, 2);
+    assert.ok(merged.pages.some((p) => p.id === "home" && !p.origin));
+    assert.ok(merged.pages.some((p) => p.id === "u_login" && p.origin === "https://idp.example.com"));
+
+    const legacy = structuredClone(idp);
+    delete legacy.origin;
+    const stamped = mergeTrees({ ...emptyDraft("x"), pages: [legacy] }, incoming);
+    assert.equal(stamped.pages.length, 1);
+    assert.equal(stamped.pages[0]?.origin, "https://idp.example.com");
+  });
+
+  it("does not merge an origin-less incoming page into a foreign-origin twin", () => {
+    const idp = structuredClone(loadHome().pages[0]!);
+    idp.id = "login";
+    idp.path = "/login";
+    idp.origin = "https://idp.example.com";
+    idp.surfaces = [{ id: "page", kind: "page", fields: [], actions: [] }];
+    const app = structuredClone(idp);
+    delete app.origin;
+    app.id = "login";
+    app.surfaces = [
+      {
+        id: "page",
+        kind: "page",
+        fields: [],
+        actions: [{ id: "app_go", by: "testId", value: "app-go", status: "ok" }],
+      },
+    ];
+    const merged = mergeTrees({ ...emptyDraft("x"), pages: [idp] }, { ...emptyDraft("x"), pages: [app] });
+    assert.equal(merged.pages.length, 2);
+    const foreign = merged.pages.find((p) => p.origin === "https://idp.example.com");
+    const leash = merged.pages.find((p) => p.path === "/login" && !p.origin);
+    assert.ok(foreign);
+    assert.ok(leash);
+    assert.equal(foreign.surfaces[0]?.actions.some((a) => a.id === "app_go"), false);
+    assert.ok(leash.surfaces[0]?.actions.some((a) => a.id === "app_go"));
   });
 });

@@ -51,6 +51,7 @@ describe("formatView", () => {
   it("prints labels and a content block", () => {
     const view = View.parse({
       page: "home",
+      pages: ["home", "about_html"],
       surface: "page",
       stack: ["page"],
       shown: [{ id: "qty", value: "1", type: "number", label: "Quantity" }],
@@ -62,12 +63,34 @@ describe("formatView", () => {
       },
     });
     const text = formatView(view);
+    assert.match(text, /pages: home, about_html/);
     assert.match(text, /qty: "1"  \[number\]  Quantity/);
     assert.match(text, /add_to_cart  Add to bag/);
     assert.match(text, /content:\n {2}- heading "Shop"/);
     assert.match(text, / {2}- text: "\$79\.99"/);
     assert.match(text, /testability: insufficient/);
     assert.match(text, /opaqueControl  button/);
+  });
+
+  it("prints look fonts and covered widgets", () => {
+    const view = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [{ id: "go" }, { id: "ok" }],
+      look: {
+        fonts: [
+          { family: "Arial", size: "16px", weight: "400", count: 4 },
+          { family: "Times New Roman", size: "20px", weight: "700", count: 1 },
+        ],
+        covered: [{ id: "go", by: "blocker" }],
+      },
+    });
+    const text = formatView(view);
+    assert.match(text, /look:/);
+    assert.match(text, /fonts: Arial 16px\/400 \(4\), Times New Roman 20px\/700 \(1\)/);
+    assert.match(text, /covered: go ← blocker/);
   });
 });
 
@@ -100,6 +123,7 @@ describe("buildView", () => {
           model: homeModel,
         });
         assert.equal(view.page, "home");
+        assert.deepEqual(view.pages, ["home"]);
         assert.equal(view.surface, "createDialog");
         assert.deepEqual(view.stack, ["page", "createDialog"]);
         const name = view.shown.find((f) => f.id === "name");
@@ -141,6 +165,44 @@ describe("buildView", () => {
         });
         assert.ok(view.content);
         assert.match(view.content, /Name is required/);
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("omits mapped actions that are hidden or disabled", async () => {
+    const { baseUrl, close } = await serveSite("validates");
+    try {
+      await withRun({}, async ({ page }) => {
+        await page.goto(baseUrl);
+        await page.evaluate(() => {
+          const hidden = document.createElement("button");
+          hidden.setAttribute("data-testid", "ghost");
+          hidden.style.display = "none";
+          hidden.textContent = "Ghost";
+          document.body.appendChild(hidden);
+          const dead = document.createElement("button");
+          dead.setAttribute("data-testid", "dead");
+          dead.disabled = true;
+          dead.textContent = "Dead";
+          document.body.appendChild(dead);
+        });
+        const model = structuredClone(homeModel);
+        const pageSurf = model.pages[0]?.surfaces.find((s) => s.kind === "page");
+        pageSurf?.actions.push(
+          { id: "ghost", by: "testId", value: "ghost", status: "ok" },
+          { id: "dead", by: "testId", value: "dead", status: "ok" },
+        );
+        const view = await buildView({
+          page,
+          pageId: "home",
+          surfaceStack: ["page"],
+          model,
+        });
+        assert.equal(view.actions.some((a) => a.id === "ghost"), false);
+        assert.equal(view.actions.some((a) => a.id === "dead"), false);
+        assert.ok(view.actions.some((a) => a.id === "openCreate"));
       });
     } finally {
       await close();

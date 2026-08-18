@@ -1,7 +1,9 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { persistFinding } from "../persist/finding.js";
+import { persistQualityRuntime } from "../persist/quality.js";
+import { normalizeQualityMessage } from "../schema/quality.js";
 import { compactLog } from "../playbooks/compact.js";
 import { parseLine, formatLog, formatStep } from "../schema/dsl.js";
 import { findingId, severityForKind, type Finding, type FindingKind } from "../schema/finding.js";
@@ -15,6 +17,10 @@ import { reportDocumentNotFound } from "../persist/broken.js";
 import { attachPageErrorOracle } from "../oracles/page-error.js";
 import { checkFence } from "./fence.js";
 import { performStep, syncPageFromUrl, syncSurfaceStack, type StepFailure } from "./steps.js";
+import { ledgerOrigin, originOfHref } from "../surveyor/ready.js";
+import { hoppablePages, hopContextOf } from "./hop.js";
+import { logLand, logStepDone, logStepStart } from "./nav-log.js";
+import { dumpVerboseState } from "./verbose.js";
 import { buildView } from "./view.js";
 
 export type AfterStep = (state: RunState) => Promise<void>;
@@ -38,6 +44,11 @@ export interface RunState {
   lastScreenshotPath?: string;
   /** Intro is how we enter the leash; fence applies after it. */
   inIntro?: boolean;
+  navMeta?: { step?: string; pageId?: string; phase?: string };
+  navLogPath?: string;
+  /** Per-step HTML + view dumps under outDir/verbose/. */
+  verbose?: boolean;
+  verboseSeq?: number;
 }
 
 export interface StepResult {
@@ -49,25 +60,117 @@ export interface StepResult {
 
 const attachedPages = new WeakSet<Page>();
 
-function attachOracles(state: RunState): void {
+/** Wait until the URL stops changing (OAuth callback → app). */
+async function waitForUrlSettle(page: Page, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let last = page.url();
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return;
+    const changed = await page
+      .waitForURL((u) => u.href !== last, { timeout: Math.min(800, remaining) })
+      .then(() => true)
+      .catch(() => false);
+    if (!changed) return;
+    last = page.url();
+  }
+}
+
+async function pageLooksSettled(page: Page, startHref: string, appOrigin: string): Promise<boolean> {
+  const href = page.url();
+  if (originOfHref(href) !== appOrigin) return false;
+  if (href === startHref) return false;
+  const n = await page
+    .locator("a[href], button, input, select, textarea, [role='button'], [role='link']")
+    .count()
+    .catch(() => 0);
+  return n > 0;
+}
+
+/** After intro, leave the start URL and any empty redirect page. */
+async function waitForPostIntro(
+  page: Page,
+  appOrigin: string | undefined,
+  startHref: string,
+  timeoutMs: number,
+): Promise<void> {
+  if (!appOrigin) {
+    await waitForUrlSettle(page, timeoutMs);
+    return;
+  }
+  if (originOfHref(page.url()) !== appOrigin) {
+    await page
+      .waitForURL((u) => u.origin === appOrigin, { timeout: Math.min(timeoutMs, 15_000) })
+      .catch(() => undefined);
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await waitForUrlSettle(page, Math.min(800, deadline - Date.now()));
+    if (await pageLooksSettled(page, startHref, appOrigin)) return;
+    const last = page.url();
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return;
+    await page
+      .waitForURL((u) => u.href !== last, { timeout: Math.min(1_500, remaining) })
+      .catch(() => undefined);
+  }
+}
+
+export function attachOracles(
+  state: Pick<RunState, "page" | "pendingFindings" | "configPath" | "replay"> & {
+    appOrigin?: string;
+  },
+): void {
   if (attachedPages.has(state.page)) return;
   attachedPages.add(state.page);
   const push = (f: OracleFinding) => {
     state.pendingFindings.push(f);
   };
   attachHttpOracle(state.page, push);
-  attachPageErrorOracle(state.page, push);
+  attachPageErrorOracle(state.page, push, (event) => {
+    if (!state.configPath || state.replay) return;
+    let pathName = "/";
+    try {
+      pathName = new URL(event.url).pathname || "/";
+    } catch {
+      pathName = "/";
+    }
+    const origin = ledgerOrigin(event.url, state.appOrigin);
+    const now = new Date().toISOString();
+    try {
+      persistQualityRuntime(
+        state.configPath,
+        { path: pathName, ...(origin ? { origin } : {}) },
+        {
+          source: event.source,
+          rule: event.rule,
+          severity: event.severity,
+          message: normalizeQualityMessage(event.message),
+          count: 1,
+          firstSeen: now,
+          lastSeen: now,
+        },
+      );
+    } catch {
+      // ledger write must not stall the walk
+    }
+  });
 }
 
 async function screenshotFinding(
   state: RunState,
   partial: StepFailure | OracleFinding | (Partial<Finding> & { kind: FindingKind; message: string }),
+  step?: Step,
 ): Promise<Finding> {
   const stepIndex = state.log.steps.length;
   const kind = partial.kind;
   const id = findingId(stepIndex, kind);
   mkdirSync(state.outDir, { recursive: true });
-  let screenshotPath = state.lastScreenshotPath;
+  const liveShot =
+    step?.kind === "screenshot" && state.lastScreenshotPath && existsSync(state.lastScreenshotPath)
+      ? state.lastScreenshotPath
+      : undefined;
+  let screenshotPath = liveShot;
   if (!screenshotPath) {
     screenshotPath = join(state.outDir, `.shot-${id}.png`);
     await state.page.screenshot({ path: screenshotPath }).catch(() => undefined);
@@ -119,14 +222,18 @@ async function finish(
 
   let finding: Finding | undefined;
   if (fenceHit !== "ok") {
-    finding = await screenshotFinding(state, {
-      kind: "fenceViolation",
-      message:
-        fenceHit === "blacklist"
-          ? `URL matches fence blacklist: ${href}`
-          : `URL left fence path: ${href}`,
-      url: href,
-    });
+    finding = await screenshotFinding(
+      state,
+      {
+        kind: "fenceViolation",
+        message:
+          fenceHit === "blacklist"
+            ? `URL matches fence blacklist: ${href}`
+            : `URL left fence path: ${href}`,
+        url: href,
+      },
+      step,
+    );
   } else if (isDocumentNotFound(state.page)) {
     if (state.configPath) reportDocumentNotFound(state.configPath, state.page);
     const pending404 = state.pendingFindings.find((f) => f.kind === "notFound");
@@ -138,14 +245,15 @@ async function finish(
         httpStatus: 404,
         url: href,
       },
+      step,
     );
     state.pendingFindings = state.pendingFindings.filter((f) => f !== pending404);
   } else {
     await state.afterStep?.(state);
     if (stepFailure) {
-      finding = await screenshotFinding(state, stepFailure);
+      finding = await screenshotFinding(state, stepFailure, step);
     } else if (state.pendingFindings[0]) {
-      finding = await screenshotFinding(state, state.pendingFindings.shift()!);
+      finding = await screenshotFinding(state, state.pendingFindings.shift()!, step);
     }
   }
 
@@ -164,6 +272,9 @@ async function finish(
         }),
       ),
     });
+    if (step.kind === "screenshot" && finding.screenshotPath) {
+      state.lastScreenshotPath = finding.screenshotPath;
+    }
   }
 
   state.log.steps.push(step);
@@ -173,12 +284,18 @@ async function finish(
     pageId: state.pageId,
     surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
     model: state.model,
+    appUrl: state.config.url,
+    fence: state.config.fence,
+    intro: state.config.intro,
+    skip: state.config.skip,
     last: {
       step: formatStep(step),
       ok: !finding,
       ...(finding ? { finding: finding.kind } : {}),
     },
   });
+
+  await dumpVerboseState(state, formatStep(step), view);
 
   return { ok: !finding, step, finding, view };
 }
@@ -188,9 +305,24 @@ export function createExecutor(state: RunState): {
   runLine(line: string): Promise<StepResult>;
   runIntro(): Promise<void>;
 } {
-  attachOracles(state);
+  attachOracles({ ...state, appOrigin: originOfHref(state.config.url) });
 
   async function runStep(step: Step): Promise<StepResult> {
+    const line = formatStep(step);
+    const phase = state.inIntro ? "intro" : "walk";
+    if (state.navMeta) {
+      state.navMeta.step = line;
+      state.navMeta.pageId = state.pageId;
+      state.navMeta.phase = phase;
+    }
+    const started = state.navLogPath
+      ? logStepStart(state.navLogPath, {
+          line,
+          pageId: state.pageId,
+          phase,
+          echo: process.stderr,
+        })
+      : Date.now();
     let failure: StepFailure | undefined;
     try {
       failure = await performStep(state, step);
@@ -200,7 +332,17 @@ export function createExecutor(state: RunState): {
         message: err instanceof Error ? err.message : String(err),
       };
     }
-    return finish(state, step, failure);
+    const result = await finish(state, step, failure);
+    if (state.navLogPath) {
+      logStepDone(state.navLogPath, {
+        line,
+        ok: result.ok,
+        started,
+        ...(result.finding ? { finding: result.finding.kind } : {}),
+        echo: process.stderr,
+      });
+    }
+    return result;
   }
 
   async function runLine(line: string): Promise<StepResult> {
@@ -213,7 +355,10 @@ export function createExecutor(state: RunState): {
 
   async function runIntro(): Promise<void> {
     state.inIntro = true;
+    if (state.navMeta) state.navMeta.phase = "intro";
     const startHref = state.page.url();
+    const appOrigin = originOfHref(state.config.url);
+    let departed = false;
     try {
       for (const line of state.config.intro) {
         const parsed = parseLine(line);
@@ -222,16 +367,50 @@ export function createExecutor(state: RunState): {
         if (!result.ok) {
           throw new Error(result.finding?.message ?? `intro step failed: ${formatStep(parsed)}`);
         }
+        if (state.page.url() !== startHref) departed = true;
       }
       if (state.page.url() === startHref) {
         await state.page
           .waitForURL((u) => u.href !== startHref, { timeout: 10_000 })
           .catch(() => undefined);
       }
+      if (state.page.url() !== startHref) departed = true;
+      await waitForPostIntro(state.page, appOrigin, startHref, 15_000);
     } finally {
       state.inIntro = false;
     }
     await state.afterStep?.(state);
+    if (state.navMeta) {
+      state.navMeta.phase = "walk";
+      state.navMeta.step = undefined;
+      state.navMeta.pageId = state.pageId;
+    }
+    const href = state.page.url();
+    if (href !== startHref) departed = true;
+    if (!departed) {
+      throw new Error(`intro did not leave ${startHref}; still at ${href}`);
+    }
+    if (state.navLogPath) {
+      logLand(state.navLogPath, {
+        url: href,
+        pageId: state.pageId,
+        hoppable: hoppablePages(state.model.pages, hopContextOf(state)).map((p) => p.id),
+        echo: process.stderr,
+      });
+    }
+    if (state.verbose) {
+      const landView = await buildView({
+        page: state.page,
+        pageId: state.pageId,
+        surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
+        model: state.model,
+        appUrl: state.config.url,
+        fence: state.config.fence,
+        intro: state.config.intro,
+        skip: state.config.skip,
+      });
+      await dumpVerboseState(state, "land", landView);
+    }
   }
 
   return { runStep, runLine, runIntro };

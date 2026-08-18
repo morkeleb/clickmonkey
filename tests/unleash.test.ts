@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { decideUnleash } from "../src/brains/unleash.js";
+import { decideMap, decideUnleash, isWriteAction } from "../src/brains/unleash.js";
 import { parseLine } from "../src/schema/dsl.js";
 import type { View } from "../src/schema/view.js";
+import { loadConfig } from "../src/persist/config.js";
 import { serveSite } from "./helpers/fixture-server.js";
 
 const cli = fileURLToPath(new URL("../src/cli/index.ts", import.meta.url));
@@ -77,6 +78,110 @@ describe("unleash brain", () => {
       assert.match(decision.line, /^click page\.open_create$/);
     }
   });
+
+  it("hops to another page when the current view is empty", () => {
+    const view = viewOf({
+      page: "settings",
+      pages: ["home", "settings"],
+    });
+    assert.equal(decideUnleash({ view, stepsUsed: 0 }).line, "open home");
+    const afterHop = viewOf({
+      page: "settings",
+      pages: ["home", "settings"],
+      last: { step: "open settings", ok: true },
+    });
+    assert.equal(decideUnleash({ view: afterHop, stepsUsed: 1 }).line, "screenshot");
+  });
+});
+
+describe("map brain", () => {
+  it("treats submit/save as writes and dialog openers as navigation", () => {
+    assert.equal(isWriteAction({ id: "submit" }), true);
+    assert.equal(isWriteAction({ id: "save", label: "Save changes" }), true);
+    assert.equal(isWriteAction({ id: "add_to_cart" }), true);
+    assert.equal(isWriteAction({ id: "button_sign_out" }), true);
+    assert.equal(isWriteAction({ id: "logout", label: "Log out" }), true);
+    assert.equal(isWriteAction({ id: "button_close_panel", label: "Close panel" }), true);
+    assert.equal(isWriteAction({ id: "button_collapse_menu" }), true);
+    assert.equal(isWriteAction({ id: "open_create", opens: "create" }), false);
+    assert.equal(isWriteAction({ id: "about" }), false);
+    assert.equal(isWriteAction({ id: "login" }), false);
+    assert.equal(isWriteAction({ id: "sign_in" }), false);
+  });
+
+  it("never fills and never clicks write actions", () => {
+    const view = viewOf({
+      pages: ["home", "about_html"],
+      shown: [{ id: "q", value: "", type: "text" }],
+      actions: [{ id: "submit" }, { id: "about" }, { id: "open_create", opens: "create" }],
+    });
+    const legal = new Set(["about", "open_create"]);
+    for (let i = 0; i < 80; i++) {
+      const decision = decideMap({ view, stepsUsed: i });
+      const parsed = parseLine(decision.line);
+      assert.ok(parsed && !("comment" in parsed), decision.line);
+      assert.notEqual(parsed.kind, "fill", decision.line);
+      if (parsed.kind === "click") {
+        assert.ok(legal.has(parsed.id), parsed.id);
+      }
+    }
+  });
+
+  it("walks live widgets even when the current page is not a hop target", () => {
+    const view = viewOf({
+      page: "login",
+      pages: ["home"],
+      actions: [{ id: "auth0_login_button" }],
+    });
+    for (let i = 0; i < 20; i++) {
+      const decision = decideMap({ view, stepsUsed: i });
+      assert.equal(decision.line, "click page.auth0_login_button");
+    }
+    const emptyEntry = viewOf({
+      page: "login",
+      pages: ["home"],
+      actions: [],
+    });
+    assert.equal(decideMap({ view: emptyEntry, stepsUsed: 0 }).line, "open home");
+    const stuck = viewOf({
+      page: "callback",
+      pages: [],
+      actions: [],
+    });
+    assert.equal(decideMap({ view: stuck, stepsUsed: 0 }).line, "screenshot");
+  });
+
+  it("hops to another known page when only writes remain", () => {
+    const view = viewOf({
+      pages: ["home", "about_html"],
+      shown: [{ id: "q", value: "", type: "text" }],
+      actions: [{ id: "submit" }],
+    });
+    for (let i = 0; i < 20; i++) {
+      const decision = decideMap({ view, stepsUsed: i });
+      assert.equal(decision.line, "open about_html");
+    }
+  });
+
+  it("prefers actions inside a navigation landmark", () => {
+    const view = viewOf({
+      pages: ["home"],
+      actions: [{ id: "your_account" }, { id: "collections", nav: true }],
+    });
+    for (let i = 0; i < 20; i++) {
+      const decision = decideMap({ view, stepsUsed: i }, () => 0.1);
+      assert.equal(decision.line, "click page.collections");
+    }
+  });
+
+  it("does not ping-pong open after a hop that found no widgets", () => {
+    const view = viewOf({
+      page: "home",
+      pages: ["home", "settings"],
+      last: { step: "open home", ok: true },
+    });
+    assert.equal(decideMap({ view, stepsUsed: 1 }).line, "screenshot");
+  });
 });
 
 describe("clickmonkey unleash", () => {
@@ -97,6 +202,37 @@ describe("clickmonkey unleash", () => {
       assert.ok(existsSync(logPath), "log.txt");
       const log = readFileSync(logPath, "utf8");
       assert.match(log, /^(click|fill) /m);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+      await close();
+    }
+  });
+});
+
+describe("clickmonkey map", () => {
+  it("walks nav links, grows the map, and never fills or submits", async () => {
+    const { baseUrl, close } = await serveSite("nav");
+    const tmp = mkdtempSync(join(tmpdir(), "cm-map-"));
+    const cfg = join(tmp, "clickmonkey.json");
+    try {
+      const init = await run(["init", "--url", baseUrl, "--config", cfg]);
+      assert.equal(init.status, 0, init.stderr);
+      const out = join(tmp, "out");
+      const result = await run(["map", "--steps", "12", "--config", cfg, "--out", out]);
+      assert.ok(
+        result.status === 0 || result.status === 1,
+        `map exited ${result.status}\n${result.stdout}\n${result.stderr}`,
+      );
+      const logPath = join(out, "log.txt");
+      assert.ok(existsSync(logPath), "log.txt");
+      const log = readFileSync(logPath, "utf8");
+      assert.doesNotMatch(log, /^fill /m);
+      assert.doesNotMatch(log, /click page\.submit/);
+      assert.match(log, /^(click|open) /m);
+      const saved = loadConfig(cfg);
+      const ids = saved.map.pages.map((p) => p.id);
+      assert.ok(ids.includes("home"), `pages ${ids.join(",")}`);
+      assert.ok(ids.includes("about_html"), `pages ${ids.join(",")}`);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
       await close();

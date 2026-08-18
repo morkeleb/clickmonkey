@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { emptyConfig } from "../src/schema/config.js";
-import { persistSharedMap, saveConfig } from "../src/persist/config.js";
+import { loadConfig, persistSharedMap, saveConfig } from "../src/persist/config.js";
+import { mapPath } from "../src/persist/workspace.js";
 import { PageModel } from "../src/schema/page-model.js";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 function validHome() {
@@ -42,11 +42,13 @@ describe("persistSharedMap", () => {
       Promise.resolve().then(() => persistSharedMap(path, login)),
     ]);
 
-    const { loadConfig } = await import("../src/persist/config.js");
     const disk = loadConfig(path);
     assert.ok(disk.map.pages.some((p) => p.id === "login"));
     const home = disk.map.pages.find((p) => p.id === "home");
     assert.ok(home?.surfaces[0]?.actions.some((a) => a.id === "site_footer"));
     assert.ok(home?.surfaces[0]?.actions.some((a) => a.id === "openCreate"));
+    assert.ok(existsSync(mapPath(path)));
+    const leash = JSON.parse(readFileSync(path, "utf8")) as { map?: unknown };
+    assert.equal(leash.map, undefined);
   });
 });

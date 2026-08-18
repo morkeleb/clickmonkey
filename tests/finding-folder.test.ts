@@ -39,6 +39,34 @@ describe("finding folder", () => {
     assert.equal(parsed.tapePath, join(dir, "replay.log"));
   });
 
+  it("does not unlink a screenshot that already lives under findings/", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-keep-"));
+    const first: Finding = {
+      schemaVersion: 1,
+      id: findingId(1, "uiIssue"),
+      kind: "uiIssue",
+      message: "overlap",
+      tapePath: join(outDir, "replay.log"),
+      stepIndex: 1,
+    };
+    const shot = join(outDir, "tmp.png");
+    writeFileSync(shot, "png-a");
+    persistFinding(outDir, first, { screenshotPath: shot });
+    const kept = first.screenshotPath!;
+    assert.ok(existsSync(kept));
+    const second: Finding = {
+      schemaVersion: 1,
+      id: findingId(2, "expectFailed"),
+      kind: "expectFailed",
+      message: "expected invalid",
+      tapePath: join(outDir, "replay.log"),
+      stepIndex: 2,
+    };
+    persistFinding(outDir, second, { screenshotPath: kept });
+    assert.ok(existsSync(kept), "first finding screenshot must survive");
+    assert.ok(existsSync(join(outDir, "findings", second.id, "screenshot.png")));
+  });
+
   it("appends extra markdown to report.md", () => {
     const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-append-"));
     const finding: Finding = {

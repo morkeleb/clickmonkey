@@ -40,4 +40,28 @@ describe("testability report", () => {
     assert.equal(home.issues[0]?.code, "unlabeledField");
     assert.ok(report.pages.some((p) => p.path === "/shop"));
   });
+
+  it("keeps the same path on different origins apart", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-a11y-origin-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistTestabilityPage(configPath, {
+      path: "/login",
+      foundAt: "t1",
+      insufficient: false,
+      issues: [{ code: "noMain", severity: "warn", tag: "document" }],
+    });
+    persistTestabilityPage(configPath, {
+      path: "/login",
+      origin: "https://idp.example.com",
+      foundAt: "t2",
+      insufficient: true,
+      issues: [{ code: "opaqueControl", severity: "block", tag: "button" }],
+    });
+    const report = loadTestabilityReport(testabilityReportPath(configPath));
+    assert.equal(report.pages.length, 2);
+    const app = report.pages.find((p) => p.path === "/login" && !p.origin);
+    const idp = report.pages.find((p) => p.origin === "https://idp.example.com");
+    assert.equal(app?.insufficient, false);
+    assert.equal(idp?.insufficient, true);
+  });
 });

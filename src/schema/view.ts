@@ -18,6 +18,8 @@ export const ShownAction = z
     id: z.string().min(1),
     opens: z.string().min(1).optional(),
     label: z.string().min(1).optional(),
+    /** Inside a navigation landmark. Map prefers these. */
+    nav: z.boolean().optional(),
   })
   .strict();
 export type ShownAction = z.infer<typeof ShownAction>;
@@ -31,13 +33,42 @@ export const ViewLast = z
   .strict();
 export type ViewLast = z.infer<typeof ViewLast>;
 
+export const LookFont = z
+  .object({
+    family: z.string().min(1),
+    size: z.string().min(1),
+    weight: z.string().min(1),
+    count: z.number().int().positive(),
+  })
+  .strict();
+export type LookFont = z.infer<typeof LookFont>;
+
+export const LookCovered = z
+  .object({
+    id: z.string().min(1),
+    by: z.string().min(1),
+  })
+  .strict();
+export type LookCovered = z.infer<typeof LookCovered>;
+
+/** Not persisted on the map. */
+export const Look = z
+  .object({
+    fonts: z.array(LookFont).default([]),
+    covered: z.array(LookCovered).default([]),
+  })
+  .strict();
+export type Look = z.infer<typeof Look>;
+
 export const View = z
   .object({
     page: z.string().min(1),
+    pages: z.array(z.string().min(1)).optional(),
     surface: z.string().min(1),
     stack: z.array(z.string().min(1)).min(1),
     shown: z.array(ShownField),
     actions: z.array(ShownAction),
+    look: Look.optional(),
     content: z.string().min(1).optional(),
     testability: z
       .object({

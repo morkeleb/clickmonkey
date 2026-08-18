@@ -91,6 +91,10 @@ export const Page = z
   .object({
     id: Id,
     path: z.string().min(1),
+    /** Set when this page lives on another origin than the leash `url`. */
+    origin: z.string().url().optional(),
+    /** Intro / start page. Walkers do not hop here after intro. */
+    entry: z.boolean().optional(),
     params: z.array(z.string().min(1)).default([]),
     ready: Locator,
     surfaces: z.array(Surface).min(1),

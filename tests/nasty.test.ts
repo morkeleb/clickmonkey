@@ -63,4 +63,12 @@ describe("nasty payloads", () => {
       }
     }
   });
+
+  it("hops when the view is empty instead of reopening the same page", () => {
+    const view = viewOf({
+      page: "settings",
+      pages: ["home", "settings"],
+    });
+    assert.equal(decideUnleashNasty({ view, stepsUsed: 0 }).line, "open home");
+  });
 });

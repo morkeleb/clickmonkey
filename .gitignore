@@ -10,6 +10,9 @@ clickmonkey.js
 # ClickMonkey 2
 dist/
 runs/
+clickmonkey/runs/
+clickmonkey/runs/*/verbose/
+clickmonkey/replays/
 auth.json
 playwright-report/
 *.json.lock

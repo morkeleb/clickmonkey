@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { copyFileSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { resolveCount } from "../surveyor/resolve.js";
 import { offlineIdsExist } from "../surveyor/merge.js";
 import { bootRun, locatorsFromModel } from "../executor/boot.js";
@@ -56,6 +57,9 @@ export async function replayLog(opts: {
   outDir: string;
   headed?: boolean;
   timeout?: number;
+  verbose?: boolean;
+  /** Take / copy a shot of the page after the last step. */
+  afterScreenshot?: string;
 }): Promise<{ ok: boolean; findings: Finding[]; reproduced?: { kind: string; stepIndex: number } }> {
   const log = readLog(opts.logPath);
   const model = requirePageModel(opts.config.map);
@@ -73,6 +77,7 @@ export async function replayLog(opts: {
       configPath: opts.configPath,
       replay: true,
       usedLocators,
+      verbose: opts.verbose,
     });
     const exec = createExecutor(state);
     if (state.config.intro.length > 0) await exec.runIntro();
@@ -103,6 +108,20 @@ export async function replayLog(opts: {
         comments: log.comments,
         result: "failed",
       });
+    }
+
+    if (opts.afterScreenshot) {
+      const last = log.steps[log.steps.length - 1];
+      const src = state.lastScreenshotPath;
+      if (last?.kind === "screenshot") {
+        if (src && existsSync(src) && resolve(src) !== resolve(opts.afterScreenshot)) {
+          copyFileSync(src, opts.afterScreenshot);
+        } else if (!src || !existsSync(src)) {
+          await state.page.screenshot({ path: opts.afterScreenshot, fullPage: true }).catch(() => undefined);
+        }
+      } else {
+        await state.page.screenshot({ path: opts.afterScreenshot }).catch(() => undefined);
+      }
     }
 
     return { ok: findings.length === 0, findings, ...(reproduced ? { reproduced } : {}) };

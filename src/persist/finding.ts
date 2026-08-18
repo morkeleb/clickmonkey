@@ -1,5 +1,5 @@
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { cannedReport } from "../reports/canned.js";
 import { severityForKind, type Finding } from "../schema/finding.js";
 
@@ -20,10 +20,14 @@ export function persistFinding(
     const dest = join(dir, "screenshot.png");
     if (resolve(src) !== resolve(dest)) {
       copyFileSync(src, dest);
-      try {
-        unlinkSync(src);
-      } catch {
-        // leave the source if it cannot be moved
+      const findingsRoot = resolve(outDir, "findings");
+      const fromFindings = relative(findingsRoot, resolve(src));
+      if (fromFindings === "" || fromFindings.startsWith("..") || isAbsolute(fromFindings)) {
+        try {
+          unlinkSync(src);
+        } catch {
+          // leave the source if it cannot be moved
+        }
       }
     }
     finding.screenshotPath = dest;

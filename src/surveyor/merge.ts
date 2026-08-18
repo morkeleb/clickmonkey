@@ -202,6 +202,8 @@ function mergeSurface(keep: Surface, other: Surface): { surface: Surface; added:
 
 function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number } {
   const page = structuredClone(keep);
+  if (!page.origin && other.origin) page.origin = other.origin;
+  if (other.entry) page.entry = true;
   const used = new Set(page.surfaces.map((s) => s.id));
   const byKey = new Map<string, number>();
   page.surfaces.forEach((s, i) => {
@@ -231,7 +233,7 @@ function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number }
 
 /**
  * Union two maps. Same locator → same id. Extra pages/surfaces/widgets from
- * either side are kept. Used when several monkeys write one clickmonkey.json.
+ * either side are kept. Used when several monkeys write one map.json.
  * Does not apply leftover/unresolved — that is live inspect only.
  */
 export function mergeTrees(base: PageModelDraft, incoming: PageModelDraft): PageModelDraft {
@@ -239,11 +241,28 @@ export function mergeTrees(base: PageModelDraft, incoming: PageModelDraft): Page
   const usedIds = new Set(pages.map((p) => p.id));
   let added = 0;
 
-  const indexByPath = new Map(pages.map((p, i) => [p.path, i] as const));
   const indexById = new Map(pages.map((p, i) => [p.id, i] as const));
 
+  const indexFor = (other: PageT): number | undefined => {
+    const exact = pages.findIndex(
+      (p) => p.path === other.path && (p.origin ?? "") === (other.origin ?? ""),
+    );
+    if (exact >= 0) return exact;
+    if (other.origin) {
+      const legacy = pages.findIndex((p) => p.path === other.path && !p.origin);
+      if (legacy >= 0) return legacy;
+    }
+    const byId = indexById.get(other.id);
+    if (byId === undefined) return undefined;
+    const disk = pages[byId]!;
+    if (disk.path === other.path && (disk.origin ?? "") !== (other.origin ?? "")) {
+      return undefined;
+    }
+    return byId;
+  };
+
   for (const other of incoming.pages) {
-    const idx = indexByPath.get(other.path) ?? indexById.get(other.id);
+    const idx = indexFor(other);
     if (idx !== undefined) {
       const merged = mergePageDef(pages[idx]!, other);
       pages[idx] = merged.page;
@@ -254,7 +273,6 @@ export function mergeTrees(base: PageModelDraft, incoming: PageModelDraft): Page
     copy.id = uniqueMint(copy.id, usedIds);
     usedIds.add(copy.id);
     pages.push(copy);
-    indexByPath.set(copy.path, pages.length - 1);
     indexById.set(copy.id, pages.length - 1);
     added += 1;
   }

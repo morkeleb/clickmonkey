@@ -8,9 +8,18 @@ import {
   type BrokenEntry,
 } from "../schema/broken.js";
 import { withFileLock } from "./lock.js";
+import { brokenPath, ensureWorkspace, legacyBrokenPath } from "./workspace.js";
 
 export function brokenReportPath(configPath: string): string {
-  return configPath.replace(/\.json$/i, "") + ".broken.json";
+  return brokenPath(configPath);
+}
+
+function resolveBrokenReadPath(configPath: string): string {
+  const next = brokenPath(configPath);
+  if (existsSync(next)) return next;
+  const legacy = legacyBrokenPath(configPath);
+  if (existsSync(legacy)) return legacy;
+  return next;
 }
 
 function writeBroken(path: string, report: BrokenReport): void {
@@ -26,9 +35,10 @@ export function loadBrokenReport(path: string): BrokenReport {
 
 /** Union an entry into the shared broken-pages report. Map file is never touched. */
 export function persistBrokenEntry(configPath: string, entry: BrokenEntry): BrokenReport {
-  const path = brokenReportPath(configPath);
+  ensureWorkspace(configPath);
+  const path = brokenPath(configPath);
   return withFileLock(path, () => {
-    const disk = loadBrokenReport(path);
+    const disk = loadBrokenReport(resolveBrokenReadPath(configPath));
     const next = mergeBrokenReports(disk, { schemaVersion: 1, entries: [entry] });
     writeBroken(path, next);
     return next;

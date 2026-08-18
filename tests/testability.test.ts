@@ -40,6 +40,35 @@ describe("testability audit", () => {
     }
   });
 
+  it("warns on duplicate names but still offers a click", async () => {
+    const { baseUrl, close } = await serveSite("dup-name");
+    try {
+      await withRun({}, async ({ page }) => {
+        await page.goto(baseUrl);
+        const result = await inspect(page, { model: emptyDraft("dup") });
+        assert.equal(result.testability.insufficient, false);
+        assert.ok(
+          result.testability.issues.some((i) => i.code === "duplicateName" && i.severity === "warn"),
+          JSON.stringify(result.testability.issues),
+        );
+        const pageSurf = result.model.pages[0]?.surfaces.find((s) => s.kind === "page");
+        const settings = pageSurf?.actions.find((a) => a.name === "Settings" || a.id.includes("settings"));
+        assert.ok(settings, "settings action minted");
+        assert.equal(settings.status, "ok");
+        const view = await buildView({
+          page,
+          pageId: result.pageId,
+          surfaceStack: result.surfaceStack,
+          model: result.model,
+        });
+        assert.ok(view.actions.some((a) => a.id === settings.id));
+        assert.ok(view.testability?.issues.some((i) => i.code === "duplicateName"));
+      });
+    } finally {
+      await close();
+    }
+  });
+
   it("does not block a labeled catalog page", async () => {
     const { baseUrl, close } = await serveSite("catalog");
     try {
@@ -50,6 +79,27 @@ describe("testability audit", () => {
         assert.equal(
           result.testability.issues.some((i) => i.severity === "block"),
           false,
+        );
+        assert.ok(
+          result.testability.issues.some((i) => i.code === "missingStableId" && i.severity === "warn"),
+          JSON.stringify(result.testability.issues),
+        );
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("does not warn missingStableId when every field and click has a hook", async () => {
+    const { baseUrl, close } = await serveSite("validates");
+    try {
+      await withRun({}, async ({ page }) => {
+        await page.goto(baseUrl);
+        const result = await inspect(page, { model: emptyDraft() });
+        assert.equal(
+          result.testability.issues.some((i) => i.code === "missingStableId"),
+          false,
+          JSON.stringify(result.testability.issues),
         );
       });
     } finally {

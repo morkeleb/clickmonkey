@@ -1,0 +1,61 @@
+#compdef clickmonkey
+
+_clickmonkey() {
+  local -a commands
+  commands=(
+    'init:Create clickmonkey.json + clickmonkey/'
+    'inspect:Survey the current page and grow the map'
+    'view:Print the compact view of the current surface'
+    'step:Run one DSL line and append it to the log'
+    'playbook:Run a named playbook'
+    'map:Navigate-only random walk'
+    'unleash:Random-walk legal map ids [--nasty]'
+    'explore:Charter-driven LLM walk'
+    'report:Markdown findings report from selected runs'
+    'replay:Replay a log or a findings-report markdown file'
+    'compact:Shorten a log to the last open'
+  )
+
+  local context state line
+  typeset -A opt_args
+
+  _arguments -C \
+    '(-h --help)'{-h,--help}'[Show usage]' \
+    '(-v --version)'{-v,--version}'[Print version]' \
+    '--url[Start URL]:url:' \
+    '--config[Path to clickmonkey.json]:config:_files -g "*.json"' \
+    '--headed[Show the browser]' \
+    '--timeout[Playwright timeout ms]:ms:' \
+    '--out[Output path]:path:_files' \
+    '--steps[Max steps]:n:' \
+    '--nasty[Fill from the payload catalog]' \
+    '--charter[Explore charter]:text:' \
+    '--skills[Extra skills markdown]:file:_files -g "*.md"' \
+    '--minutes[Explore wall clock]:n:' \
+    '--runs[Run ids for report]:ids:' \
+    '--all[Include every run that has findings]' \
+    '--verbose[Write per-step HTML + view dumps]' \
+    '1:command:->cmds' \
+    '*::arg:->args'
+
+  case $state in
+    cmds)
+      _describe -t commands 'clickmonkey command' commands
+      ;;
+    args)
+      case $line[1] in
+        playbook)
+          _values 'playbook' empty-required
+          ;;
+        replay|compact|step)
+          _files
+          ;;
+        *)
+          _files
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_clickmonkey "$@"
