@@ -139,6 +139,7 @@ describe("quality ledger", () => {
         url: "http://127.0.0.1:4173/",
         generatedAt: "2026-08-18T00:00:00.000Z",
         runIds: ["sess"],
+        qualityFull: true,
         testability: {
           schemaVersion: 1,
           pages: [

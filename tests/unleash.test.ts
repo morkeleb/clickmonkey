@@ -92,6 +92,23 @@ describe("unleash brain", () => {
     });
     assert.equal(decideUnleash({ view: afterHop, stepsUsed: 1 }).line, "screenshot");
   });
+
+  it("prefers the main area over a navigation landmark", () => {
+    const view = viewOf({
+      actions: [{ id: "your_account" }, { id: "collections", nav: true }],
+    });
+    for (let i = 0; i < 20; i++) {
+      const decision = decideUnleash({ view, stepsUsed: i }, () => 0.1);
+      assert.equal(decision.line, "click page.your_account");
+    }
+  });
+
+  it("stamps nav on a landmark click", () => {
+    const view = viewOf({
+      actions: [{ id: "collections", nav: true }],
+    });
+    assert.equal(decideUnleash({ view, stepsUsed: 0 }).line, "click page.collections nav");
+  });
 });
 
 describe("map brain", () => {
@@ -170,7 +187,7 @@ describe("map brain", () => {
     });
     for (let i = 0; i < 20; i++) {
       const decision = decideMap({ view, stepsUsed: i }, () => 0.1);
-      assert.equal(decision.line, "click page.collections");
+      assert.equal(decision.line, "click page.collections nav");
     }
   });
 

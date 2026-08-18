@@ -21,6 +21,33 @@ export interface FindingCase {
   description: string;
   tape: string;
   screenshotPath?: string;
+  pageId?: string;
+  url?: string;
+}
+
+function contextAtStep(runDir: string, stepIndex: number): { pageId?: string; url?: string } {
+  const nav = join(runDir, "nav.jsonl");
+  if (!existsSync(nav)) return {};
+  let n = -1;
+  let pageId: string | undefined;
+  let url: string | undefined;
+  for (const raw of readFileSync(nav, "utf8").split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    let ev: { type?: unknown; pageId?: unknown; to?: unknown; url?: unknown };
+    try {
+      ev = JSON.parse(raw) as { type?: unknown; pageId?: unknown; to?: unknown; url?: unknown };
+    } catch {
+      continue;
+    }
+    if (ev.type === "nav" && typeof ev.to === "string") url = ev.to;
+    if (ev.type === "land" && typeof ev.url === "string") url = ev.url;
+    if (ev.type === "step") {
+      n += 1;
+      if (typeof ev.pageId === "string" && ev.pageId) pageId = ev.pageId;
+      if (n === stepIndex) return { ...(pageId ? { pageId } : {}), ...(url ? { url } : {}) };
+    }
+  }
+  return { ...(pageId ? { pageId } : {}), ...(url ? { url } : {}) };
 }
 
 function collectRunRoot(root: string, byId: Map<string, RunSummary>): void {
@@ -104,6 +131,8 @@ export function collectFindingCases(runDirs: string[]): FindingCase[] {
         : finding.screenshotPath && existsSync(finding.screenshotPath)
           ? finding.screenshotPath
           : undefined;
+      const ctx = contextAtStep(runDir, finding.stepIndex);
+      const url = finding.url ?? ctx.url;
       cases.push({
         id: finding.id,
         runId,
@@ -114,6 +143,8 @@ export function collectFindingCases(runDirs: string[]): FindingCase[] {
         description,
         tape,
         ...(shot ? { screenshotPath: shot } : {}),
+        ...(ctx.pageId ? { pageId: ctx.pageId } : {}),
+        ...(url ? { url } : {}),
       });
     }
   }

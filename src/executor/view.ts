@@ -285,7 +285,8 @@ export function formatView(view: View): string {
   lines.push("actions:");
   for (const action of view.actions) {
     const base = action.opens ? `  ${action.id} → ${action.opens}` : `  ${action.id}`;
-    lines.push(action.label ? `${base}  ${action.label}` : base);
+    const withLabel = action.label ? `${base}  ${action.label}` : base;
+    lines.push(action.nav ? `${withLabel}  [nav]` : withLabel);
   }
   if (view.look && !lookIsEmpty(view.look)) {
     lines.push("look:");

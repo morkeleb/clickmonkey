@@ -38,6 +38,7 @@ try {
       minutes: { type: "string" },
       runs: { type: "string" },
       all: { type: "boolean" },
+      "quality-full": { type: "boolean" },
       port: { type: "string" },
       "no-open": { type: "boolean" },
     },
@@ -68,6 +69,7 @@ try {
     minutes: typeof values.minutes === "string" ? values.minutes : undefined,
     runs: typeof values.runs === "string" ? values.runs : undefined,
     all: Boolean(values.all),
+    qualityFull: Boolean(values["quality-full"]),
     port: typeof values.port === "string" ? values.port : undefined,
     noOpen: Boolean(values["no-open"]),
   };

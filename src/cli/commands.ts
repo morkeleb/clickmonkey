@@ -372,6 +372,7 @@ export async function cmdReport(opts: {
   out?: string;
   runs?: string;
   all?: boolean;
+  qualityFull?: boolean;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = loadConfigOrExit(configPath);
@@ -421,6 +422,7 @@ export async function cmdReport(opts: {
       ...(config.brain?.model ? { brain: config.brain.model } : {}),
       testability: loadTestabilityReport(testabilityReportPath(configPath)),
       quality: loadQualityReport(qualityReportPath(configPath)),
+      ...(opts.qualityFull ? { qualityFull: true } : {}),
     },
     outPath,
     extras,

@@ -9,6 +9,7 @@ import { withRun } from "../executor/session.js";
 import { persistFinding } from "../persist/finding.js";
 import { readLog, writeLog } from "../persist/log.js";
 import { stopPresence } from "../persist/presence.js";
+import { introPrefixLength } from "./compact.js";
 import { requirePageModel, type Config } from "../schema/config.js";
 import { findingId, type Finding } from "../schema/finding.js";
 import type { Locator } from "../schema/locator.js";
@@ -83,6 +84,8 @@ export async function replayLog(opts: {
     });
     const exec = createExecutor(state);
     if (state.config.intro.length > 0) await exec.runIntro();
+    const introLen = introPrefixLength(log.steps);
+    const steps = introLen > 0 && state.config.intro.length > 0 ? log.steps.slice(introLen) : log.steps;
 
     const pageDef = state.model.pages.find((p) => p.id === state.pageId);
     if (pageDef) {
@@ -94,7 +97,7 @@ export async function replayLog(opts: {
 
     const findings: Finding[] = [];
     let reproduced: { kind: string; stepIndex: number } | undefined;
-    for (const step of log.steps) {
+    for (const step of steps) {
       const result = await exec.runStep(step);
       if (result.finding) {
         findings.push(result.finding);

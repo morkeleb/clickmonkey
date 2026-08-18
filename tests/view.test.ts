@@ -72,6 +72,22 @@ describe("formatView", () => {
     assert.match(text, /opaqueControl  button/);
   });
 
+  it("marks actions inside a navigation landmark", () => {
+    const view = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [
+        { id: "save" },
+        { id: "projects", nav: true, label: "Projects" },
+      ],
+    });
+    const text = formatView(view);
+    assert.match(text, /^ {2}save$/m);
+    assert.match(text, /projects  Projects  \[nav\]/);
+  });
+
   it("prints look fonts and covered widgets", () => {
     const view = View.parse({
       page: "home",

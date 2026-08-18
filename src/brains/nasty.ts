@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatStep } from "../schema/dsl.js";
 import type { BrainContext, BrainDecision } from "./types.js";
-import { hopPage } from "./unleash.js";
+import { formatClick, hopPage, pickAction } from "./unleash.js";
 
 const defaultDir = join(dirname(fileURLToPath(import.meta.url)), "../../payloads");
 
@@ -106,6 +106,6 @@ export function decideUnleashNasty(ctx: BrainContext, rng: () => number = Math.r
     };
   }
 
-  const action = pick(actions, rng);
-  return { line: formatStep({ kind: "click", surface, id: action.id }) };
+  const action = pickAction(actions, rng, "main");
+  return { line: formatClick(surface, action) };
 }

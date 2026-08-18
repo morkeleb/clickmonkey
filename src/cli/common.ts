@@ -27,7 +27,7 @@ Commands:
   explore     Charter-driven LLM walk of legal map ids
   report      Markdown findings report from selected runs
   replay      Replay a log file or a findings-report markdown file
-  compact     Shorten a log to the last open + following lines
+  compact     Shorten a log to the last open or nav click + following lines
   ui          Local-only dashboard (map, runs, findings)
 
 Options:

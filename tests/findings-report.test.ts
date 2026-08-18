@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { collectFindingCases } from "../src/persist/runs.js";
 import { extractClickmonkeyFences } from "../src/reports/fences.js";
-import { caseKey, enrichWithBrain, renderFindingsReport } from "../src/reports/findings-report.js";
+import { caseKey, enrichWithBrain, isChromeRow, renderFindingsReport } from "../src/reports/findings-report.js";
 import { findingId } from "../src/schema/finding.js";
 
 describe("findings report", () => {
@@ -47,9 +47,85 @@ describe("findings report", () => {
     assert.match(md, /^## Major/m);
     assert.match(md, /!\[screenshot\]\(runs\/20260817T000000Z-abcd\/findings\/fnd_3_expectFailed\/screenshot\.png\)/);
     assert.match(md, /```clickmonkey/);
+    assert.match(md, /^## Findings/m);
+    const findingsAt = md.indexOf("## Findings");
+    const qualityAt = md.indexOf("## Quality");
+    assert.ok(qualityAt === -1 || findingsAt < qualityAt, "findings before quality");
     const fences = extractClickmonkeyFences(md);
     assert.equal(fences.length, 1);
     assert.equal(fences[0]?.log.steps.some((s) => s.kind === "expectInvalid"), true);
+  });
+
+  it("rolls quality into unique rules and omits preload noise", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: [],
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/",
+              foundAt: "t",
+              html: [{ source: "html", rule: "no-multiple-main", severity: "error", message: "dup main", count: 1 }],
+              a11y: [],
+              runtime: [
+                {
+                  source: "console",
+                  rule: "console.warning",
+                  severity: "warning",
+                  message: "The resource /font.woff2 was preloaded but not used within a few seconds",
+                  count: 7,
+                  firstSeen: "t",
+                  lastSeen: "t",
+                },
+                {
+                  source: "pageError",
+                  rule: "pageError",
+                  severity: "error",
+                  message: "Ga(...) is not a function",
+                  count: 1,
+                  firstSeen: "t",
+                  lastSeen: "t",
+                },
+              ],
+            },
+            {
+              path: "/vendors",
+              foundAt: "t",
+              html: [{ source: "html", rule: "no-multiple-main", severity: "error", message: "dup main", count: 1 }],
+              a11y: [],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /### Chrome/);
+    assert.match(md, /Pages with the most issues/);
+    assert.match(md, /2 pages/);
+    assert.match(md, /no-multiple-main/);
+    assert.match(md, /Ga\(\.\.\.\) is not a function/);
+    assert.match(md, /`\/` — 1 error, 0 warnings/);
+    assert.match(md, / {2}- `pageError` error — Ga\(\.\.\.\) is not a function/);
+    assert.doesNotMatch(md, / {2}- `no-multiple-main`/);
+    assert.doesNotMatch(md, /`\/vendors` —/);
+    assert.doesNotMatch(md, /Recurring rules/);
+    assert.doesNotMatch(md, /preloaded but not used/);
+    assert.doesNotMatch(md, /### `\/` —/);
+  });
+
+  it("treats majority and large-walk thirds as chrome", () => {
+    assert.equal(isChromeRow({ pages: 2 }, 2), true);
+    assert.equal(isChromeRow({ pages: 1 }, 2), false);
+    assert.equal(isChromeRow({ pages: 1 }, 1), false);
+    assert.equal(isChromeRow({ pages: 24 }, 62), true);
+    assert.equal(isChromeRow({ pages: 15 }, 62), false);
+    assert.equal(isChromeRow({ pages: 3 }, 8), true);
+    assert.equal(isChromeRow({ pages: 2 }, 8), false);
   });
 
   it("enrichWithBrain keeps only known ids", async () => {

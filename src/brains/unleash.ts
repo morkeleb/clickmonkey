@@ -6,6 +6,29 @@ function pick<T>(items: readonly T[], rng: () => number): T {
   return items[Math.floor(rng() * items.length)]!;
 }
 
+/** Map leans on chrome; unleash leans on the page body. */
+export const LANDMARK_BIAS = 0.75;
+
+export function pickAction(
+  actions: readonly ShownAction[],
+  rng: () => number,
+  prefer: "nav" | "main",
+): ShownAction {
+  const preferred =
+    prefer === "nav" ? actions.filter((a) => a.nav) : actions.filter((a) => !a.nav);
+  const pool = preferred.length > 0 && rng() < LANDMARK_BIAS ? preferred : actions;
+  return pick(pool, rng);
+}
+
+export function formatClick(surface: string, action: ShownAction): string {
+  return formatStep({
+    kind: "click",
+    surface,
+    id: action.id,
+    ...(action.nav ? { nav: true } : {}),
+  });
+}
+
 const WRITE_ID =
   /^(submit|save|delete|remove|destroy|confirm|send|update|apply|publish|add_to_cart|add_to_bag)$/i;
 const WRITE_LABEL =
@@ -101,8 +124,8 @@ export function decideUnleash(ctx: BrainContext, rng: () => number = Math.random
     };
   }
 
-  const action = pick(actions, rng);
-  return { line: formatStep({ kind: "click", surface, id: action.id }) };
+  const action = pickAction(actions, rng, "main");
+  return { line: formatClick(surface, action) };
 }
 
 /** Click links and other non-write actions. Never fill. Hop to a known page when stuck. */
@@ -110,10 +133,8 @@ export function decideMap(ctx: BrainContext, rng: () => number = Math.random): B
   const { view } = ctx;
   const nav = navigateActions(view);
   if (nav.length === 0) return hopPage(view, rng);
-  const landmark = nav.filter((a) => a.nav);
-  const pool = landmark.length > 0 && rng() < 0.75 ? landmark : nav;
-  const action = pick(pool, rng);
-  return { line: formatStep({ kind: "click", surface: view.surface, id: action.id }) };
+  const action = pickAction(nav, rng, "nav");
+  return { line: formatClick(view.surface, action) };
 }
 
 export const unleashBrain: Brain = {

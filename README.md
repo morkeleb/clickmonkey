@@ -122,6 +122,7 @@ A page that lives on another host than the leash `url` (SSO, IdP) gets an `origi
 ```
 open home
 click page.open_create
+click page.projects nav
 fill create.name ""
 click create.submit
 expect create.name invalid
@@ -136,8 +137,9 @@ A log is those lines, plus optional headers:
 # found: 2026-08-14T12:00:00.000Z
 ```
 
-`clickmonkey compact <log>` drops everything before the last `open` and keeps
-the bug header and comments.
+`clickmonkey compact <log>` drops everything before the last `open` or
+nav-landmark click (`click page.x nav`) and keeps the bug header and comments.
+A nav click is a state reset in typical apps, same as `open`.
 
 ## Commands
 
@@ -160,7 +162,7 @@ clickmonkey ui
 
 `--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 
-`clickmonkey report` writes `clickmonkey/findings.md`: summary, findings by severity, screenshot links, and a ` ```clickmonkey ` tape per issue. With `brain` configured it adds titles and expected/actual; the tapes stay the ones from the run. `--all` takes every run that has findings; `--runs id,id` is explicit; a TTY with neither asks which runs.
+`clickmonkey report` writes `clickmonkey/findings.md`: findings first (severity, page, url, screenshot, compacted tape), then a Quality digest split into **Chrome** (rules on most pages — shell/nav/layout) and **Pages** (local issues only). Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click so required fills stay in the tape. `--quality-full` dumps per-page HTML/a11y/JS. With `brain` configured it adds titles and expected/actual. `--all` takes every run that has findings; `--runs id,id` is explicit; a TTY with neither asks which runs.
 
 Each run writes `nav.jsonl` (and echoes timestamped lines on stderr): every DSL step (`step` / `ok` / `fail`) plus main-frame redirects, document loads, and in-page URL changes. Gaps between `step` and `ok` are waits. That is not the replay tape — `log.txt` stays click/fill/`open` only.
 

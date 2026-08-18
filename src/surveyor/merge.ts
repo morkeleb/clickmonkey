@@ -129,10 +129,9 @@ function keyExists(model: PageModel, key: string): boolean {
   for (const page of model.pages) {
     const surface = page.surfaces.find((s) => s.id === surfaceId);
     if (!surface) continue;
-    return (
-      surface.fields.some((f) => f.id === id) ||
-      surface.actions.some((a) => a.id === id)
-    );
+    if (surface.fields.some((f) => f.id === id) || surface.actions.some((a) => a.id === id)) {
+      return true;
+    }
   }
   return false;
 }

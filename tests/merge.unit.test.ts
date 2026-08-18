@@ -98,6 +98,24 @@ describe("mergePageModel", () => {
     assert.deepEqual(check.missing, []);
   });
 
+  it("offlineIdsExist finds widgets on a later page with the same surface id", () => {
+    const model = loadHome();
+    model.pages.unshift({
+      id: "login",
+      path: "/login",
+      entry: true,
+      ready: { by: "testId", value: "login" },
+      surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+    });
+    const home = model.pages.find((p) => p.id === "home");
+    assert.ok(home);
+    const page = home.surfaces.find((s) => s.id === "page");
+    assert.ok(page);
+    page.actions.push({ id: "go", by: "testId", value: "go", status: "ok" });
+    const check = offlineIdsExist(model, ["page.go"]);
+    assert.equal(check.ok, true, check.missing.join(","));
+  });
+
   it("offlineIdsExist is false when createDialog.name was deleted", () => {
     const model = loadHome();
     const dialog = surface(model, "createDialog");

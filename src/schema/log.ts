@@ -11,6 +11,8 @@ export const ClickStep = z
     kind: z.literal("click"),
     surface: z.string().min(1),
     id: z.string().min(1),
+    /** Clicked inside a navigation landmark — compact treats this as a state reset. */
+    nav: z.boolean().optional(),
   })
   .strict();
 export type ClickStep = z.infer<typeof ClickStep>;

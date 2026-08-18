@@ -18,7 +18,7 @@ export const ShownAction = z
     id: z.string().min(1),
     opens: z.string().min(1).optional(),
     label: z.string().min(1).optional(),
-    /** Inside a navigation landmark. Map prefers these. */
+    /** Inside a navigation landmark. Map prefers these; unleash prefers the rest. */
     nav: z.boolean().optional(),
   })
   .strict();

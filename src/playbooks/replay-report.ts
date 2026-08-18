@@ -50,6 +50,10 @@ function classify(opts: {
   error?: string;
 }): CompareStatus {
   if (opts.error) return "error";
+  const setup = opts.findings.filter(
+    (f) => f.kind === "unknownId" || f.kind === "unresolvedId" || f.kind === "driftId",
+  );
+  if (setup.length > 0) return "error";
   const mechanical = opts.findings.filter((f) => MECHANICAL.has(f.kind));
   if (mechanical.length > 0) return "still";
   if (tapeWantsEyes(opts.log) || opts.findings.some((f) => f.kind === "uiIssue")) return "look";
@@ -92,8 +96,11 @@ export function renderComparison(result: ReplayReportResult): string {
       lines.push("Did not reproduce.", "");
     } else if (c.status === "still" && c.finding) {
       lines.push(`Still failing: \`${c.finding.kind}\` — ${c.finding.message}`, "");
-    } else if (c.status === "error" && c.error) {
-      lines.push(`Could not replay: ${c.error}`, "");
+    } else if (c.status === "error") {
+      lines.push(
+        `Could not replay: ${c.error ?? (c.finding ? `${c.finding.kind}: ${c.finding.message}` : "unknown")}`,
+        "",
+      );
     }
     const before = hrefFrom(result.comparisonPath, c.beforePath);
     const after = hrefFrom(result.comparisonPath, c.afterPath);
@@ -127,8 +134,8 @@ export function formatReplayReport(result: ReplayReportResult): string {
         ? `\n     ${c.finding.kind}: ${c.finding.message}`
         : c.status === "look"
           ? "\n     compare before/after in comparison.md"
-          : c.error
-            ? `\n     ${c.error}`
+          : c.status === "error"
+            ? `\n     ${c.error ?? (c.finding ? `${c.finding.kind}: ${c.finding.message}` : "replay failed")}`
             : "";
     return `${i + 1}/${result.cases.length}  ${tag}  ${c.title}${extra}`;
   });

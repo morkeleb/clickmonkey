@@ -41,10 +41,10 @@ export function parseLine(line: string, lineNo = 1): Step | { comment: string } 
   const open = trimmed.match(/^open\s+(\S+)$/);
   if (open?.[1]) return { kind: "open", page: open[1] };
 
-  const click = trimmed.match(/^click\s+(\S+)$/);
+  const click = trimmed.match(/^click\s+(\S+)(?:\s+(nav))?$/);
   if (click?.[1]) {
     const { surface, id } = splitRef(click[1], lineNo);
-    return { kind: "click", surface, id };
+    return { kind: "click", surface, id, ...(click[2] ? { nav: true } : {}) };
   }
 
   const fill = trimmed.match(/^fill\s+(\S+)\s+(.+)$/);
@@ -90,7 +90,7 @@ export function formatStep(step: Step): string {
     case "open":
       return `open ${step.page}`;
     case "click":
-      return `click ${step.surface}.${step.id}`;
+      return step.nav ? `click ${step.surface}.${step.id} nav` : `click ${step.surface}.${step.id}`;
     case "fill": {
       const v = step.value === "" ? '""' : /\s/.test(step.value) ? JSON.stringify(step.value) : step.value;
       return `fill ${step.surface}.${step.id} ${v}`;

@@ -78,6 +78,9 @@ export {
   isLeaveAction,
   matchesSkip,
   navigateActions,
+  pickAction,
+  formatClick,
+  LANDMARK_BIAS,
 } from "./brains/unleash.js";
 export { pickNasty, decideUnleashNasty } from "./brains/nasty.js";
 export { createExploreBrain } from "./brains/explore.js";

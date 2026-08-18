@@ -30,4 +30,56 @@ expect createDialog.name invalid
     assert.match(text, /^open home$/m);
     assert.match(text, /expect createDialog\.name invalid/);
   });
+
+  it("drops leash intro and keeps fills on the path from landing", () => {
+    const log = parseLog(`click page.auth0_login_button
+fill page.username $CLICKMONKEY_USER
+fill page.password $CLICKMONKEY_PASSWORD
+click page.button_continue
+click page.open_form
+fill page.amount "1"
+click page.go
+`);
+    const compacted = compactLog(log);
+    assert.equal(compacted.steps.length, 3);
+    assert.equal(
+      compacted.steps.some((s) => s.kind === "fill" && s.value === "$CLICKMONKEY_USER"),
+      false,
+    );
+    assert.ok(compacted.steps.some((s) => s.kind === "fill" && s.id === "amount"));
+    assert.ok(compacted.steps.some((s) => s.kind === "click" && s.id === "open_form"));
+  });
+
+  it("drops wander before the last nav-landmark click", () => {
+    const log = parseLog(`fill page.q "x"
+click page.search
+click page.settings nav
+fill page.name "y"
+click page.save
+`);
+    const compacted = compactLog(log);
+    assert.equal(compacted.steps.length, 3);
+    assert.equal(compacted.steps[0]?.kind, "click");
+    if (compacted.steps[0]?.kind === "click") {
+      assert.equal(compacted.steps[0].id, "settings");
+      assert.equal(compacted.steps[0].nav, true);
+    }
+    assert.ok(compacted.steps.some((s) => s.kind === "fill" && s.id === "name"));
+    assert.equal(
+      compacted.steps.some((s) => s.kind === "fill" && s.id === "q"),
+      false,
+    );
+  });
+
+  it("keeps from the later of last open and last nav click", () => {
+    const log = parseLog(`open home
+click page.projects nav
+fill page.title "x"
+click page.save
+`);
+    const compacted = compactLog(log);
+    assert.equal(compacted.steps.length, 3);
+    assert.equal(compacted.steps[0]?.kind, "click");
+    if (compacted.steps[0]?.kind === "click") assert.equal(compacted.steps[0].id, "projects");
+  });
 });

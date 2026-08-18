@@ -122,6 +122,23 @@ expect createDialog.name invalid
     if (step.kind === "fill") assert.equal(step.value, "$CLICKMONKEY_PASSWORD");
   });
 
+  it("round-trips a nav-landmark click", () => {
+    assert.deepEqual(parseLine("click page.collections nav", 1), {
+      kind: "click",
+      surface: "page",
+      id: "collections",
+      nav: true,
+    });
+    assert.equal(
+      formatStep({ kind: "click", surface: "page", id: "collections", nav: true }),
+      "click page.collections nav",
+    );
+    assert.equal(
+      formatStep({ kind: "click", surface: "page", id: "go" }),
+      "click page.go",
+    );
+  });
+
   it("formats empty fill as quotes", () => {
     assert.equal(
       formatStep({ kind: "fill", surface: "s", id: "name", value: "" }),
