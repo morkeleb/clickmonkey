@@ -220,3 +220,38 @@
   padding: 0.4rem 0.55rem;
   text-align: left;
 }
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  html,
+  body,
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+  }
+  [data-slot="scroll-area"],
+  [data-slot="scroll-area-viewport"] {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .markdown {
+    color: black;
+  }
+  .markdown a {
+    color: black;
+  }
+  .markdown pre,
+  .markdown code {
+    background: #f4f4f5 !important;
+    color: black !important;
+    border-color: #d4d4d8 !important;
+  }
+  .markdown img {
+    border-color: #d4d4d8;
+    break-inside: avoid;
+  }
+}

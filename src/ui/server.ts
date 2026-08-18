@@ -11,6 +11,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 import { fileURLToPath } from "node:url";
 import { runsDir, workspaceDir, WORKSPACE_DIR } from "../persist/workspace.js";
 import type { UiEvent, UiEventType } from "../schema/ui.js";
+import { isSafeReportId, readReport } from "../persist/reports.js";
 import { buildRunDetail, isSafeRunId } from "./run-detail.js";
 import { buildUiSnapshot } from "./snapshot.js";
 
@@ -85,7 +86,7 @@ function eventTypeOf(filename: string | null): UiEventType | undefined {
   if (base === "map.json") return "map";
   if (base === "testability.json") return "testability";
   if (base === "quality.json") return "quality";
-  if (base === "findings.md") return "run";
+  if (base === "findings.md" || base === "report.json") return "run";
   if (base === "nav.jsonl") return "nav";
   if (base === "presence.json" || base === "log.txt" || base === "finding.json" || base === "replay.log") {
     return "run";
@@ -223,6 +224,26 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
       pathname = decodeURIComponent(url.pathname);
     } catch {
       send(res, 400, "Bad request", "text/plain; charset=utf-8");
+      return;
+    }
+
+    if (pathname.startsWith("/api/reports/")) {
+      const reportId = pathname.slice("/api/reports/".length);
+      if (!isSafeReportId(reportId)) {
+        send(res, 400, "Bad report id", "text/plain; charset=utf-8");
+        return;
+      }
+      const loaded = readReport(configPath, reportId);
+      if (!loaded) {
+        send(res, 404, "Report not found", "text/plain; charset=utf-8");
+        return;
+      }
+      send(
+        res,
+        200,
+        `${JSON.stringify({ ...loaded.meta, markdown: loaded.markdown })}\n`,
+        "application/json; charset=utf-8",
+      );
       return;
     }
 

@@ -40,7 +40,7 @@ clickmonkey inspect
 clickmonkey view
 clickmonkey playbook empty-required
 clickmonkey report --all
-clickmonkey replay clickmonkey/findings.md
+clickmonkey replay clickmonkey/reports/<id>/findings.md
 ```
 
 `page.ready` prefers a unique `data-testid` when one exists, then a unique
@@ -79,7 +79,7 @@ clickmonkey/
   broken.json
   runs/<id>/                     # tape, shots, findings, nav.jsonl for one walk
   runs/<id>/verbose/             # --verbose only: per-step HTML + view.txt (safe to delete)
-  findings.md                    # shareable report
+  reports/<id>/findings.md       # shareable reports (one folder per report)
   replays/<id>/comparison.md     # before/after vs that report
 ```
 
@@ -162,7 +162,7 @@ clickmonkey ui
 
 `--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 
-`clickmonkey report` writes `clickmonkey/findings.md`: findings first (severity, page, url, screenshot, compacted tape), then a Quality digest split into **Chrome** (rules on most pages — shell/nav/layout) and **Pages** (local issues only). Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click so required fills stay in the tape. `--quality-full` dumps per-page HTML/a11y/JS. With `brain` configured it adds titles and expected/actual. `--all` takes every run that has findings; `--runs id,id` is explicit; a TTY with neither asks which runs.
+`clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox; several monkeys at once). `--runs id,id` is explicit; `--all` takes every run that has findings. Findings come first (severity, page, url, screenshot, compacted tape), then a Quality digest split into **Chrome** and **Pages**. Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. `--quality-full` dumps per-page HTML/a11y/JS. With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF).
 
 Each run writes `nav.jsonl` (and echoes timestamped lines on stderr): every DSL step (`step` / `ok` / `fail`) plus main-frame redirects, document loads, and in-page URL changes. Gaps between `step` and `ok` are waits. That is not the replay tape — `log.txt` stays click/fill/`open` only.
 
@@ -170,7 +170,7 @@ Each run writes `nav.jsonl` (and echoes timestamped lines on stderr): every DSL 
 
 A **run** is a walk (`map` / `unleash` / `explore` / playbook). A **report** (`clickmonkey report`) is the shareable markdown of those findings. A **replay of a report** is not a third walk — it is a **comparison** against that report: same tapes, new shots, `comparison.md` with before/after.
 
-`clickmonkey replay clickmonkey/findings.md` writes `clickmonkey/replays/<id>/comparison.md`. **STILL** = the bug came back. **FIXED** = it did not. **LOOK** = a human has to compare the pictures (UI / `screenshot ui`). Exit 1 only on STILL or ERROR.
+`clickmonkey replay clickmonkey/reports/<id>/findings.md` writes `clickmonkey/replays/<id>/comparison.md`. Use the path that `report` printed. **STILL** = the bug came back. **FIXED** = it did not. **LOOK** = a human has to compare the pictures (UI / `screenshot ui`). Exit 1 only on STILL or ERROR.
 
 Defaults: config `clickmonkey.json`, out `clickmonkey/runs/<id>/`.
 

@@ -4,9 +4,10 @@ import { hopsFromNavLog } from "./graph.js";
 import { loadConfig } from "../persist/config.js";
 import { isPresenceLive, listPresences } from "../persist/presence.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
+import { listReports } from "../persist/reports.js";
 import { collectFindingCases, listRuns } from "../persist/runs.js";
 import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
-import { runsDir, workspaceDir } from "../persist/workspace.js";
+import { runsDir } from "../persist/workspace.js";
 import type { Config } from "../schema/config.js";
 import { UiLeash, UiRun, UiSnapshot, type UiRunStep } from "../schema/ui.js";
 import { buildUiGraph } from "./graph.js";
@@ -115,7 +116,6 @@ export function buildUiSnapshot(configPath: string): UiSnapshot {
     if (!existsSync(nav)) return [];
     return hopsFromNavLog(readFileSync(nav, "utf8"));
   });
-  const reportPath = join(workspaceDir(configPath), "findings.md");
   return UiSnapshot.parse({
     schemaVersion: 1,
     leash: leashFromConfig(config),
@@ -124,6 +124,12 @@ export function buildUiSnapshot(configPath: string): UiSnapshot {
     testability,
     quality,
     runs: collectUiRuns(configPath),
-    ...(existsSync(reportPath) ? { reportMarkdown: readFileSync(reportPath, "utf8") } : {}),
+    reports: listReports(configPath).map((r) => ({
+      id: r.id,
+      title: r.title,
+      generatedAt: r.generatedAt,
+      runIds: r.runIds,
+      findingCount: r.findingCount,
+    })),
   });
 }

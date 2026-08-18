@@ -25,6 +25,16 @@ export function App() {
     writeMainToLocation(next);
   }, []);
 
+  const reportId =
+    view.kind === "report" ? view.id || snapshot?.reports[0]?.id : undefined;
+
+  useEffect(() => {
+    if (view.kind !== "report" || view.id || !reportId) return;
+    const next: MainView = { kind: "report", id: reportId };
+    setViewState(next);
+    writeMainToLocation(next, "replace");
+  }, [view, reportId]);
+
   if (!snapshot) {
     return (
       <div className="flex h-svh items-center justify-center bg-background text-sm text-muted-foreground">
@@ -35,13 +45,25 @@ export function App() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-svh overflow-hidden bg-background text-foreground">
-        <Sidebar snapshot={snapshot} view={view} onView={setView} />
-        <main className="min-w-0 flex-1">
+      <div className="flex h-svh overflow-hidden bg-background text-foreground print:h-auto print:overflow-visible">
+        <Sidebar
+          snapshot={snapshot}
+          view={view.kind === "report" && !view.id && reportId ? { kind: "report", id: reportId } : view}
+          onView={setView}
+        />
+        <main className="min-w-0 flex-1 print:overflow-visible">
           {view.kind === "map" ? <MapCanvas snapshot={snapshot} onSelectNode={setNodeId} /> : null}
           {view.kind === "config" ? <ConfigPanel leash={snapshot.leash} /> : null}
           {view.kind === "run" ? <RunPanel run={snapshot.runs.find((run) => run.id === view.id)} /> : null}
-          {view.kind === "report" ? <ReportMarkdown markdown={snapshot.reportMarkdown} /> : null}
+          {view.kind === "report" ? (
+            reportId ? (
+              <ReportMarkdown reportId={reportId} />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                No reports yet. Run <code className="mx-1">clickmonkey report</code>.
+              </div>
+            )
+          ) : null}
         </main>
         <NodeSheet
           snapshot={snapshot}

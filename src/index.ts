@@ -11,6 +11,14 @@ export * from "./persist/log.js";
 export * from "./persist/finding.js";
 export * from "./persist/run-id.js";
 export * from "./persist/events.js";
+export {
+  listReports,
+  readReport,
+  writeReportFolder,
+  reportMarkdownPath,
+  plannedReportPath,
+  LEGACY_REPORT_ID,
+} from "./persist/reports.js";
 export { withRun } from "./executor/session.js";
 export type { RunHandle } from "./executor/session.js";
 export { toPlaywrightLocator, widgetLocator } from "./executor/locators.js";

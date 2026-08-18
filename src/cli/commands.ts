@@ -8,10 +8,11 @@ import { saveConfig } from "../persist/config.js";
 import { writeLog, readLog } from "../persist/log.js";
 import { stopPresence } from "../persist/presence.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
+import { plannedReportPath, writeReportFolder } from "../persist/reports.js";
 import { collectFindingCases, listRuns, resolveRunDirs } from "../persist/runs.js";
 import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
 import { newRunId } from "../persist/run-id.js";
-import { replaysDir, workspaceDir } from "../persist/workspace.js";
+import { replaysDir } from "../persist/workspace.js";
 import { isFindingsReport } from "../reports/fences.js";
 import { enrichWithBrain, renderFindingsReport } from "../reports/findings-report.js";
 import { emptyConfig } from "../schema/config.js";
@@ -388,6 +389,7 @@ export async function cmdReport(opts: {
     try {
       selectors = await promptRuns(listed);
     } catch (err) {
+      if (err instanceof Error && err.name === "ExitPromptError") return 130;
       fail(EXIT_USAGE, errMessage(err));
     }
   }
@@ -399,10 +401,10 @@ export async function cmdReport(opts: {
     fail(EXIT_USAGE, errMessage(err));
   }
   const cases = collectFindingCases(runDirs);
-  const outPath = opts.out
-    ? resolve(process.cwd(), opts.out)
-    : resolve(workspaceDir(configPath), "findings.md");
-  mkdirSync(dirname(outPath), { recursive: true });
+  const runIds = runDirs.map((d) => d.split(/[/\\]/).pop() ?? d);
+  const generatedAt = new Date().toISOString();
+  const reportId = newRunId();
+  const mdPath = plannedReportPath(configPath, reportId);
   let summary: string | undefined;
   let extras: Map<string, { title?: string; expected?: string; actual?: string; why?: string }> | undefined;
   if (config.brain) {
@@ -414,23 +416,33 @@ export async function cmdReport(opts: {
       process.stderr.write(`brain skipped: ${errMessage(err)}\n`);
     }
   }
-  const markdown = renderFindingsReport(
-    cases,
-    {
-      url: config.url,
-      generatedAt: new Date().toISOString(),
-      runIds: runDirs.map((d) => d.split(/[/\\]/).pop() ?? d),
-      ...(config.brain?.model ? { brain: config.brain.model } : {}),
-      testability: loadTestabilityReport(testabilityReportPath(configPath)),
-      quality: loadQualityReport(qualityReportPath(configPath)),
-      ...(opts.qualityFull ? { qualityFull: true } : {}),
-    },
-    outPath,
-    extras,
-    summary,
-  );
-  writeFileSync(outPath, markdown, "utf8");
-  process.stdout.write(`${outPath}\n`);
+  const meta = {
+    url: config.url,
+    generatedAt,
+    runIds,
+    ...(config.brain?.model ? { brain: config.brain.model } : {}),
+    testability: loadTestabilityReport(testabilityReportPath(configPath)),
+    quality: loadQualityReport(qualityReportPath(configPath)),
+    ...(opts.qualityFull ? { qualityFull: true } : {}),
+  };
+  const markdown = renderFindingsReport(cases, meta, mdPath, extras, summary);
+  const written = writeReportFolder(configPath, {
+    url: config.url,
+    generatedAt,
+    runIds,
+    findingCount: cases.length,
+    markdown,
+    id: reportId,
+  });
+  if (opts.out) {
+    const extra = resolve(process.cwd(), opts.out);
+    mkdirSync(dirname(extra), { recursive: true });
+    writeFileSync(extra, renderFindingsReport(cases, meta, extra, extras, summary), "utf8");
+    process.stdout.write(`${extra}\n`);
+    process.stderr.write(`also wrote ${written.mdPath}\n`);
+  } else {
+    process.stdout.write(`${written.mdPath}\n`);
+  }
   return cases.length > 0 ? EXIT_FINDINGS : EXIT_OK;
 }
 

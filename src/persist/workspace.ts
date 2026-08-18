@@ -38,6 +38,10 @@ export function replaysDir(configPath: string): string {
   return join(workspaceDir(configPath), "replays");
 }
 
+export function reportsDir(configPath: string): string {
+  return join(workspaceDir(configPath), "reports");
+}
+
 /** Pre-folder sibling. Read-only fallback. */
 export function legacyTestabilityPath(configPath: string): string {
   return configPath.replace(/\.json$/i, "") + ".testability.json";

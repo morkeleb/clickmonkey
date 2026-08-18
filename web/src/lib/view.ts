@@ -2,11 +2,16 @@ export type MainView =
   | { kind: "map" }
   | { kind: "config" }
   | { kind: "run"; id: string }
-  | { kind: "report" };
+  | { kind: "report"; id: string };
 
 export function parseMain(raw: string | null): MainView {
   if (raw === "config") return { kind: "config" };
-  if (raw === "report") return { kind: "report" };
+  if (raw === "report") return { kind: "report", id: "" };
+  if (raw?.startsWith("report:")) {
+    const id = raw.slice("report:".length);
+    if (id.length > 0) return { kind: "report", id };
+    return { kind: "report", id: "" };
+  }
   if (raw?.startsWith("run:")) {
     const id = raw.slice(4);
     if (id.length > 0) return { kind: "run", id };
@@ -15,7 +20,9 @@ export function parseMain(raw: string | null): MainView {
 }
 
 export function serializeMain(view: MainView): string {
-  return view.kind === "run" ? `run:${view.id}` : view.kind;
+  if (view.kind === "run") return `run:${view.id}`;
+  if (view.kind === "report") return view.id ? `report:${view.id}` : "report";
+  return view.kind;
 }
 
 export function readMainFromLocation(search = window.location.search): MainView {

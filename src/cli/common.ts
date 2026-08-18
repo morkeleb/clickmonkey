@@ -25,7 +25,7 @@ Commands:
   map         Navigate-only random walk — lift fog of war, no fill/submit
   unleash     Random-walk legal map ids, including fill/submit [--nasty]
   explore     Charter-driven LLM walk of legal map ids
-  report      Markdown findings report from selected runs
+  report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
   replay      Replay a log file or a findings-report markdown file
   compact     Shorten a log to the last open or nav click + following lines
   ui          Local-only dashboard (map, runs, findings)

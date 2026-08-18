@@ -52,7 +52,22 @@ describe("buildUiSnapshot", () => {
         })}\n`,
       );
       startPresence(runDir, { pageId: "home", brain: "grok-3" });
-      writeFileSync(join(dir, "clickmonkey", "findings.md"), "# findings\n");
+      writeFileSync(join(dir, "clickmonkey", "findings.md"), "# findings\n- **runs:** 20260818T150000Z-ab12\n");
+      const reportDir = join(dir, "clickmonkey", "reports", "20260818T160000Z-ccdd");
+      mkdirSync(reportDir, { recursive: true });
+      writeFileSync(
+        join(reportDir, "report.json"),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          id: "20260818T160000Z-ccdd",
+          generatedAt: "2026-08-18T16:00:00.000Z",
+          url: "http://127.0.0.1:4173/",
+          runIds: ["20260818T150000Z-ab12"],
+          findingCount: 2,
+          title: "2 findings · 20260818T150000Z-ab12",
+        })}\n`,
+      );
+      writeFileSync(join(reportDir, "findings.md"), "# Findings report\n");
 
       const snap = buildUiSnapshot(path);
       const json = JSON.stringify(snap);
@@ -64,7 +79,8 @@ describe("buildUiSnapshot", () => {
       assert.equal(json.includes("apiKey"), false);
       assert.equal(json.includes("apiKeyEnv"), false);
       assert.equal(json.includes("XAI_API_KEY"), false);
-      assert.ok(snap.reportMarkdown?.includes("# findings"));
+      assert.ok(snap.reports.some((r) => r.id === "20260818T160000Z-ccdd" && r.findingCount === 2));
+      assert.ok(snap.reports.some((r) => r.id === "findings"));
       const run = snap.runs.find((r) => r.id === "20260818T150000Z-ab12");
       assert.ok(run?.pageId === "home");
       assert.equal(run.steps?.[0]?.line, "open home");

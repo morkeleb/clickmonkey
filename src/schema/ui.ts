@@ -140,6 +140,17 @@ export const UiLeash = z
   .strict();
 export type UiLeash = z.infer<typeof UiLeash>;
 
+export const UiReport = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    generatedAt: z.string().min(1),
+    runIds: z.array(z.string()),
+    findingCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type UiReport = z.infer<typeof UiReport>;
+
 export const UiSnapshot = z
   .object({
     schemaVersion: z.literal(1),
@@ -149,7 +160,7 @@ export const UiSnapshot = z
     testability: TestabilityReport,
     quality: QualityReport,
     runs: z.array(UiRun),
-    reportMarkdown: z.string().optional(),
+    reports: z.array(UiReport).default([]),
   })
   .strict();
 export type UiSnapshot = z.infer<typeof UiSnapshot>;
