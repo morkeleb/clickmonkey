@@ -9,6 +9,7 @@ import {
 import type { Fence } from "../schema/config.js";
 import { auditVisible } from "../surveyor/audit.js";
 import { isLeaveAction, matchesSkip } from "../brains/unleash.js";
+import { pageNotesFromModel } from "../surveyor/describe.js";
 import { hoppablePages } from "./hop.js";
 import { formatFont, lookIsEmpty, readLook } from "./look.js";
 import {
@@ -251,10 +252,12 @@ export async function buildView(state: {
         currentHref: state.page.url(),
       }).map((p) => p.id)
     : state.model.pages.map((p) => p.id);
+  const pageNotes = pageNotesFromModel(state.model.pages);
 
   return {
     page: state.pageId,
     pages: hopPages,
+    ...(pageNotes ? { pageNotes } : {}),
     surface: surfaceId,
     stack,
     shown,
@@ -268,10 +271,26 @@ export async function buildView(state: {
   };
 }
 
+function formatPagesLines(view: View): string[] {
+  if (!view.pages || view.pages.length === 0) return [];
+  const notes = view.pageNotes;
+  if (!notes || Object.keys(notes).length === 0) {
+    return [`pages: ${view.pages.join(", ")}`];
+  }
+  return [
+    "pages:",
+    ...view.pages.map((id) => {
+      const note = notes[id];
+      return note ? `  ${id} — ${note}` : `  ${id}`;
+    }),
+  ];
+}
+
 export function formatView(view: View): string {
+  const here = view.pageNotes?.[view.page];
   const lines: string[] = [
-    `page: ${view.page}`,
-    ...(view.pages && view.pages.length > 0 ? [`pages: ${view.pages.join(", ")}`] : []),
+    here ? `page: ${view.page} — ${here}` : `page: ${view.page}`,
+    ...formatPagesLines(view),
     `surface: ${view.surface}`,
     `stack: ${view.stack.join(" > ")}`,
     "shown:",

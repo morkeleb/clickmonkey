@@ -203,6 +203,13 @@ function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number }
   const page = structuredClone(keep);
   if (!page.origin && other.origin) page.origin = other.origin;
   if (other.entry) page.entry = true;
+  if (
+    other.description &&
+    (!page.description || (other.describeKey && other.describeKey === page.describeKey))
+  ) {
+    page.description = other.description;
+    if (other.describeKey) page.describeKey = other.describeKey;
+  }
   const used = new Set(page.surfaces.map((s) => s.id));
   const byKey = new Map<string, number>();
   page.surfaces.forEach((s, i) => {

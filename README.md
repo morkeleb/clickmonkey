@@ -109,7 +109,7 @@ v1 used `fence.blacklist` only for **URLs** (e.g. `#/login` after the monkey log
 
 Duplicate accessible names (two **Settings** buttons) are a `duplicateName` **warn** on the page, not a reason to skip the control. The walker clicks the first uncovered match.
 
-`clickmonkey/map.json` is the page model `inspect` / `map` grow. Extra widgets never fail a replay. Several processes may share that file: each step takes a short lock, unions the trees, and writes back. That is cheap next to Playwright and the LLM.
+`clickmonkey/map.json` is the page model `inspect` / `map` grow. Each page gets a one-line `description` (path, heading, fields, dialogs). Explore may polish that line with the configured brain the first time it lands. Extra widgets never fail a replay. Several processes may share that file: each step takes a short lock, unions the trees, and writes back. That is cheap next to Playwright and the LLM.
 
 As the monkey walks, each inspect updates `testability.json` (can we locate the controls?) and `quality.json` (html-validate for HTML, axe-core for WCAG, plus JS `console` / `pageerror` with merge counts). `clickmonkey report` prints those ledgers under **Quality** without calling an LLM. Console warnings are ledger-only; the first uncaught `pageerror` per message is still a finding.
 

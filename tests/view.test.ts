@@ -64,6 +64,7 @@ describe("formatView", () => {
     });
     const text = formatView(view);
     assert.match(text, /pages: home, about_html/);
+    assert.doesNotMatch(text, /^pages:$/m);
     assert.match(text, /qty: "1"  \[number\]  Quantity/);
     assert.match(text, /add_to_cart  Add to bag/);
     assert.match(text, /content:\n {2}- heading "Shop"/);
@@ -86,6 +87,25 @@ describe("formatView", () => {
     const text = formatView(view);
     assert.match(text, /^ {2}save$/m);
     assert.match(text, /projects  Projects  \[nav\]/);
+  });
+
+  it("prints page blurbs next to hop targets", () => {
+    const view = View.parse({
+      page: "home",
+      pages: ["home", "invoices"],
+      pageNotes: {
+        home: "Home — search",
+        invoices: "Invoices — 8 actions",
+      },
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [],
+    });
+    const text = formatView(view);
+    assert.match(text, /^page: home — Home — search$/m);
+    assert.match(text, /^pages:$/m);
+    assert.match(text, /^ {2}invoices — Invoices — 8 actions$/m);
   });
 
   it("prints look fonts and covered widgets", () => {

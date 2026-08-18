@@ -276,4 +276,20 @@ describe("mergeTrees", () => {
     assert.equal(foreign.surfaces[0]?.actions.some((a) => a.id === "app_go"), false);
     assert.ok(leash.surfaces[0]?.actions.some((a) => a.id === "app_go"));
   });
+
+  it("keeps a page description and lets the same-key incoming polish win", () => {
+    const base = loadHome();
+    base.pages[0]!.description = "Home — search";
+    base.pages[0]!.describeKey = "samekey12ab";
+    const incoming = structuredClone(base);
+    incoming.pages[0]!.description = "Shop home with search and create.";
+    incoming.pages[0]!.describeKey = "samekey12ab";
+    const merged = mergeTrees(base, incoming);
+    assert.equal(merged.pages[0]?.description, "Shop home with search and create.");
+    const other = structuredClone(base);
+    other.pages[0]!.description = "Other page";
+    other.pages[0]!.describeKey = "otherkey12ab";
+    const kept = mergeTrees(base, other);
+    assert.equal(kept.pages[0]?.description, "Home — search");
+  });
 });

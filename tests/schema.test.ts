@@ -87,6 +87,24 @@ describe("PageModel schema", () => {
     assert.equal(model.pages[0]?.entry, true);
   });
 
+  it("accepts an optional page description", () => {
+    const model = PageModel.parse({
+      schemaVersion: 1,
+      app: "x",
+      pages: [
+        {
+          id: "invoices",
+          path: "/invoices",
+          ready: { by: "testId", value: "invoices" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+          description: "Invoices — 8 actions",
+          describeKey: "abc123abc123",
+        },
+      ],
+    });
+    assert.equal(model.pages[0]?.description, "Invoices — 8 actions");
+  });
+
   it("rejects a page without surfaces", () => {
     assert.throws(() =>
       PageModel.parse({

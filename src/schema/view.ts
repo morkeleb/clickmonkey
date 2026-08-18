@@ -64,6 +64,8 @@ export const View = z
   .object({
     page: z.string().min(1),
     pages: z.array(z.string().min(1)).optional(),
+    /** id → map blurb. Hop list stays in `pages`. */
+    pageNotes: z.record(z.string().min(1), z.string().min(1)).optional(),
     surface: z.string().min(1),
     stack: z.array(z.string().min(1)).min(1),
     shown: z.array(ShownField),

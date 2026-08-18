@@ -98,6 +98,10 @@ export const Page = z
     params: z.array(z.string().min(1)).default([]),
     ready: Locator,
     surfaces: z.array(Surface).min(1),
+    /** One-line what this page is. Map writes a mechanical blurb; explore may polish. */
+    description: z.string().min(1).optional(),
+    /** Widget fingerprint when `description` was written. */
+    describeKey: z.string().min(1).optional(),
   })
   .strict()
   .superRefine((page, ctx) => {

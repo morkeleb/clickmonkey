@@ -13,8 +13,10 @@ import { bootRun } from "../executor/boot.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
+import { persistSharedMap } from "../persist/config.js";
 import { pickSeedPageId, resetToSeed } from "./seed.js";
 import { appendFindingReport } from "../persist/finding.js";
+import { polishPageDescription } from "../surveyor/describe.js";
 import { writeLog } from "../persist/log.js";
 import { stopPresence } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
@@ -191,17 +193,37 @@ export async function runExplore(opts: {
 
     const seedPageId = pickSeedPageId(state, state.pageId) ?? state.pageId;
     const findings: Finding[] = [];
+    const polished = new Set<string>();
 
-    let view = await buildView({
-      page: state.page,
-      pageId: state.pageId,
-      surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
-      model: state.model,
-      appUrl: state.config.url,
-      fence: state.config.fence,
-      intro: state.config.intro,
-      skip: state.config.skip,
-    });
+    const snapshot = async (): Promise<View> =>
+      buildView({
+        page: state.page,
+        pageId: state.pageId,
+        surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
+        model: state.model,
+        appUrl: state.config.url,
+        fence: state.config.fence,
+        intro: state.config.intro,
+        skip: state.config.skip,
+      });
+
+    const polishHere = async (): Promise<void> => {
+      const page = state.model.pages.find((p) => p.id === state.pageId);
+      if (!page?.description || !page.describeKey) return;
+      const token = `${page.id}:${page.describeKey}`;
+      if (polished.has(token)) return;
+      polished.add(token);
+      if (await polishPageDescription(page, boundChat)) {
+        if (state.configPath) {
+          const saved = persistSharedMap(state.configPath, state.model);
+          state.config = saved;
+          state.model = saved.map;
+        }
+      }
+    };
+
+    await polishHere();
+    let view = await snapshot();
 
     let stepsUsed = 0;
     while (stepsUsed < steps && Date.now() < deadline) {
@@ -219,6 +241,10 @@ export async function runExplore(opts: {
         view = await resetToSeed(exec, state, seedPageId);
       } else if (result.bounced) {
         view = await resetToSeed(exec, state, seedPageId);
+      } else {
+        await polishHere();
+        view = await snapshot();
+        if (view.last === undefined && result.view.last) view = { ...view, last: result.view.last };
       }
     }
 

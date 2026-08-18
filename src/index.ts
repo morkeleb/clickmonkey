@@ -18,6 +18,12 @@ export { liveValidate } from "./executor/live-validate.js";
 export type { LiveFailure } from "./executor/live-validate.js";
 export { resolveCount } from "./surveyor/resolve.js";
 export { inspect, inspectAndSaveConfig } from "./surveyor/inspect.js";
+export {
+  applyPageDescription,
+  mechanicalDescription,
+  polishPageDescription,
+  pageNotesFromModel,
+} from "./surveyor/describe.js";
 export { recordPageLedgers } from "./surveyor/record.js";
 export { validateHtml } from "./surveyor/html.js";
 export { scanA11y } from "./surveyor/a11y.js";
