@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { persistFinding } from "../persist/finding.js";
+import { touchPresence } from "../persist/presence.js";
 import { persistQualityRuntime } from "../persist/quality.js";
 import { normalizeQualityMessage } from "../schema/quality.js";
 import { compactLog } from "../playbooks/compact.js";
@@ -55,6 +56,8 @@ export interface StepResult {
   ok: boolean;
   step: Step;
   finding?: Finding;
+  /** Left the leash. Recover and keep walking — not a website finding. */
+  bounced?: boolean;
   view: View;
 }
 
@@ -219,21 +222,12 @@ async function finish(
 
   const href = state.page.url();
   const fenceHit = state.inIntro ? "ok" : checkFence(href, state.config.fence);
+  const refusedFence = stepFailure?.kind === "fenceViolation";
+  const bounced = fenceHit !== "ok";
 
   let finding: Finding | undefined;
-  if (fenceHit !== "ok") {
-    finding = await screenshotFinding(
-      state,
-      {
-        kind: "fenceViolation",
-        message:
-          fenceHit === "blacklist"
-            ? `URL matches fence blacklist: ${href}`
-            : `URL left fence path: ${href}`,
-        url: href,
-      },
-      step,
-    );
+  if (bounced) {
+    // Left the leash. Recover without treating it as a website finding.
   } else if (isDocumentNotFound(state.page)) {
     if (state.configPath) reportDocumentNotFound(state.configPath, state.page);
     const pending404 = state.pendingFindings.find((f) => f.kind === "notFound");
@@ -250,7 +244,8 @@ async function finish(
     state.pendingFindings = state.pendingFindings.filter((f) => f !== pending404);
   } else {
     await state.afterStep?.(state);
-    if (stepFailure) {
+    if (state.outDir) touchPresence(state.outDir, state.pageId);
+    if (stepFailure && stepFailure.kind !== "fenceViolation") {
       finding = await screenshotFinding(state, stepFailure, step);
     } else if (state.pendingFindings[0]) {
       finding = await screenshotFinding(state, state.pendingFindings.shift()!, step);
@@ -291,13 +286,19 @@ async function finish(
     last: {
       step: formatStep(step),
       ok: !finding,
-      ...(finding ? { finding: finding.kind } : {}),
+      ...(finding ? { finding: finding.kind } : bounced || refusedFence ? { finding: "fenceViolation" } : {}),
     },
   });
 
   await dumpVerboseState(state, formatStep(step), view);
 
-  return { ok: !finding, step, finding, view };
+  return {
+    ok: !finding,
+    step,
+    view,
+    ...(finding ? { finding } : {}),
+    ...(bounced ? { bounced: true } : {}),
+  };
 }
 
 export function createExecutor(state: RunState): {
@@ -338,7 +339,11 @@ export function createExecutor(state: RunState): {
         line,
         ok: result.ok,
         started,
-        ...(result.finding ? { finding: result.finding.kind } : {}),
+        ...(result.finding
+          ? { finding: result.finding.kind }
+          : result.bounced || result.view.last?.finding === "fenceViolation"
+            ? { finding: "fenceViolation" }
+            : {}),
         echo: process.stderr,
       });
     }
@@ -411,6 +416,7 @@ export function createExecutor(state: RunState): {
       });
       await dumpVerboseState(state, "land", landView);
     }
+    if (state.outDir) touchPresence(state.outDir, state.pageId);
   }
 
   return { runStep, runLine, runIntro };

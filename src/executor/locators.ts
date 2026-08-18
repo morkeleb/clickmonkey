@@ -74,31 +74,39 @@ export function widgetLocator(
   return toPlaywrightLocator(root, loc);
 }
 
-async function isPresentOne(el: PwLocator, page: Page): Promise<boolean> {
-  if (!(await el.isVisible().catch(() => false))) return false;
-  const enabled = await el
+export const ACTABLE_WAIT_MS = 15_000;
+const ACTABLE_POLL_MS = 50;
+
+export type ActableMiss = "missing" | "hidden" | "disabled" | "tiny" | "offscreen";
+
+type Box = { x: number; y: number; width: number; height: number };
+
+function isOffscreen(box: Box, vp: { width: number; height: number }): boolean {
+  if (box.x + box.width < 0 || box.y + box.height < 0) return true;
+  return box.x > vp.width || box.y > vp.height;
+}
+
+async function isDisabled(el: PwLocator): Promise<boolean> {
+  return el
     .evaluate((node) => {
       const typed = node as { disabled?: boolean; getAttribute(name: string): string | null };
-      if (typed.disabled) return false;
-      if (typed.getAttribute("aria-disabled") === "true") return false;
-      return true;
+      if (typed.disabled) return true;
+      return typed.getAttribute("aria-disabled") === "true";
     })
-    .catch(() => false);
-  if (!enabled) return false;
+    .catch(() => true);
+}
+
+async function isPresentOne(el: PwLocator, page: Page): Promise<boolean> {
+  if (!(await el.isVisible().catch(() => false))) return false;
+  if (await isDisabled(el)) return false;
   const box = await el.boundingBox().catch(() => null);
   if (!box || box.width < 2 || box.height < 2) return false;
   const vp = page.viewportSize();
   if (!vp) return true;
-  if (box.x + box.width < 0 || box.y + box.height < 0) return false;
-  if (box.x > vp.width || box.y > vp.height) return false;
-  return true;
+  return !isOffscreen(box, vp);
 }
 
-/**
- * First match that is visible, enabled, and on-screen.
- * Duplicates are allowed — prefer an uncovered hit.
- */
-export async function pickActable(loc: PwLocator, page: Page): Promise<PwLocator | undefined> {
+async function pickActableNow(loc: PwLocator, page: Page): Promise<PwLocator | undefined> {
   const n = await loc.count().catch(() => 0);
   let covered: PwLocator | undefined;
   for (let i = 0; i < n; i++) {
@@ -108,6 +116,70 @@ export async function pickActable(loc: PwLocator, page: Page): Promise<PwLocator
     covered ??= el;
   }
   return covered;
+}
+
+/**
+ * First match that is visible, enabled, and on-screen.
+ * Duplicates are allowed — prefer an uncovered hit.
+ * Clicks/fills pass timeoutMs so a disabled login button can enable.
+ */
+export async function pickActable(
+  loc: PwLocator,
+  page: Page,
+  opts?: { timeoutMs?: number },
+): Promise<PwLocator | undefined> {
+  const timeoutMs = opts?.timeoutMs ?? 0;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const hit = await pickActableNow(loc, page);
+    if (hit) return hit;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return undefined;
+    await new Promise((r) => setTimeout(r, Math.min(ACTABLE_POLL_MS, remaining)));
+  }
+}
+
+export async function explainActableMiss(loc: PwLocator, page: Page): Promise<ActableMiss> {
+  const n = await loc.count().catch(() => 0);
+  if (n === 0) return "missing";
+  const reasons = new Set<ActableMiss>();
+  for (let i = 0; i < n; i++) {
+    const el = loc.nth(i);
+    if (!(await el.isVisible().catch(() => false))) {
+      reasons.add("hidden");
+      continue;
+    }
+    if (await isDisabled(el)) {
+      reasons.add("disabled");
+      continue;
+    }
+    const box = await el.boundingBox().catch(() => null);
+    if (!box || box.width < 2 || box.height < 2) {
+      reasons.add("tiny");
+      continue;
+    }
+    const vp = page.viewportSize();
+    if (vp && isOffscreen(box, vp)) reasons.add("offscreen");
+  }
+  if (reasons.has("disabled")) return "disabled";
+  if (reasons.has("offscreen")) return "offscreen";
+  if (reasons.has("tiny")) return "tiny";
+  return "hidden";
+}
+
+export function actableMissMessage(key: string, miss: ActableMiss): string {
+  switch (miss) {
+    case "missing":
+      return `${key} was not found`;
+    case "disabled":
+      return `${key} is disabled`;
+    case "tiny":
+      return `${key} is too small to click`;
+    case "offscreen":
+      return `${key} is off-screen`;
+    default:
+      return `${key} is not visible`;
+  }
 }
 
 export async function isPresentWidget(loc: PwLocator, page: Page): Promise<boolean> {

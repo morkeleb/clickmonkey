@@ -6,6 +6,7 @@ import { withRun } from "../executor/session.js";
 import { buildView, formatView } from "../executor/view.js";
 import { saveConfig } from "../persist/config.js";
 import { writeLog, readLog } from "../persist/log.js";
+import { stopPresence } from "../persist/presence.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
 import { collectFindingCases, listRuns, resolveRunDirs } from "../persist/runs.js";
 import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
@@ -32,6 +33,7 @@ import {
   MAP_CLI_STEPS,
   UNLEASH_CLI_STEPS,
 } from "../playbooks/index.js";
+import { startUiServer } from "../ui/server.js";
 import {
   BRAIN_HELP,
   EXIT_FINDINGS,
@@ -42,6 +44,7 @@ import {
   fail,
   loadConfigOrExit,
   parseMinutes,
+  parsePort,
   parseSteps,
   parseTimeout,
   persistUrl,
@@ -84,6 +87,7 @@ export async function cmdInspect(opts: {
         const state = await bootRun(handle, config, outDir, {
           configPath,
           verbose: opts.verbose,
+          brain: "inspect",
         });
         const exec = createExecutor(state);
         await exec.runIntro();
@@ -107,6 +111,8 @@ export async function cmdInspect(opts: {
     });
   } catch (err) {
     fail(EXIT_FINDINGS, errMessage(err));
+  } finally {
+    stopPresence(outDir);
   }
   return EXIT_OK;
 }
@@ -127,6 +133,7 @@ export async function cmdView(opts: {
       const state = await bootRun(handle, config, outDir, {
         configPath,
         verbose: opts.verbose,
+        brain: "view",
       });
       const exec = createExecutor(state);
       if (state.config.intro.length > 0) await exec.runIntro();
@@ -144,6 +151,8 @@ export async function cmdView(opts: {
     });
   } catch (err) {
     fail(EXIT_FINDINGS, errMessage(err));
+  } finally {
+    stopPresence(outDir);
   }
   return EXIT_OK;
 }
@@ -173,6 +182,7 @@ export async function cmdStep(
       const state = await bootRun(handle, config, outDir, {
         configPath,
         verbose: opts.verbose,
+        brain: "step",
       });
       const exec = createExecutor(state);
       if (state.config.intro.length > 0) await exec.runIntro();
@@ -195,6 +205,8 @@ export async function cmdStep(
     });
   } catch (err) {
     fail(EXIT_USAGE, errMessage(err));
+  } finally {
+    stopPresence(outDir);
   }
 }
 
@@ -478,6 +490,27 @@ export async function cmdReplay(
     if (err instanceof ReplayLiveValidateError) fail(EXIT_LIVE, err.message);
     fail(EXIT_USAGE, errMessage(err));
   }
+}
+
+export async function cmdUi(opts: {
+  config?: string;
+  port?: string;
+  noOpen?: boolean;
+}): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  loadConfigOrExit(configPath);
+  const server = await startUiServer({
+    configPath,
+    port: parsePort(opts.port),
+    open: !opts.noOpen,
+  });
+  await new Promise<void>((resolve) => {
+    const stop = () => resolve();
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  await server.close();
+  return EXIT_OK;
 }
 
 export async function cmdCompact(logPath: string | undefined, opts: { out?: string }): Promise<number> {

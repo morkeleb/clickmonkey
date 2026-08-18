@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { persistSharedMap } from "../persist/config.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
+import { startPresence, touchPresence } from "../persist/presence.js";
 import { isDocumentNotFound } from "../oracles/http.js";
 import type { Config } from "../schema/config.js";
 import type { Locator } from "../schema/locator.js";
@@ -57,6 +58,7 @@ export function attachInspectAfterStep(state: RunState): void {
     } else {
       s.config = { ...s.config, map: r.model };
     }
+    if (s.outDir) touchPresence(s.outDir, s.pageId);
   };
 }
 
@@ -69,9 +71,15 @@ export async function bootRun(
     replay?: boolean;
     usedLocators?: Record<string, Locator>;
     verbose?: boolean;
+    brain?: string;
   },
 ): Promise<RunState> {
   mkdirSync(outDir, { recursive: true });
+  const hintPageId =
+    config.map.pages.find((p) => p.entry)?.id ?? config.map.pages[0]?.id ?? "boot";
+  if (!opts?.replay) {
+    startPresence(outDir, { pageId: hintPageId, brain: opts?.brain });
+  }
   const navLogPath = join(outDir, "nav.jsonl");
   const navMeta: NavMeta = { phase: "boot" };
   const pendingFindings: RunState["pendingFindings"] = [];
@@ -118,6 +126,7 @@ export async function bootRun(
     verboseSeq: 0,
   };
   attachInspectAfterStep(state);
+  if (!opts?.replay) touchPresence(outDir, state.pageId);
   if (state.configPath && !isDocumentNotFound(handle.page)) {
     const saved = persistSharedMap(state.configPath, inspected.model);
     state.config = saved;

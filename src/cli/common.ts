@@ -28,6 +28,7 @@ Commands:
   report      Markdown findings report from selected runs
   replay      Replay a log file or a findings-report markdown file
   compact     Shorten a log to the last open + following lines
+  ui          Local-only dashboard (map, runs, findings)
 
 Options:
   --verbose   Write per-step HTML + view dumps under <run>/verbose/
@@ -93,6 +94,13 @@ export function parseMinutes(value?: string, fallback = 20): number {
   if (value === undefined) return fallback;
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) fail(EXIT_USAGE, `invalid --minutes ${value}`);
+  return n;
+}
+
+export function parsePort(value?: string, fallback = 4174): number {
+  if (value === undefined) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) fail(EXIT_USAGE, `invalid --port ${value}`);
   return n;
 }
 

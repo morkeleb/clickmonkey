@@ -14,6 +14,7 @@ _clickmonkey() {
     'report:Markdown findings report from selected runs'
     'replay:Replay a log or a findings-report markdown file'
     'compact:Shorten a log to the last open'
+    'ui:Local-only dashboard'
   )
 
   local context state line
@@ -35,6 +36,8 @@ _clickmonkey() {
     '--runs[Run ids for report]:ids:' \
     '--all[Include every run that has findings]' \
     '--verbose[Write per-step HTML + view dumps]' \
+    '--port[Dashboard port]:port:' \
+    '--no-open[Do not open a browser]' \
     '1:command:->cmds' \
     '*::arg:->args'
 

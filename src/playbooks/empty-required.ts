@@ -4,6 +4,7 @@ import { createExecutor, type RunState } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { isPotentialWrite } from "../executor/write-policy.js";
 import { writeLog } from "../persist/log.js";
+import { stopPresence } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
 import type { Finding } from "../schema/finding.js";
 import type { Log, Step } from "../schema/log.js";
@@ -90,10 +91,12 @@ export async function runEmptyRequired(opts: {
 }): Promise<EmptyRequiredResult> {
   const logPath = join(opts.outDir, "replay.log");
 
-  return withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+  try {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
     const state = await bootRun(handle, opts.config, opts.outDir, {
       configPath: opts.configPath,
       verbose: opts.verbose,
+      brain: "empty-required",
     });
     const exec = createExecutor(state);
     if (state.config.intro.length > 0) await exec.runIntro();
@@ -167,5 +170,8 @@ export async function runEmptyRequired(opts: {
       log: replay,
       logPath,
     };
-  });
+    });
+  } finally {
+    stopPresence(opts.outDir);
+  }
 }

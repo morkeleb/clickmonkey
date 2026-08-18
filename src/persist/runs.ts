@@ -87,7 +87,15 @@ export function collectFindingCases(runDirs: string[]): FindingCase[] {
         : existsSync(join(runDir, "log.txt"))
           ? join(runDir, "log.txt")
           : undefined;
-      let tape = tapePath ? formatLog(compactLog(parseLog(readFileSync(tapePath, "utf8")))) : "";
+      let tape = "";
+      if (tapePath) {
+        const raw = readFileSync(tapePath, "utf8");
+        try {
+          tape = formatLog(compactLog(parseLog(raw)));
+        } catch {
+          tape = raw;
+        }
+      }
       if (tape && !/^# bug:/m.test(tape)) {
         tape = `# bug: ${finding.message}\n\n${tape}`.trim() + "\n";
       }

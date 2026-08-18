@@ -11,6 +11,7 @@ import {
   cmdReport,
   cmdReplay,
   cmdStep,
+  cmdUi,
   cmdUnleash,
   cmdView,
 } from "./commands.js";
@@ -37,6 +38,8 @@ try {
       minutes: { type: "string" },
       runs: { type: "string" },
       all: { type: "boolean" },
+      port: { type: "string" },
+      "no-open": { type: "boolean" },
     },
   });
 
@@ -65,6 +68,8 @@ try {
     minutes: typeof values.minutes === "string" ? values.minutes : undefined,
     runs: typeof values.runs === "string" ? values.runs : undefined,
     all: Boolean(values.all),
+    port: typeof values.port === "string" ? values.port : undefined,
+    noOpen: Boolean(values["no-open"]),
   };
 
   const run = async (): Promise<number> => {
@@ -91,6 +96,8 @@ try {
         return cmdReplay(positionals[1], flags);
       case "compact":
         return cmdCompact(positionals[1], { out: flags.out });
+      case "ui":
+        return cmdUi(flags);
       default:
         process.stdout.write(USAGE);
         process.stderr.write(`Unknown command: ${command}\n`);

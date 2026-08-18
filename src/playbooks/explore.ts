@@ -16,6 +16,7 @@ import { buildView } from "../executor/view.js";
 import { pickSeedPageId, resetToSeed } from "./seed.js";
 import { appendFindingReport } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
+import { stopPresence } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
 import { severityForKind, type Finding, type FindingSeverity } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
@@ -178,10 +179,12 @@ export async function runExplore(opts: {
     });
   const brain = opts.brain ?? createExploreBrain({ chat: boundChat, charter, skills, startedAt, minutes });
 
-  return withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+  try {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
     const state = await bootRun(handle, opts.config, opts.outDir, {
       configPath: opts.configPath,
       verbose: opts.verbose,
+      brain: brain.name,
     });
     const exec = createExecutor(state);
     if (state.config.intro.length > 0) await exec.runIntro();
@@ -214,6 +217,8 @@ export async function runExplore(opts: {
         const extra = await explainFinding(boundChat, result.finding, view, charter);
         if (extra) appendFindingReport(opts.outDir, result.finding.id, extra);
         view = await resetToSeed(exec, state, seedPageId);
+      } else if (result.bounced) {
+        view = await resetToSeed(exec, state, seedPageId);
       }
     }
 
@@ -242,5 +247,8 @@ export async function runExplore(opts: {
       sessionPath,
       stepsUsed,
     };
-  });
+    });
+  } finally {
+    stopPresence(opts.outDir);
+  }
 }

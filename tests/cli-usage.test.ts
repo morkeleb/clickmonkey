@@ -41,6 +41,7 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stdout, /unleash/);
     assert.match(result.stdout, /explore/);
     assert.match(result.stdout, /report/);
+    assert.match(result.stdout, /^\s+ui\s/m);
     assert.match(result.stdout, /--verbose/);
   });
 

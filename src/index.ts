@@ -54,6 +54,19 @@ export {
 export type { EmptyRequiredResult, UnleashResult, ExploreResult, ReplayReportResult } from "./playbooks/index.js";
 export { extractClickmonkeyFences, isFindingsReport } from "./reports/fences.js";
 export { renderFindingsReport, renderQualitySection, enrichWithBrain } from "./reports/findings-report.js";
+export { identityFromRunId } from "./ui/identity.js";
+export { buildUiGraph, badgeCounts, hopsFromNavLog } from "./ui/graph.js";
+export { buildUiSnapshot } from "./ui/snapshot.js";
+export { buildRunDetail } from "./ui/run-detail.js";
+export { startUiServer, UI_DEFAULT_PORT } from "./ui/server.js";
+export type { UiServer, UiServerOpts } from "./ui/server.js";
+export {
+  startPresence,
+  touchPresence,
+  stopPresence,
+  isPresenceLive,
+  listPresences,
+} from "./persist/presence.js";
 export { collectFindingCases, listRuns } from "./persist/runs.js";
 export {
   unleashBrain,

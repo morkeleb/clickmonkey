@@ -14,7 +14,14 @@ import type { Action, Field, Page as PageDef, Surface, Widget } from "../schema/
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { slug } from "../surveyor/ids.js";
-import { pickActable, toPlaywrightLocator, widgetLocator } from "./locators.js";
+import {
+  ACTABLE_WAIT_MS,
+  actableMissMessage,
+  explainActableMiss,
+  pickActable,
+  toPlaywrightLocator,
+  widgetLocator,
+} from "./locators.js";
 import type { RunState } from "./run.js";
 import { resolveSecretAsync } from "./secrets.js";
 import { isPotentialWrite } from "./write-policy.js";
@@ -203,11 +210,11 @@ async function performClick(
   const actable = requireActable(state, surfaceId, id);
   if (!actable.ok) return actable.failure;
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
-  const pw = await pickActable(raw, state.page);
+  const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS });
   if (!pw) {
     return {
       kind: "expectFailed",
-      message: `${actable.key} is not visible`,
+      message: actableMissMessage(actable.key, await explainActableMiss(raw, state.page)),
       widgetRef: actable.key,
     };
   }
@@ -252,11 +259,11 @@ async function performFill(
   if (!actable.ok) return actable.failure;
   const resolved = await resolveSecretAsync(value);
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
-  const pw = await pickActable(raw, state.page);
+  const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS });
   if (!pw) {
     return {
       kind: "expectFailed",
-      message: `${actable.key} is not visible`,
+      message: actableMissMessage(actable.key, await explainActableMiss(raw, state.page)),
       widgetRef: actable.key,
     };
   }

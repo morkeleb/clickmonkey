@@ -8,6 +8,7 @@ import { readyKey, widgetKey } from "../executor/steps.js";
 import { withRun } from "../executor/session.js";
 import { persistFinding } from "../persist/finding.js";
 import { readLog, writeLog } from "../persist/log.js";
+import { stopPresence } from "../persist/presence.js";
 import { requirePageModel, type Config } from "../schema/config.js";
 import { findingId, type Finding } from "../schema/finding.js";
 import type { Locator } from "../schema/locator.js";
@@ -72,7 +73,8 @@ export async function replayLog(opts: {
 
   const usedLocators = usedLocatorsFor(model, log);
 
-  return withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+  try {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
     const state = await bootRun(handle, opts.config, opts.outDir, {
       configPath: opts.configPath,
       replay: true,
@@ -125,5 +127,8 @@ export async function replayLog(opts: {
     }
 
     return { ok: findings.length === 0, findings, ...(reproduced ? { reproduced } : {}) };
-  });
+    });
+  } finally {
+    stopPresence(opts.outDir);
+  }
 }

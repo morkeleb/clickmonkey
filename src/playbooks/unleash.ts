@@ -7,6 +7,7 @@ import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
 import { writeLog } from "../persist/log.js";
+import { stopPresence } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
 import type { Finding } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
@@ -49,10 +50,12 @@ export async function runUnleash(opts: {
         : unleashBrain);
   const logPath = join(opts.outDir, "log.txt");
 
-  return withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+  try {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
     const state = await bootRun(handle, opts.config, opts.outDir, {
       configPath: opts.configPath,
       verbose: opts.verbose,
+      brain: brain.name,
     });
     const exec = createExecutor(state);
     if (state.config.intro.length > 0) await exec.runIntro();
@@ -83,6 +86,8 @@ export async function runUnleash(opts: {
       if (result.finding) {
         findings.push(result.finding);
         view = await resetToSeed(exec, state, seedPageId);
+      } else if (result.bounced) {
+        view = await resetToSeed(exec, state, seedPageId);
       }
     }
 
@@ -102,5 +107,8 @@ export async function runUnleash(opts: {
       logPath,
       stepsUsed,
     };
-  });
+    });
+  } finally {
+    stopPresence(opts.outDir);
+  }
 }

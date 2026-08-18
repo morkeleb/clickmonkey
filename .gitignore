@@ -45,6 +45,8 @@ build/Release
 
 # Dependency directories
 node_modules
+web/node_modules
+web/dist
 jspm_packages
 
 # Optional npm cache directory

@@ -43,7 +43,7 @@ describe("pathPrefixMatch / checkFence", () => {
 });
 
 describe("fence executor", () => {
-  it("records fenceViolation and skips afterStep", async () => {
+  it("bounces off the fence without a website finding", async () => {
     const { baseUrl, close } = await serveSite("fence");
     const outDir = mkdtempSync(join(tmpdir(), "cm-fence-"));
     try {
@@ -74,9 +74,11 @@ describe("fence executor", () => {
         };
         const exec = createExecutor(state);
         const result = await exec.runLine("click page.logout");
-        assert.equal(result.ok, false);
-        assert.equal(result.finding?.kind, "fenceViolation");
-        assert.match(result.finding?.url ?? page.url(), /\/login/);
+        assert.equal(result.ok, true);
+        assert.equal(result.finding, undefined);
+        assert.equal(result.bounced, true);
+        assert.match(page.url(), /\/login/);
+        assert.equal(result.view.last?.finding, "fenceViolation");
         assert.equal(afterStepCalls, 0);
       });
     } finally {

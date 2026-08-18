@@ -17,11 +17,13 @@ snapshot, and a `look` block (font palette + hit-tested cover) — not HTML.
 npm install -g clickmonkey
 # or from this repo
 npm install
+npm install --prefix web
 npx playwright install chromium
+npm run build
 npm run link
 ```
 
-`npm run link` puts `clickmonkey` on your PATH and installs zsh completions. Type `click<TAB>`, not `cli<TAB>` (`cli` is `clippy-driver`). After linking, run `rehash` or open a new terminal. The launcher is `bin/clickmonkey.mjs`: it runs `src/` via tsx until you `npm run build`, then it uses `dist/`.
+`npm run link` puts `clickmonkey` on your PATH and installs zsh completions. Type `click<TAB>`, not `cli<TAB>` (`cli` is `clippy-driver`). After linking, run `rehash` or open a new terminal. The launcher is `bin/clickmonkey.mjs`: it runs `src/` via tsx until you `npm run build`, then it uses `dist/`. `clickmonkey ui` needs `web/dist` from `npm run build` (CLI `tsc` plus the Vite app).
 
 Node 22.22+ or 24.8+. No JRE.
 
@@ -97,7 +99,7 @@ clickmonkey/
 ```
 
 - **url** — where the run starts.
-- **fence** — pathname prefix plus blacklist substrings. Crossing it is a finding.
+- **fence** — pathname prefix plus blacklist substrings. Crossing it bounces the walker back to seed; it is not a website finding.
 - **intro** — DSL lines run after `goto`, before inspect/playbook/replay. Not a function.
 - **$VAR / ${VAR}** — fill values resolved from the environment. The log keeps the token.
 - **writePolicy** — `validationOnly` refuses a submit when required fields are filled.
@@ -151,7 +153,10 @@ clickmonkey explore [--config] [--url] [--out] [--steps] [--minutes] [--charter]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
 clickmonkey replay <log|report.md> [--config] [--url] [--out]
 clickmonkey compact <log> [--out <file>]
+clickmonkey ui
 ```
+
+`clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists.
 
 `--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 
@@ -175,7 +180,7 @@ before start.
 
 `fence.path` is a pathname prefix with a segment boundary (`/app` matches
 `/app/x`, not `/application`). `fence.blacklist` is a list of URL substrings.
-Leaving the fence records `fenceViolation` and skips the post-step inspect.
+Leaving the fence skips the post-step inspect and returns to the seed page. That is leash control, not a website finding.
 
 ## Playbook: empty-required
 
