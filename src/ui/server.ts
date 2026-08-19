@@ -54,7 +54,7 @@ function packageRoot(): string {
   return fileURLToPath(new URL("../..", import.meta.url));
 }
 
-function resolveUiRoot(): string | undefined {
+export function resolveUiRoot(): string | undefined {
   const pkg = packageRoot();
   const distUi = join(pkg, "dist", "ui");
   if (existsSync(join(distUi, "index.html"))) return distUi;

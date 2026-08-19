@@ -5,28 +5,39 @@ import {
   createExploreBrain,
   defaultExploreSkills,
   DEFAULT_EXPLORE_CHARTER,
+  ExploreError,
+  checkExploreLine,
+  completeCurrentPlanItem,
+  draftExplorePlan,
   formatViewForBrain,
+  isBrainMissFinding,
+  isScreenshotLine,
+  isVisualCharter,
+  probeExploreChat,
   type ExploreBrain,
 } from "../brains/explore.js";
 import type { Brain } from "../brains/types.js";
 import { bootRun } from "../executor/boot.js";
+import { formatLiveLine } from "../executor/nav-log.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
 import { persistSharedMap } from "../persist/config.js";
+import { appendEvent } from "../persist/events.js";
+import { exploreOutlineOf, setPresenceOutline, stopPresence } from "../persist/presence.js";
 import { pickSeedPageId, resetToSeed } from "./seed.js";
 import { appendFindingReport } from "../persist/finding.js";
 import { polishPageDescription } from "../surveyor/describe.js";
 import { writeLog } from "../persist/log.js";
-import { stopPresence } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
+import type { UiExplorePlan } from "../schema/ui.js";
 import { severityForKind, type Finding, type FindingSeverity } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
 import type { View } from "../schema/view.js";
 
 export const EXPLORE_DEFAULT_STEPS = 30;
 export const EXPLORE_DEFAULT_MINUTES = 20;
-export { DEFAULT_EXPLORE_CHARTER };
+export { DEFAULT_EXPLORE_CHARTER, ExploreError };
 
 export interface ExploreResult {
   ok: boolean;
@@ -42,14 +53,18 @@ const RUNTIME_KINDS = new Set(["pageError", "httpError", "notFound"]);
 function resolveApiKey(apiKeyEnv: string | undefined): string | undefined {
   if (!apiKeyEnv) return undefined;
   const value = process.env[apiKeyEnv];
-  if (!value) throw new Error(`${apiKeyEnv} is not set`);
+  if (!value) {
+    throw new ExploreError(
+      `explore needs the API key in ${apiKeyEnv}, but that environment variable is not set`,
+    );
+  }
   return value;
 }
 
 function requireBrain(config: Config): { baseUrl: string; model: string; apiKeyEnv?: string } {
   const brain = config.brain;
   if (!brain?.baseUrl || !brain.model) {
-    throw new Error("explore requires config.brain.baseUrl and config.brain.model");
+    throw new ExploreError("explore requires config.brain.baseUrl and config.brain.model");
   }
   return brain;
 }
@@ -66,6 +81,7 @@ function writeSessionMd(opts: {
   config: Config;
   findings: Finding[];
   notes: string[];
+  plan?: UiExplorePlan;
 }): void {
   const bySev: Record<FindingSeverity, Finding[]> = {
     critical: [],
@@ -98,6 +114,12 @@ function writeSessionMd(opts: {
     listFindings(bySev.minor),
     "### Suggestion",
     listFindings(bySev.suggestion),
+    "## Plan",
+    opts.plan
+      ? [`${opts.plan.goal}`, ...opts.plan.items.map((it) => `- [${it.status}] ${it.title}${it.page ? ` (${it.page})` : ""}`)].join(
+          "\n",
+        )
+      : "(none)",
     "## Notes",
     notes,
     "## Positive observations",
@@ -179,7 +201,16 @@ export async function runExplore(opts: {
       apiKey,
       messages: input.messages,
     });
-  const brain = opts.brain ?? createExploreBrain({ chat: boundChat, charter, skills, startedAt, minutes });
+  await probeExploreChat({ chat: boundChat, baseUrl: brainCfg.baseUrl, model: brainCfg.model });
+  const retrySink: { path?: string } = {};
+  const logRetry = (message: string): void => {
+    process.stderr.write(`${formatLiveLine(message)}\n`);
+    if (retrySink.path) {
+      appendEvent(retrySink.path, { ts: new Date().toISOString(), type: "brain", message });
+    }
+  };
+  const brain =
+    opts.brain ?? createExploreBrain({ chat: boundChat, charter, skills, startedAt, minutes, logRetry });
 
   try {
     return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
@@ -189,6 +220,8 @@ export async function runExplore(opts: {
       brain: brain.name,
     });
     const exec = createExecutor(state);
+    retrySink.path = state.navLogPath;
+    setPresenceOutline(opts.outDir, exploreOutlineOf({ charter }));
     if (state.config.intro.length > 0) await exec.runIntro();
 
     const seedPageId = pickSeedPageId(state, state.pageId) ?? state.pageId;
@@ -225,16 +258,104 @@ export async function runExplore(opts: {
     await polishHere();
     let view = await snapshot();
 
+    let plan: UiExplorePlan | undefined;
+    if (!opts.brain) {
+      plan = await draftExplorePlan({
+        chat: boundChat,
+        charter,
+        skills,
+        view,
+        logRetry,
+      });
+      setPresenceOutline(opts.outDir, exploreOutlineOf({ charter, plan, now: plan.items.find((i) => i.status === "now")?.title }));
+    }
+
+    const refused = new Set<string>();
+    const recentSteps: string[] = [];
+    let consecutiveRefusals = 0;
+    let itemSteps = 0;
     let stepsUsed = 0;
     while (stepsUsed < steps && Date.now() < deadline) {
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
         : undefined;
-      const decision = await brain.decide({ view, stepsUsed, last, charter, notes: notesOf(brain) });
-      const result = await exec.runLine(decision.line);
+      const decision = await brain.decide({
+        view,
+        stepsUsed,
+        last,
+        charter,
+        notes: notesOf(brain),
+        recent: recentSteps,
+        ...(plan ? { plan } : {}),
+      });
+      const line = decision.line.trim();
+      const check = checkExploreLine(line, view, {
+        stepsUsed,
+        charter,
+        rejected: [...refused],
+        recent: recentSteps,
+      });
+      if (!check.ok) {
+        consecutiveRefusals += 1;
+        if (check.ban !== false) refused.add(line);
+        logRetry(`explore refused: ${check.error}`);
+        view = {
+          ...view,
+          last: { step: line, ok: false, ...(check.ban !== false ? { finding: "unknownId" } : {}) },
+        };
+        if (consecutiveRefusals >= 3) {
+          throw new ExploreError(
+            `explore refused ${JSON.stringify(line)} three times in a row (${check.error})`,
+          );
+        }
+        continue;
+      }
+      consecutiveRefusals = 0;
+      const currentItem = plan?.items.find((i) => i.status === "now");
+      setPresenceOutline(
+        opts.outDir,
+        exploreOutlineOf({
+          charter,
+          now: [currentItem?.title, decision.note?.trim() || line].filter(Boolean).join(" — "),
+          notes: notesOf(brain),
+          plan,
+        }),
+      );
+      if (
+        isScreenshotLine(line) &&
+        isScreenshotLine(view.last?.step ?? "") &&
+        !isVisualCharter(charter)
+      ) {
+        throw new ExploreError(
+          `explore will not take a screenshot when the last step was already a screenshot (${view.last?.step})`,
+        );
+      }
+      const result = await exec.runLine(line);
       view = result.view;
       stepsUsed += 1;
-      if (result.finding) {
+      recentSteps.push(line);
+      if (recentSteps.length > 12) recentSteps.shift();
+      itemSteps += 1;
+      const itemFinished =
+        Boolean(decision.done) ||
+        Boolean(result.finding && !isBrainMissFinding(result.finding.kind)) ||
+        itemSteps >= 10;
+      if (plan && itemFinished) {
+        plan = completeCurrentPlanItem(plan, decision.done || result.finding ? "done" : "skipped");
+        itemSteps = 0;
+        setPresenceOutline(
+          opts.outDir,
+          exploreOutlineOf({
+            charter,
+            now: plan.items.find((i) => i.status === "now")?.title || "plan complete",
+            notes: notesOf(brain),
+            plan,
+          }),
+        );
+      }
+      if (result.finding && isBrainMissFinding(result.finding.kind)) {
+        refused.add(line);
+      } else if (result.finding) {
         findings.push(result.finding);
         const extra = await explainFinding(boundChat, result.finding, view, charter);
         if (extra) appendFindingReport(opts.outDir, result.finding.id, extra);
@@ -263,6 +384,7 @@ export async function runExplore(opts: {
       config: opts.config,
       findings,
       notes: notesOf(brain),
+      plan,
     });
 
     return {

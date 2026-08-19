@@ -2,6 +2,7 @@
 import { parseArgs } from "node:util";
 import { version } from "../index.js";
 import {
+  cmdBundle,
   cmdCompact,
   cmdExplore,
   cmdInit,
@@ -98,6 +99,8 @@ try {
         return cmdReplay(positionals[1], flags);
       case "compact":
         return cmdCompact(positionals[1], { out: flags.out });
+      case "bundle":
+        return cmdBundle(flags);
       case "ui":
         return cmdUi(flags);
       default:

@@ -98,11 +98,13 @@ describe("PageModel schema", () => {
           ready: { by: "testId", value: "invoices" },
           surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
           description: "Invoices — 8 actions",
+          describedBy: "inspect",
           describeKey: "abc123abc123",
         },
       ],
     });
     assert.equal(model.pages[0]?.description, "Invoices — 8 actions");
+    assert.equal(model.pages[0]?.describedBy, "inspect");
   });
 
   it("rejects a page without surfaces", () => {

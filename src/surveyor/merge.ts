@@ -209,6 +209,7 @@ function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number }
   ) {
     page.description = other.description;
     if (other.describeKey) page.describeKey = other.describeKey;
+    if (other.describedBy) page.describedBy = other.describedBy;
   }
   const used = new Set(page.surfaces.map((s) => s.id));
   const byKey = new Map<string, number>();

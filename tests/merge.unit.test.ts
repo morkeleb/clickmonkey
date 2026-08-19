@@ -284,8 +284,10 @@ describe("mergeTrees", () => {
     const incoming = structuredClone(base);
     incoming.pages[0]!.description = "Shop home with search and create.";
     incoming.pages[0]!.describeKey = "samekey12ab";
+    incoming.pages[0]!.describedBy = "explore";
     const merged = mergeTrees(base, incoming);
     assert.equal(merged.pages[0]?.description, "Shop home with search and create.");
+    assert.equal(merged.pages[0]?.describedBy, "explore");
     const other = structuredClone(base);
     other.pages[0]!.description = "Other page";
     other.pages[0]!.describeKey = "otherkey12ab";

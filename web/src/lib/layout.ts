@@ -17,6 +17,8 @@ export type GraphNodeData = {
   red: number;
   yellow: number;
   rings: { hue: number; name: string }[];
+  blurb?: string;
+  describedBy?: "inspect" | "explore";
   count?: number;
   collapsed?: boolean;
   section?: string;
@@ -24,8 +26,8 @@ export type GraphNodeData = {
 
 export type GraphFlowNode = Node<GraphNodeData, "graph" | "section">;
 
-export const PAGE_NODE = { width: 188, height: 56 } as const;
-export const NESTED_PAGE = { width: 200, height: 44 } as const;
+export const PAGE_NODE = { width: 188, height: 72 } as const;
+export const NESTED_PAGE = { width: 200, height: 58 } as const;
 export const SECTION_NODE = { width: 236, height: 64 } as const;
 export const DIALOG_NODE = { width: 160, height: 48 } as const;
 
@@ -157,7 +159,8 @@ export function layoutGraph(
     return (
       node.label.toLowerCase().includes(query) ||
       node.path.toLowerCase().includes(query) ||
-      node.id.toLowerCase().includes(query)
+      node.id.toLowerCase().includes(query) ||
+      (node.blurb?.toLowerCase().includes(query) ?? false)
     );
   };
 
@@ -189,6 +192,8 @@ export function layoutGraph(
         red: node.red,
         yellow: node.yellow,
         rings: ringsFor(node, runs),
+        ...(node.blurb ? { blurb: node.blurb } : {}),
+        ...(node.describedBy ? { describedBy: node.describedBy } : {}),
       },
       style: { width: PAGE_NODE.width, height: PAGE_NODE.height, opacity: hidden ? 0.18 : 1 },
       zIndex: 2,
@@ -263,6 +268,8 @@ export function layoutGraph(
             yellow: page.yellow,
             rings: ringsFor(page, runs),
             section: key,
+            ...(page.blurb ? { blurb: page.blurb } : {}),
+            ...(page.describedBy ? { describedBy: page.describedBy } : {}),
           },
           style: { width: NESTED_PAGE.width, height: NESTED_PAGE.height, opacity: childHidden ? 0.18 : 1 },
           zIndex: 2,

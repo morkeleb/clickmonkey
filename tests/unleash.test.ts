@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { decideMap, decideUnleash, isWriteAction } from "../src/brains/unleash.js";
+import { decideMap, decideUnleash, isLeaveAction, isWriteAction } from "../src/brains/unleash.js";
 import { parseLine } from "../src/schema/dsl.js";
 import type { View } from "../src/schema/view.js";
 import { loadConfig } from "../src/persist/config.js";
@@ -41,6 +41,18 @@ function viewOf(partial: Partial<View>): View {
     ...partial,
   };
 }
+
+describe("isLeaveAction", () => {
+  it("treats workspace tab-close chrome as leave", () => {
+    assert.equal(isLeaveAction({ id: "button_close_period_close" }), true);
+    assert.equal(isLeaveAction({ id: "button_close_invoice_workspace" }), true);
+    assert.equal(isLeaveAction({ id: "button_close_panel" }), true);
+    assert.equal(isLeaveAction({ id: "logout" }), true);
+    assert.equal(isLeaveAction({ id: "openCreate" }), false);
+    assert.equal(isLeaveAction({ id: "button_invoicing" }), false);
+    assert.equal(isLeaveAction({ id: "button_close_period_close", opens: "dialog" }), false);
+  });
+});
 
 describe("unleash brain", () => {
   it("emits only click/fill ids from the view", () => {

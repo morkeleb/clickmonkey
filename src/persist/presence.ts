@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { Presence } from "../schema/ui.js";
+import { Presence, UiExploreOutline, type UiExploreOutline as Outline } from "../schema/ui.js";
 import { identityFromRunId } from "../ui/identity.js";
 
 export const PRESENCE_STALE_MS = 15_000;
@@ -55,6 +55,44 @@ export function touchPresence(outDir: string, pageId: string): Presence | undefi
   const next = Presence.parse({
     ...prev,
     pageId,
+    updatedAt: new Date().toISOString(),
+  });
+  writePresence(path, next);
+  return next;
+}
+
+function clip(text: string, max: number): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  if (one.length <= max) return one;
+  return `${one.slice(0, max - 1)}…`;
+}
+
+export function exploreOutlineOf(opts: {
+  charter: string;
+  now?: string;
+  notes?: readonly string[];
+  plan?: Outline["plan"];
+}): Outline {
+  const notes = (opts.notes ?? [])
+    .map((n) => clip(n, 160))
+    .filter(Boolean)
+    .slice(-8);
+  const now = opts.now?.trim() ? clip(opts.now, 200) : undefined;
+  return UiExploreOutline.parse({
+    charter: clip(opts.charter, 400),
+    ...(now ? { now } : {}),
+    notes,
+    ...(opts.plan ? { plan: opts.plan } : {}),
+  });
+}
+
+export function setPresenceOutline(outDir: string, outline: Outline): Presence | undefined {
+  const path = presencePath(outDir);
+  const prev = loadPresence(path);
+  if (!prev || prev.stoppedAt) return prev;
+  const next = Presence.parse({
+    ...prev,
+    outline,
     updatedAt: new Date().toISOString(),
   });
   writePresence(path, next);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Page } from "../src/schema/page-model.js";
 import {
+  applyMissingPageDescriptions,
   applyPageDescription,
   describeKeyOf,
   mechanicalDescription,
@@ -76,6 +77,7 @@ describe("applyPageDescription", () => {
     const page = pageOf({ id: "home", path: "/" });
     assert.equal(applyPageDescription(page, { heading: "Home" }), true);
     assert.ok(page.description);
+    assert.equal(page.describedBy, "inspect");
     assert.equal(page.describeKey, describeKeyOf(page));
     const first = page.description;
     assert.equal(applyPageDescription(page, { heading: "Home" }), false);
@@ -100,6 +102,19 @@ describe("applyPageDescription", () => {
   });
 });
 
+describe("applyMissingPageDescriptions", () => {
+  it("fills every page that lacks a blurb", () => {
+    const home = pageOf({ id: "home", path: "/" });
+    const invoices = pageOf({ id: "invoices", path: "/invoices" });
+    applyPageDescription(home, { heading: "Home" });
+    const first = home.description;
+    assert.equal(applyMissingPageDescriptions([home, invoices]), true);
+    assert.equal(home.description, first);
+    assert.ok(invoices.description);
+    assert.equal(invoices.describedBy, "inspect");
+  });
+});
+
 describe("polishPageDescription", () => {
   it("replaces the mechanical line when the model returns a sentence", async () => {
     const page = pageOf({ id: "invoices", path: "/invoices" });
@@ -107,6 +122,7 @@ describe("polishPageDescription", () => {
     const ok = await polishPageDescription(page, async () => "Invoice list and create flow.");
     assert.equal(ok, true);
     assert.equal(page.description, "Invoice list and create flow.");
+    assert.equal(page.describedBy, "explore");
   });
 
   it("keeps the mechanical line on junk", async () => {

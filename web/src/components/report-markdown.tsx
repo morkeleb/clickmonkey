@@ -2,6 +2,7 @@ import { Printer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { renderReportHtml } from "@/lib/markdown";
+import { fetchFirstJson } from "@/lib/paths";
 
 type ReportPayload = {
   id: string;
@@ -22,9 +23,8 @@ export function ReportMarkdown({ reportId }: { reportId: string }) {
     setError(null);
     void (async () => {
       try {
-        const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}`);
-        if (!res.ok) throw new Error(`report ${res.status}`);
-        const data = (await res.json()) as ReportPayload;
+        const enc = encodeURIComponent(reportId);
+        const data = await fetchFirstJson<ReportPayload>([`api/reports/${enc}`, `api/reports/${enc}.json`]);
         if (!cancelled) setReport(data);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "report failed");

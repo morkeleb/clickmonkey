@@ -28,6 +28,7 @@ export { resolveCount } from "./surveyor/resolve.js";
 export { inspect, inspectAndSaveConfig } from "./surveyor/inspect.js";
 export {
   applyPageDescription,
+  applyMissingPageDescriptions,
   mechanicalDescription,
   polishPageDescription,
   pageNotesFromModel,
@@ -74,7 +75,8 @@ export { identityFromRunId } from "./ui/identity.js";
 export { buildUiGraph, badgeCounts, hopsFromNavLog } from "./ui/graph.js";
 export { buildUiSnapshot } from "./ui/snapshot.js";
 export { buildRunDetail } from "./ui/run-detail.js";
-export { startUiServer, UI_DEFAULT_PORT } from "./ui/server.js";
+export { startUiServer, UI_DEFAULT_PORT, resolveUiRoot } from "./ui/server.js";
+export { writeBundle, freezeSnapshot } from "./ui/bundle.js";
 export type { UiServer, UiServerOpts } from "./ui/server.js";
 export {
   startPresence,
@@ -99,7 +101,22 @@ export {
   LANDMARK_BIAS,
 } from "./brains/unleash.js";
 export { pickNasty, decideUnleashNasty } from "./brains/nasty.js";
-export { createExploreBrain } from "./brains/explore.js";
+export {
+  createExploreBrain,
+  ExploreError,
+  EXPLORE_DECIDE_RETRIES,
+  isScreenshotLine,
+  isVisualCharter,
+  isBrainMissFinding,
+  legalOpenIds,
+  wouldRepeatCycle,
+  probeExploreChat,
+  checkExploreLine,
+  draftExplorePlan,
+  formatExplorePlan,
+  parseExplorePlanReply,
+  completeCurrentPlanItem,
+} from "./brains/explore.js";
 export { chat } from "./brains/chat.js";
 export type { ChatClient, ChatMessage, ChatRequest } from "./brains/chat.js";
 export type { Brain, BrainContext, BrainDecision } from "./brains/types.js";

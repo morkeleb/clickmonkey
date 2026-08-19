@@ -212,6 +212,7 @@ export function buildRunDetail(configPath: string, runId: string): UiRunDetail |
     findings,
     ...(presence?.pageId ? { pageId: presence.pageId } : {}),
     ...(presence?.brain ? { brain: presence.brain } : {}),
+    ...(presence?.outline ? { outline: presence.outline } : {}),
     ...(startedAt ? { startedAt } : {}),
     ...(parsed.boot ? { boot: parsed.boot } : {}),
   });

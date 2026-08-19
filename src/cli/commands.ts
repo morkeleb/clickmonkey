@@ -12,9 +12,10 @@ import { plannedReportPath, writeReportFolder } from "../persist/reports.js";
 import { collectFindingCases, listRuns, resolveRunDirs } from "../persist/runs.js";
 import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
 import { newRunId } from "../persist/run-id.js";
-import { replaysDir } from "../persist/workspace.js";
+import { replaysDir, workspaceDir } from "../persist/workspace.js";
+import { writeBundle } from "../ui/bundle.js";
 import { isFindingsReport } from "../reports/fences.js";
-import { enrichWithBrain, renderFindingsReport } from "../reports/findings-report.js";
+import { enrichWithBrain, outlinesFromRunDirs, renderFindingsReport } from "../reports/findings-report.js";
 import { emptyConfig } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
@@ -29,6 +30,7 @@ import {
   ReplayLiveValidateError,
   runEmptyRequired,
   runExplore,
+  ExploreError,
   runUnleash,
   EXPLORE_DEFAULT_MINUTES,
   EXPLORE_DEFAULT_STEPS,
@@ -365,6 +367,7 @@ export async function cmdExplore(opts: {
     }
     return result.ok ? EXIT_OK : EXIT_FINDINGS;
   } catch (err) {
+    if (err instanceof ExploreError) fail(EXIT_USAGE, err.message);
     fail(EXIT_FINDINGS, errMessage(err));
   }
 }
@@ -416,6 +419,7 @@ export async function cmdReport(opts: {
       process.stderr.write(`brain skipped: ${errMessage(err)}\n`);
     }
   }
+  const outlines = outlinesFromRunDirs(runDirs);
   const meta = {
     url: config.url,
     generatedAt,
@@ -424,6 +428,7 @@ export async function cmdReport(opts: {
     testability: loadTestabilityReport(testabilityReportPath(configPath)),
     quality: loadQualityReport(qualityReportPath(configPath)),
     ...(opts.qualityFull ? { qualityFull: true } : {}),
+    ...(outlines.length > 0 ? { outlines } : {}),
   };
   const markdown = renderFindingsReport(cases, meta, mdPath, extras, summary);
   const written = writeReportFolder(configPath, {
@@ -503,6 +508,21 @@ export async function cmdReplay(
     return result.ok ? EXIT_OK : EXIT_FINDINGS;
   } catch (err) {
     if (err instanceof ReplayLiveValidateError) fail(EXIT_LIVE, err.message);
+    fail(EXIT_USAGE, errMessage(err));
+  }
+}
+
+export async function cmdBundle(opts: { config?: string; out?: string }): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  loadConfigOrExit(configPath);
+  const outDir = opts.out
+    ? resolve(process.cwd(), opts.out)
+    : resolve(workspaceDir(configPath), "bundle");
+  try {
+    const written = writeBundle(configPath, outDir);
+    process.stdout.write(`${written.outDir}\n`);
+    return EXIT_OK;
+  } catch (err) {
     fail(EXIT_USAGE, errMessage(err));
   }
 }

@@ -1,17 +1,18 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
+import { publicUrl } from "@/lib/paths";
 
 /** Point report screenshots at the CLI file server when they look like run paths. */
 export function rewriteRunFileSrc(src: string): string {
   const trimmed = src.trim();
   if (!trimmed) return trimmed;
   if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith("/files/")) return trimmed;
+  if (trimmed.startsWith("/files/")) return publicUrl(trimmed);
 
   const normalized = trimmed.replace(/\\/g, "/").replace(/^(?:\.\/)+/, "");
   const withoutUp = normalized.replace(/^(?:\.\.\/)+/, "");
   const match = withoutUp.match(/(?:^|\/)(runs\/[^?#]*)/);
-  if (match?.[1]) return `/files/${match[1]}`;
+  if (match?.[1]) return publicUrl(`files/${match[1]}`);
   return trimmed;
 }
 

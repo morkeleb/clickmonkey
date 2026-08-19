@@ -56,6 +56,74 @@ describe("findings report", () => {
     assert.equal(fences[0]?.log.steps.some((s) => s.kind === "expectInvalid"), true);
   });
 
+  it("renders an Explore outline from selected runs", () => {
+    const root = mkdtempSync(join(tmpdir(), "cm-rep-outline-"));
+    const runDir = join(root, "runs", "20260818T120000Z-exp");
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(
+      join(runDir, "presence.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: "20260818T120000Z-exp",
+        name: "Nim",
+        hue: 12,
+        pid: 1,
+        brain: "explore",
+        pageId: "home",
+        startedAt: "2026-08-18T12:00:00.000Z",
+        updatedAt: "2026-08-18T12:01:00.000Z",
+        stoppedAt: "2026-08-18T12:02:00.000Z",
+        outline: {
+          charter: "walk AR invoicing",
+          now: "Empty invoice name — open accounts_receivable_invoices",
+          notes: ["leave chrome via invoices"],
+          plan: {
+            goal: "Walk AR invoicing",
+            items: [
+              { id: "1", title: "Empty invoice name", page: "accounts_receivable_invoices", status: "now" },
+              { id: "2", title: "Period close required fields", status: "pending" },
+            ],
+          },
+        },
+      })}\n`,
+    );
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "2026-08-18T12:03:00.000Z",
+        runIds: ["20260818T120000Z-exp"],
+        outlines: [
+          {
+            runId: "20260818T120000Z-exp",
+            outline: {
+              charter: "walk AR invoicing",
+              now: "Empty invoice name — open accounts_receivable_invoices",
+              notes: ["leave chrome via invoices"],
+              plan: {
+                goal: "Walk AR invoicing",
+                items: [
+                  { id: "1", title: "Empty invoice name", page: "accounts_receivable_invoices", status: "now" },
+                  { id: "2", title: "Period close required fields", status: "pending" },
+                ],
+              },
+            },
+          },
+        ],
+      },
+      join(root, "findings.md"),
+    );
+    assert.match(md, /^## Explore/m);
+    assert.match(md, /walk AR invoicing/);
+    assert.match(md, /open accounts_receivable_invoices/);
+    assert.match(md, /leave chrome via invoices/);
+    assert.match(md, /\*\*Plan:\*\* Walk AR invoicing/);
+    assert.match(md, /\[>\] Empty invoice name/);
+    const exploreAt = md.indexOf("## Explore");
+    const findingsAt = md.indexOf("## Findings");
+    assert.ok(exploreAt > 0 && exploreAt < findingsAt);
+  });
+
   it("attaches url and path from hops after the step starts", () => {
     const root = mkdtempSync(join(tmpdir(), "cm-rep-ctx-"));
     const runDir = join(root, "runs", "20260818T000000Z-hop");

@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { publicUrl } from "@/lib/paths";
 import { clockOf, shortHref, useRunDetail } from "@/lib/run-detail";
 import { cn, runHue } from "@/lib/utils";
 
@@ -37,15 +38,16 @@ function Shot({
   onOpen: (url: string) => void;
 }) {
   const [ok, setOk] = useState(true);
+  const href = url.startsWith("/") ? publicUrl(url) : url;
   if (!ok) return null;
   return (
     <button
       type="button"
-      onClick={() => onOpen(url)}
+      onClick={() => onOpen(href)}
       className="mt-2 block overflow-hidden rounded-md border border-border bg-zinc-950 text-left"
     >
       <img
-        src={url}
+        src={href}
         alt={alt}
         loading="lazy"
         className="max-h-40 w-full object-cover object-top"
@@ -224,8 +226,47 @@ function RunBody({ detail }: { detail: UiRunDetail }) {
   );
 }
 
+function OutlineCard({ outline }: { outline: NonNullable<UiRunDetail["outline"]> }) {
+  return (
+    <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+      <div className="text-[10px] tracking-wide text-zinc-500 uppercase">Explore</div>
+      <p className="mt-1 text-sm text-zinc-200">{outline.charter}</p>
+      {outline.now ? (
+        <p className="mt-2 text-sm text-zinc-300">
+          <span className="text-[10px] tracking-wide text-zinc-500 uppercase">Now </span>
+          {outline.now}
+        </p>
+      ) : null}
+      {outline.plan ? (
+        <div className="mt-2">
+          <div className="text-[10px] tracking-wide text-zinc-500 uppercase">Plan</div>
+          <p className="mt-0.5 text-xs text-zinc-300">{outline.plan.goal}</p>
+          <ol className="mt-1 space-y-0.5 text-xs text-zinc-400">
+            {outline.plan.items.map((item) => (
+              <li key={item.id} className={item.status === "now" ? "text-zinc-200" : undefined}>
+                <span className="font-mono text-zinc-500">
+                  {item.status === "done" ? "[x]" : item.status === "now" ? "[>]" : item.status === "skipped" ? "[-]" : "[ ]"}
+                </span>{" "}
+                {item.title}
+                {item.page ? <span className="text-zinc-600"> · {item.page}</span> : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+      {outline.notes.length > 0 ? (
+        <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-zinc-400">
+          {outline.notes.map((note, i) => (
+            <li key={`${i}-${note.slice(0, 24)}`}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function RunPanel({ run }: { run: UiRun | undefined }) {
-  const { detail, error } = useRunDetail(run?.id, { live: false });
+  const { detail, error } = useRunDetail(run?.id, { live: run?.live });
   if (!run) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Run not in snapshot.</div>
@@ -242,6 +283,7 @@ export function RunPanel({ run }: { run: UiRun | undefined }) {
     brain: detail?.brain ?? run.brain,
     findingCount: detail?.findingCount ?? run.findingCount,
     startedAt: detail?.startedAt,
+    outline: detail?.outline ?? run.outline,
     boot: detail?.boot ?? run.boot,
     steps,
     findings:
@@ -282,6 +324,7 @@ export function RunPanel({ run }: { run: UiRun | undefined }) {
           </span>
           <span className="font-mono text-xs">{run.id}</span>
         </div>
+        {shown.outline ? <OutlineCard outline={shown.outline} /> : null}
       </div>
       <Separator />
       <RunBody detail={shown} />

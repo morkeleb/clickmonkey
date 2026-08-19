@@ -90,7 +90,21 @@ export function applyPageDescription(page: Page, chrome?: PageChrome): boolean {
   if (page.describeKey === key && page.description) return false;
   page.description = mechanicalDescription(page, chrome);
   page.describeKey = key;
+  page.describedBy = "inspect";
   return true;
+}
+
+/** Fill stale or missing blurbs on every page. Chrome only applies to `currentId`. */
+export function applyMissingPageDescriptions(
+  pages: Page[],
+  opts?: { currentId?: string; chrome?: PageChrome },
+): boolean {
+  let changed = false;
+  for (const page of pages) {
+    const chrome = page.id === opts?.currentId ? opts.chrome : undefined;
+    if (applyPageDescription(page, chrome)) changed = true;
+  }
+  return changed;
 }
 
 export function pageNotesFromModel(pages: readonly Page[]): Record<string, string> | undefined {
@@ -128,6 +142,7 @@ export async function polishPageDescription(
     const line = clipDescription(raw.split(/\r?\n/).map((s) => s.trim()).find((s) => s.length > 0) ?? "");
     if (line.length < 8 || line.includes("{") || /^click |^fill |^open /i.test(line)) return false;
     page.description = line;
+    page.describedBy = "explore";
     return true;
   } catch {
     return false;

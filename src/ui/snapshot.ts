@@ -97,6 +97,7 @@ function collectUiRuns(configPath: string): UiRun[] {
           pageId: p.pageId,
           findingCount: prev?.findingCount ?? 0,
           ...(p.brain ? { brain: p.brain } : {}),
+          ...(p.outline ? { outline: p.outline } : {}),
         }),
         dir,
       ),

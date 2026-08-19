@@ -20,7 +20,7 @@ import {
   originOfHref,
 } from "./ready.js";
 import { resolveCount } from "./resolve.js";
-import { applyPageDescription } from "./describe.js";
+import { applyMissingPageDescriptions } from "./describe.js";
 import { bindSurfaces } from "./surfaces.js";
 
 export interface SurveyorContext {
@@ -169,18 +169,18 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
   }
 
   const parsed = PageModel.parse(model);
-  const target = parsed.pages.find((p) => p.id === pageId);
-  if (target) {
-    const title = (await page.title().catch(() => "")).trim();
-    const heading = (await page.locator("h1").first().innerText({ timeout: 500 }).catch(() => "")).trim();
-    if (
-      applyPageDescription(target, {
+  const title = (await page.title().catch(() => "")).trim();
+  const heading = (await page.locator("h1").first().innerText({ timeout: 500 }).catch(() => "")).trim();
+  if (
+    applyMissingPageDescriptions(parsed.pages, {
+      currentId: pageId,
+      chrome: {
         ...(title ? { title } : {}),
         ...(heading ? { heading } : {}),
-      })
-    ) {
-      merged = true;
-    }
+      },
+    })
+  ) {
+    merged = true;
   }
   const issues = dedupeIssues(auditIssues);
   return {

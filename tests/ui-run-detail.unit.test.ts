@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { saveConfig } from "../src/persist/config.js";
 import { persistFinding } from "../src/persist/finding.js";
-import { startPresence } from "../src/persist/presence.js";
+import { exploreOutlineOf, setPresenceOutline, startPresence } from "../src/persist/presence.js";
 import { emptyConfig } from "../src/schema/config.js";
 import { buildRunDetail, stepsFromNavLog } from "../src/ui/run-detail.js";
 
@@ -111,11 +111,17 @@ describe("buildRunDetail", () => {
       },
       { screenshotPath: join(runDir, "shots", "step-000.png") },
     );
-    startPresence(runDir, { pageId: "home", brain: "map" });
+    startPresence(runDir, { pageId: "home", brain: "explore" });
+    setPresenceOutline(
+      runDir,
+      exploreOutlineOf({ charter: "walk the form", now: "click page.openCreate", notes: ["open create"] }),
+    );
 
     const detail = buildRunDetail(path, runId);
     assert.ok(detail);
-    assert.equal(detail.brain, "map");
+    assert.equal(detail.brain, "explore");
+    assert.equal(detail.outline?.charter, "walk the form");
+    assert.equal(detail.outline?.now, "click page.openCreate");
     assert.equal(detail.pageId, "home");
     assert.equal(detail.steps.length, 1);
     assert.equal(detail.steps[0]?.findingId, "fnd_0_fenceViolation");

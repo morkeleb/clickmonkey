@@ -24,6 +24,8 @@ function draft(): PageModelDraft {
           },
           { id: "create", kind: "dialog", fields: [], actions: [] },
         ],
+        description: "Home with a create dialog",
+        describedBy: "explore",
       },
     ],
   };
@@ -35,6 +37,9 @@ describe("buildUiGraph", () => {
     assert.ok(g.nodes.some((n) => n.id === "home" && n.kind === "page"));
     assert.ok(g.nodes.some((n) => n.id === "home::create" && n.kind === "dialog"));
     assert.ok(g.edges.some((e) => e.source === "home" && e.target === "home::create"));
+    const home = g.nodes.find((n) => n.id === "home");
+    assert.equal(home?.blurb, "Home with a create dialog");
+    assert.equal(home?.describedBy, "explore");
   });
 
   it("labels pages by id so /login and /u/login stay distinct", () => {

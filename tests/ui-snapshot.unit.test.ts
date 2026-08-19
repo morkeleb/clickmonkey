@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { saveConfig } from "../src/persist/config.js";
-import { startPresence } from "../src/persist/presence.js";
+import { exploreOutlineOf, setPresenceOutline, startPresence } from "../src/persist/presence.js";
 import { emptyConfig } from "../src/schema/config.js";
 import { buildUiSnapshot } from "../src/ui/snapshot.js";
 
@@ -51,7 +51,8 @@ describe("buildUiSnapshot", () => {
           ms: 200,
         })}\n`,
       );
-      startPresence(runDir, { pageId: "home", brain: "grok-3" });
+      startPresence(runDir, { pageId: "home", brain: "explore" });
+      setPresenceOutline(runDir, exploreOutlineOf({ charter: "walk invoices", now: "open invoices" }));
       writeFileSync(join(dir, "clickmonkey", "findings.md"), "# findings\n- **runs:** 20260818T150000Z-ab12\n");
       const reportDir = join(dir, "clickmonkey", "reports", "20260818T160000Z-ccdd");
       mkdirSync(reportDir, { recursive: true });
@@ -83,6 +84,9 @@ describe("buildUiSnapshot", () => {
       assert.ok(snap.reports.some((r) => r.id === "findings"));
       const run = snap.runs.find((r) => r.id === "20260818T150000Z-ab12");
       assert.ok(run?.pageId === "home");
+      assert.equal(run.brain, "explore");
+      assert.equal(run.outline?.charter, "walk invoices");
+      assert.equal(run.outline?.now, "open invoices");
       assert.equal(run.steps?.[0]?.line, "open home");
       assert.equal(run.steps?.[0]?.ok, true);
     } finally {

@@ -42,6 +42,7 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stdout, /explore/);
     assert.match(result.stdout, /report/);
     assert.match(result.stdout, /^\s+ui\s/m);
+    assert.match(result.stdout, /^\s+bundle\s/m);
     assert.match(result.stdout, /--verbose/);
   });
 
@@ -57,6 +58,23 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stderr, /Ollama/);
     assert.match(result.stderr, /OpenAI/);
     assert.match(result.stderr, /Anthropic/);
+  });
+
+  it("explore with an unreachable model exits 2 instead of walking", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-explore-down-"));
+    const cfg = join(dir, "clickmonkey.json");
+    writeFileSync(
+      cfg,
+      `${JSON.stringify({
+        url: "http://127.0.0.1:4173/",
+        map: { schemaVersion: 1, app: "x", pages: [] },
+        brain: { baseUrl: "http://127.0.0.1:9", model: "down" },
+      })}\n`,
+    );
+    const result = run(["explore", "--config", cfg]);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /cannot reach the language model/);
+    assert.match(result.stderr, /http:\/\/127\.0\.0\.1:9/);
   });
 
   it("init from another cwd writes the leash there", () => {

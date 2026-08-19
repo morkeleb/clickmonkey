@@ -70,6 +70,9 @@ function RunRow({ run, active, onClick }: { run: UiRun; active: boolean; onClick
             {run.findingCount} finding{run.findingCount === 1 ? "" : "s"}
           </span>
         </span>
+        {run.outline?.now ? (
+          <span className="mt-0.5 block truncate text-[11px] text-zinc-400">{run.outline.now}</span>
+        ) : null}
       </span>
     </button>
   );

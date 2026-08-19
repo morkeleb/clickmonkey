@@ -28,6 +28,7 @@ Commands:
   report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
   replay      Replay a log file or a findings-report markdown file
   compact     Shorten a log to the last open or nav click + following lines
+  bundle      Static dashboard folder (open without the CLI)
   ui          Local-only dashboard (map, runs, findings)
 
 Options:
@@ -115,6 +116,9 @@ export const BRAIN_HELP = `explore requires brain.baseUrl and brain.model in cli
 
 Example:
   "brain": { "baseUrl": "http://127.0.0.1:11434/v1", "model": "llama3.2" }
+
+Explore pings the model before opening a browser. A missing key or a down
+endpoint is a hard error (exit 2), not a screenshot walk.
 `;
 
 export function errMessage(err: unknown): string {

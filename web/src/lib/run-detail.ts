@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import type { UiRunDetail } from "@schema/ui";
+import { fetchFirstJson } from "@/lib/paths";
 
 export async function fetchRunDetail(id: string): Promise<UiRunDetail> {
-  const res = await fetch(`/api/runs/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error(`run ${res.status}`);
-  return (await res.json()) as UiRunDetail;
+  const enc = encodeURIComponent(id);
+  return fetchFirstJson<UiRunDetail>([`api/runs/${enc}`, `api/runs/${enc}.json`]);
 }
 
 export function useRunDetail(

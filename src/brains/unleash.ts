@@ -34,8 +34,8 @@ const WRITE_ID =
 const WRITE_LABEL =
   /\b(submit|save|delete|remove|destroy|confirm|send|update|apply|publish|add to (?:cart|bag))\b/i;
 const LEAVE_ID =
-  /(^|_)(sign_out|signout|log_out|logout|log_off|sign_off|close_panel|close_all_tabs|collapse_menu)$/i;
-const LEAVE_LABEL = /\b(sign out|log out|logout|sign off|close panel)\b/i;
+  /(^|_)(sign_out|signout|log_out|logout|log_off|sign_off|close_panel|close_all_tabs|collapse_menu)$|(^|_)close_[a-z0-9]/i;
+const LEAVE_LABEL = /\b(sign out|log out|logout|sign off|close panel)\b|^close\b/i;
 
 export function matchesSkip(
   widget: { id: string; label?: string },

@@ -146,6 +146,8 @@ export function buildUiGraph(
       yellow: badges.yellow,
       ...(page.origin ? { origin: page.origin } : {}),
       ...(page.entry ? { entry: true } : {}),
+      ...(page.description ? { blurb: page.description } : {}),
+      ...(page.describedBy ? { describedBy: page.describedBy } : {}),
     });
 
     for (const surface of page.surfaces) {

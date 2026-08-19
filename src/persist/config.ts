@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { assertNotLegacyConfig, Config, LeashFile } from "../schema/config.js";
 import { emptyDraft, PageModelDraft } from "../schema/page-model.js";
+import { applyMissingPageDescriptions } from "../surveyor/describe.js";
 import { mergeTrees } from "../surveyor/merge.js";
 import { withFileLock } from "./lock.js";
 import { ensureWorkspace, mapPath } from "./workspace.js";
@@ -45,6 +46,7 @@ export function loadConfig(path: string): Config {
   } else {
     map = emptyDraft();
   }
+  applyMissingPageDescriptions(map.pages);
   return Config.parse({ ...leash, map });
 }
 
@@ -77,6 +79,7 @@ export function persistSharedMap(path: string, map: PageModelDraft): Config {
   return withFileLock(shared, () => {
     const disk = loadConfig(path);
     const merged = mergeTrees(disk.map, map);
+    applyMissingPageDescriptions(merged.pages);
     writeJson(shared, merged);
     return Config.parse({ ...disk, map: merged });
   });

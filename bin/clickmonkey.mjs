@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -7,7 +7,13 @@ import { spawnSync } from "node:child_process";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist", "cli", "index.js");
-if (existsSync(dist)) {
+const srcExplore = join(root, "src", "brains", "explore.ts");
+const distExplore = join(root, "dist", "brains", "explore.js");
+const distStale =
+  existsSync(srcExplore) &&
+  existsSync(distExplore) &&
+  statSync(srcExplore).mtimeMs > statSync(distExplore).mtimeMs;
+if (existsSync(dist) && !distStale) {
   await import(pathToFileURL(dist).href);
 } else {
   const src = join(root, "src", "cli", "index.ts");

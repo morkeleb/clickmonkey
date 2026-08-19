@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { UiEvent, UiSnapshot } from "@schema/ui";
+import { fetchFirstJson, publicUrl } from "@/lib/paths";
 
 const EVENT_TYPES = ["hello", "map", "quality", "testability", "run", "nav"] as const;
 
@@ -20,20 +21,21 @@ export function useSnapshot(): {
     let cancelled = false;
     let source: EventSource | null = null;
     let retryTimer: number | undefined;
+    let staticMode = false;
 
-    async function loadSnapshot() {
+    async function loadSnapshot(): Promise<boolean> {
       try {
-        const res = await fetch("/api/snapshot");
-        if (!res.ok) throw new Error(`snapshot ${res.status}`);
-        const data = (await res.json()) as UiSnapshot;
+        const data = await fetchFirstJson<UiSnapshot>(["api/snapshot", "snapshot.json"]);
         if (!cancelled) {
           setSnapshot(data);
           setError(null);
         }
+        return true;
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "snapshot failed");
         }
+        return false;
       }
     }
 
@@ -51,7 +53,8 @@ export function useSnapshot(): {
     }
 
     function connect() {
-      source = new EventSource("/api/events");
+      if (staticMode) return;
+      source = new EventSource(publicUrl("api/events"));
       source.onmessage = (ev) => applyMessage(ev.data);
       for (const type of EVENT_TYPES) {
         source.addEventListener(type, (ev) => applyMessage((ev as MessageEvent).data));
@@ -59,7 +62,7 @@ export function useSnapshot(): {
       source.onerror = () => {
         source?.close();
         source = null;
-        if (cancelled) return;
+        if (cancelled || staticMode) return;
         retryTimer = window.setTimeout(connect, 1500);
       };
     }
@@ -75,9 +78,21 @@ export function useSnapshot(): {
       }
     }
 
-    void loadOnce();
-    connect();
+    void (async () => {
+      try {
+        const frozen = await fetchFirstJson<UiSnapshot>(["snapshot.json"]);
+        if (cancelled) return;
+        staticMode = true;
+        setSnapshot(frozen);
+        setError(null);
+      } catch {
+        const ok = await loadSnapshot();
+        if (ok && !cancelled) connect();
+      }
+    })();
+
     const poll = window.setInterval(() => {
+      if (staticMode) return;
       if (source?.readyState === EventSource.OPEN) return;
       void loadOnce();
     }, 4000);

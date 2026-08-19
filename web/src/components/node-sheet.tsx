@@ -111,17 +111,37 @@ export function NodeSheet({
   const here =
     node &&
     snapshot.runs.filter((run) => run.live && run.pageId === node.id);
+  const blurb = page?.description ?? node?.blurb;
+  const describedBy = page?.describedBy ?? node?.describedBy;
 
   return (
     <Sheet open={Boolean(node)} onOpenChange={onOpenChange}>
-      <SheetContent className="gap-0 p-0">
-        <SheetHeader className="border-b border-border">
+      <SheetContent className="gap-0 overflow-hidden p-0">
+        <SheetHeader className="shrink-0 border-b border-border">
           <SheetTitle>{node?.label ?? "Node"}</SheetTitle>
-          <SheetDescription>{node?.kind === "dialog" ? "Dialog surface" : "Page"}</SheetDescription>
+          <SheetDescription>
+            {node?.kind === "dialog" ? "Dialog surface" : "Page"}
+            {page?.id ? ` · ${page.id}` : ""}
+          </SheetDescription>
+          {blurb ? (
+            <div className="mt-2 rounded-md border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-left">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-[10px] tracking-wide text-zinc-500 uppercase">Description</span>
+                {describedBy ? (
+                  <Badge variant={describedBy === "explore" ? "default" : "secondary"}>{describedBy}</Badge>
+                ) : null}
+              </div>
+              <p className="text-sm leading-5 text-zinc-100">{blurb}</p>
+            </div>
+          ) : node?.kind === "page" ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              No page description yet. Inspect writes a mechanical line; explore may polish it.
+            </p>
+          ) : null}
         </SheetHeader>
         {node ? (
-          <Tabs defaultValue="info" className="min-h-0 flex-1 gap-0">
-            <div className="px-4 pt-3">
+          <Tabs defaultValue="info" className="flex min-h-0 flex-1 flex-col gap-0">
+            <div className="shrink-0 px-4 pt-3">
               <TabsList>
                 <TabsTrigger value="info">Info</TabsTrigger>
                 <TabsTrigger value="issues">Issues</TabsTrigger>

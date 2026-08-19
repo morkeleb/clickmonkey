@@ -21,5 +21,6 @@ export {
   EXPLORE_DEFAULT_STEPS,
   EXPLORE_DEFAULT_MINUTES,
   DEFAULT_EXPLORE_CHARTER,
+  ExploreError,
   type ExploreResult,
 } from "./explore.js";

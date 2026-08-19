@@ -2,7 +2,9 @@ import { dirname, relative } from "node:path";
 import { z } from "zod";
 import { chat, type ChatClient } from "../brains/chat.js";
 import type { FindingCase } from "../persist/runs.js";
+import { loadPresence, presencePath } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
+import type { UiExploreOutline } from "../schema/ui.js";
 import { severityForKind, type FindingSeverity } from "../schema/finding.js";
 import { parseLog } from "../schema/dsl.js";
 import type { QualityReport, QualityPage, QualityIssue, QualityRuntimeEvent } from "../schema/quality.js";
@@ -38,6 +40,7 @@ export interface ReportMeta {
   quality?: QualityReport;
   /** Per-page quality dump. Default is a rolled-up digest. */
   qualityFull?: boolean;
+  outlines?: Array<{ runId: string; outline: UiExploreOutline }>;
 }
 
 function resolveApiKey(apiKeyEnv: string | undefined): string | undefined {
@@ -358,6 +361,39 @@ export function renderQualityDigest(
   return lines;
 }
 
+export function outlinesFromRunDirs(runDirs: readonly string[]): Array<{ runId: string; outline: UiExploreOutline }> {
+  const out: Array<{ runId: string; outline: UiExploreOutline }> = [];
+  for (const dir of runDirs) {
+    const presence = loadPresence(presencePath(dir));
+    if (!presence?.outline) continue;
+    out.push({ runId: dir.split(/[/\\]/).pop() ?? dir, outline: presence.outline });
+  }
+  return out;
+}
+
+function renderExploreOutlines(outlines: ReportMeta["outlines"]): string[] {
+  if (!outlines || outlines.length === 0) return [];
+  const lines = ["## Explore", ""];
+  for (const { runId, outline } of outlines) {
+    lines.push(`### ${runId}`, "", `**Charter:** ${outline.charter}`, "");
+    if (outline.now) lines.push(`**Now:** ${outline.now}`, "");
+    if (outline.plan) {
+      lines.push(`**Plan:** ${outline.plan.goal}`, "");
+      for (const item of outline.plan.items) {
+        const mark = item.status === "done" ? "x" : item.status === "now" ? ">" : item.status === "skipped" ? "-" : " ";
+        const page = item.page ? ` (${item.page})` : "";
+        lines.push(`- [${mark}] ${item.title}${page}`);
+      }
+      lines.push("");
+    }
+    if (outline.notes.length > 0) {
+      for (const note of outline.notes) lines.push(`- ${note}`);
+      lines.push("");
+    }
+  }
+  return lines;
+}
+
 export function renderFindingsReport(
   cases: FindingCase[],
   meta: ReportMeta,
@@ -385,6 +421,7 @@ export function renderFindingsReport(
     `- **runs:** ${meta.runIds.join(", ") || "(none)"}`,
     ...(meta.brain ? [`- **brain:** ${meta.brain}`] : []),
     "",
+    ...renderExploreOutlines(meta.outlines),
     "## Findings",
     "",
   ];

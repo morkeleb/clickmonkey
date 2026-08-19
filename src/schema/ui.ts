@@ -15,6 +15,8 @@ export const UiGraphNode = z
     path: z.string().min(1),
     origin: z.string().min(1).optional(),
     entry: z.boolean().optional(),
+    blurb: z.string().min(1).optional(),
+    describedBy: z.enum(["inspect", "explore"]).optional(),
     red: z.number().int().nonnegative(),
     yellow: z.number().int().nonnegative(),
   })
@@ -90,6 +92,34 @@ export const UiRunBoot = z
   .strict();
 export type UiRunBoot = z.infer<typeof UiRunBoot>;
 
+export const UiExplorePlanItem = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    page: z.string().min(1).optional(),
+    status: z.enum(["pending", "now", "done", "skipped"]).default("pending"),
+  })
+  .strict();
+export type UiExplorePlanItem = z.infer<typeof UiExplorePlanItem>;
+
+export const UiExplorePlan = z
+  .object({
+    goal: z.string().min(1),
+    items: z.array(UiExplorePlanItem).min(1).max(8),
+  })
+  .strict();
+export type UiExplorePlan = z.infer<typeof UiExplorePlan>;
+
+export const UiExploreOutline = z
+  .object({
+    charter: z.string().min(1),
+    now: z.string().min(1).optional(),
+    notes: z.array(z.string().min(1)).max(12).default([]),
+    plan: UiExplorePlan.optional(),
+  })
+  .strict();
+export type UiExploreOutline = z.infer<typeof UiExploreOutline>;
+
 export const UiRun = z
   .object({
     id: z.string().min(1),
@@ -99,6 +129,7 @@ export const UiRun = z
     pageId: z.string().min(1).optional(),
     findingCount: z.number().int().nonnegative(),
     brain: z.string().min(1).optional(),
+    outline: UiExploreOutline.optional(),
     boot: UiRunBoot.optional(),
     steps: z.array(UiRunStep).optional(),
   })
@@ -114,6 +145,7 @@ export const UiRunDetail = z
     live: z.boolean(),
     pageId: z.string().min(1).optional(),
     brain: z.string().min(1).optional(),
+    outline: UiExploreOutline.optional(),
     findingCount: z.number().int().nonnegative(),
     startedAt: z.string().min(1).optional(),
     boot: UiRunBoot.optional(),
@@ -184,6 +216,7 @@ export const Presence = z
     hue: z.number().int().min(0).max(359),
     pid: z.number().int().positive(),
     brain: z.string().min(1).optional(),
+    outline: UiExploreOutline.optional(),
     pageId: z.string().min(1),
     startedAt: z.string().min(1),
     updatedAt: z.string().min(1),

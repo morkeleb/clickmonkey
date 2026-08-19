@@ -68,6 +68,10 @@ clickmonkey explore --charter "…"   # LLM, needs brain in clickmonkey.json
 dialog openers, then `open`s a known page when the current surface has nothing
 left to walk. After it, `unleash` and `explore` see more legal ids.
 
+Explore pings `brain` before it opens a browser. If the model is unreachable
+or the API key is missing, it exits 2 instead of walking blind. It will not
+take a screenshot when the last step was already a screenshot.
+
 ## Files
 
 ```
@@ -81,6 +85,7 @@ clickmonkey/
   runs/<id>/verbose/             # --verbose only: per-step HTML + view.txt (safe to delete)
   reports/<id>/findings.md       # shareable reports (one folder per report)
   replays/<id>/comparison.md     # before/after vs that report
+  explore-context.md             # optional: app architecture for explore --skills
 ```
 
 `clickmonkey.json` is the file you edit:
@@ -155,10 +160,26 @@ clickmonkey explore [--config] [--url] [--out] [--steps] [--minutes] [--charter]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
 clickmonkey replay <log|report.md> [--config] [--url] [--out]
 clickmonkey compact <log> [--out <file>]
+clickmonkey bundle [--config] [--out]
 clickmonkey ui
 ```
 
 `clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists.
+
+`clickmonkey bundle` writes a static copy of that dashboard (default `clickmonkey/bundle/`). It does not need the CLI to view: serve the folder (`python3 -m http.server 4174`) or upload it to GitLab Pages. Do not open `index.html` as `file://` — fetch is blocked. A GitLab job example is `examples/gitlab-ci.yml`.
+
+## CI
+
+ClickMonkey is headless by default. A pipeline that already deploys a preview URL can explore that URL, write a report, and ship a zip/Pages folder:
+
+1. Deploy this push to staging / preview.
+2. Keep `clickmonkey/explore-context.md` (copy `examples/explore-context.md` and describe how *this* site is put together: chrome vs main, which nav item is billing, where a “fix invoice rounding” commit should land). The charter is `git log` for the push — ticket titles, not test steps. The context file is how the model translates those commits into walks.
+3. `clickmonkey explore --url "$PREVIEW_URL" --charter "$(git log …)" --skills clickmonkey/explore-context.md` (needs `brain` + `$CLICKMONKEY_*` CI variables).
+4. `clickmonkey report --all`
+5. `clickmonkey bundle --out clickmonkey-bundle`
+6. Upload `clickmonkey-bundle/` as a job artifact (and optionally GitLab Pages).
+
+Explore exit `1` means findings, not a crash — mark the job `allow_failure`. Exit `2` means the model was unreachable or the API key is missing (not findings). Replay of a previous report is the cheap gate (no LLM). See `examples/gitlab-ci.yml`. Downloading the artifact: `python3 -m http.server 4174` in `clickmonkey-bundle/` and open http://127.0.0.1:4174/. You cannot replay from the zip unless the preview URL is still up.
 
 `--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 

@@ -1,0 +1,53 @@
+# Example GitLab job: explore a preview URL, then ship a static dashboard.
+# Copy into the *application* repo (not this one). Adjust the deploy URL.
+#
+# Also copy examples/explore-context.md → clickmonkey/explore-context.md
+# and describe *your* site. The charter is git log for this push (opaque
+# ticket titles). The context file is how the model turns those commits
+# into walks on the live app.
+#
+# CI variables: PREVIEW_URL, CLICKMONKEY_USER, CLICKMONKEY_PASSWORD,
+# and the LLM key named in clickmonkey.json brain.apiKeyEnv.
+#
+# allow_failure: explore exit 1 means findings, not a broken pipeline.
+# Exit 2 is a setup failure (no brain, model down, missing API key).
+
+explore:
+  stage: test
+  image: node:22
+  allow_failure: true
+  script:
+    - npx --yes playwright install --with-deps chromium
+    - npm install -g clickmonkey
+    - |
+      test -f clickmonkey/explore-context.md || {
+        echo "missing clickmonkey/explore-context.md — copy examples/explore-context.md from clickmonkey and describe this site"
+        exit 2
+      }
+    - |
+      CHARTER="$(git log --oneline "${CI_COMMIT_BEFORE_SHA:-HEAD~1}..${CI_COMMIT_SHA}" 2>/dev/null || git log --oneline -15)"
+    - >
+      clickmonkey explore
+      --url "$PREVIEW_URL"
+      --charter "$CHARTER"
+      --skills clickmonkey/explore-context.md
+      --minutes 15
+      --steps 40
+    - clickmonkey report --all
+    - clickmonkey bundle --out clickmonkey-bundle
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - clickmonkey-bundle/
+      - clickmonkey/reports/
+
+# Optional: publish the bundle as GitLab Pages (group/project must allow Pages).
+# pages:
+#   stage: deploy
+#   script:
+#     - mv clickmonkey-bundle public
+#   artifacts:
+#     paths: [public]
+#   rules:
+#     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

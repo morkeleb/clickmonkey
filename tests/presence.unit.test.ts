@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  exploreOutlineOf,
   isPresenceLive,
+  setPresenceOutline,
   startPresence,
   stopPresence,
   touchPresence,
@@ -20,10 +22,18 @@ describe("presence", () => {
       assert.equal(started.brain, "map");
       assert.equal(started.stoppedAt, null);
       assert.equal(isPresenceLive(started), true);
-      const touched = touchPresence(dir, "settings");
-      assert.equal(touched?.pageId, "settings");
+      const outlined = setPresenceOutline(
+        dir,
+        exploreOutlineOf({ charter: "walk invoices", now: "open invoices", notes: ["leave chrome"] }),
+      );
+      assert.equal(outlined?.outline?.charter, "walk invoices");
+      assert.equal(outlined?.outline?.now, "open invoices");
+      const touched = touchPresence(dir, "invoices");
+      assert.equal(touched?.pageId, "invoices");
+      assert.equal(touched?.outline?.now, "open invoices");
       const stopped = stopPresence(dir);
       assert.ok(stopped?.stoppedAt);
+      assert.equal(stopped?.outline?.charter, "walk invoices");
       assert.equal(isPresenceLive(stopped), false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
