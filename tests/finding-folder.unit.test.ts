@@ -127,6 +127,32 @@ describe("finding folder", () => {
     assert.ok(existsSync(join(dir, "screenshot.png")));
   });
 
+  it("dedups a notFound on the same path even when the message differs", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-404-"));
+    const first = persistFinding(outDir, {
+      schemaVersion: 1,
+      id: findingId(1, "notFound"),
+      kind: "notFound",
+      message: "Not found page GET http://127.0.0.1:3000/applications",
+      tapePath: join(outDir, "replay.log"),
+      stepIndex: 1,
+      url: "http://127.0.0.1:3000/applications",
+    });
+    const second = persistFinding(outDir, {
+      schemaVersion: 1,
+      id: findingId(31, "notFound"),
+      kind: "notFound",
+      message: "HTTP 404 GET http://127.0.0.1:3000/applications",
+      tapePath: join(outDir, "replay.log"),
+      stepIndex: 31,
+      url: "http://127.0.0.1:3000/applications",
+      httpStatus: 404,
+    });
+    assert.equal(second.created, false);
+    assert.equal(second.finding.id, first.finding.id);
+    assert.deepEqual(findingFolders(outDir), [first.finding.id]);
+  });
+
   it("writes a new folder when the message differs", () => {
     const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-msg-"));
     persistFinding(outDir, {

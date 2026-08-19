@@ -15,6 +15,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { publicUrl } from "@/lib/paths";
 import { runHue, sameLedgerPage } from "@/lib/utils";
 
 function findPage(snapshot: UiSnapshot, pageId: string): Page | undefined {
@@ -84,9 +85,15 @@ function QualityGroup({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={issue.severity === "error" ? "destructive" : "secondary"}>{issue.severity}</Badge>
                 <code className="text-xs">{issue.rule}</code>
+                {"confidence" in issue && issue.confidence ? (
+                  <span className="text-xs text-muted-foreground">{issue.confidence}</span>
+                ) : null}
                 {issue.count > 1 ? <span className="text-xs text-muted-foreground">×{issue.count}</span> : null}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{issue.message}</p>
+              {"where" in issue && issue.where ? (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">Where: {issue.where}</p>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -128,7 +135,7 @@ export function NodeSheet({
               <div className="mb-1 flex items-center gap-2">
                 <span className="text-[10px] tracking-wide text-zinc-500 uppercase">Description</span>
                 {describedBy ? (
-                  <Badge variant={describedBy === "explore" ? "default" : "secondary"}>{describedBy}</Badge>
+                  <Badge variant={describedBy === "inspect" ? "secondary" : "default"}>{describedBy}</Badge>
                 ) : null}
               </div>
               <p className="text-sm leading-5 text-zinc-100">{blurb}</p>
@@ -137,6 +144,22 @@ export function NodeSheet({
             <p className="mt-2 text-sm text-muted-foreground">
               No page description yet. Inspect writes a mechanical line; explore may polish it.
             </p>
+          ) : null}
+          {node?.screenshotUrl ? (
+            <a
+              href={publicUrl(node.screenshotUrl)}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 block overflow-hidden rounded-md border border-border bg-zinc-950"
+            >
+              <img
+                src={publicUrl(node.screenshotUrl)}
+                alt={`Latest screenshot of ${node.label}`}
+                className="max-h-48 w-full object-cover object-top"
+              />
+            </a>
+          ) : node?.kind === "page" ? (
+            <p className="mt-2 text-xs text-muted-foreground">No screenshot of this page yet. Walk it with screenshots on.</p>
           ) : null}
         </SheetHeader>
         {node ? (
@@ -177,8 +200,14 @@ export function NodeSheet({
                   <div>
                     <QualityGroup title="HTML" items={ledger.quality.html} />
                     <QualityGroup title="Accessibility" items={ledger.quality.a11y} />
+                    {ledger.quality.visual.length > 0 ? (
+                      <QualityGroup title="Visual" items={ledger.quality.visual} />
+                    ) : ledger.quality.visualHash ? (
+                      <p className="mb-3 text-sm text-muted-foreground">Visual: scanned, no extras.</p>
+                    ) : null}
                     <QualityGroup title="Runtime" items={ledger.quality.runtime} />
-                    {ledger.quality.html.length + ledger.quality.a11y.length + ledger.quality.runtime.length === 0 ? (
+                    {ledger.quality.html.length + ledger.quality.a11y.length + ledger.quality.visual.length + ledger.quality.runtime.length === 0 &&
+                    !ledger.quality.visualHash ? (
                       <p className="text-sm text-muted-foreground">No quality issues.</p>
                     ) : null}
                   </div>

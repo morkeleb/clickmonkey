@@ -349,4 +349,46 @@ describe("mergeTrees", () => {
     const kept = mergeTrees(base, other);
     assert.equal(kept.pages[0]?.description, "Home — search");
   });
+
+  it("does not let inspect clobber a vision blurb", () => {
+    const base = loadHome();
+    base.pages[0]!.description = "Home dashboard with search.";
+    base.pages[0]!.describedBy = "vision";
+    base.pages[0]!.describeKey = "visionkey12";
+    const incoming = structuredClone(base);
+    incoming.pages[0]!.description = "Home — 52 actions";
+    incoming.pages[0]!.describedBy = "inspect";
+    incoming.pages[0]!.describeKey = "inspectkey99";
+    const merged = mergeTrees(base, incoming);
+    assert.equal(merged.pages[0]?.description, "Home dashboard with search.");
+    assert.equal(merged.pages[0]?.describedBy, "vision");
+  });
+
+  it("does not let inspect clobber an explore blurb", () => {
+    const base = loadHome();
+    base.pages[0]!.description = "Shop home with search and create.";
+    base.pages[0]!.describedBy = "explore";
+    base.pages[0]!.describeKey = "explorekey12";
+    const incoming = structuredClone(base);
+    incoming.pages[0]!.description = "Home — 52 actions";
+    incoming.pages[0]!.describedBy = "inspect";
+    incoming.pages[0]!.describeKey = "inspectkey99";
+    const merged = mergeTrees(base, incoming);
+    assert.equal(merged.pages[0]?.description, "Shop home with search and create.");
+    assert.equal(merged.pages[0]?.describedBy, "explore");
+  });
+
+  it("does not let explore clobber a vision blurb", () => {
+    const base = loadHome();
+    base.pages[0]!.description = "Home dashboard with KPI cards.";
+    base.pages[0]!.describedBy = "vision";
+    base.pages[0]!.describeKey = "visionkey12";
+    const incoming = structuredClone(base);
+    incoming.pages[0]!.description = "Shop home from the text brain.";
+    incoming.pages[0]!.describedBy = "explore";
+    incoming.pages[0]!.describeKey = "explorekey12";
+    const merged = mergeTrees(base, incoming);
+    assert.equal(merged.pages[0]?.description, "Home dashboard with KPI cards.");
+    assert.equal(merged.pages[0]?.describedBy, "vision");
+  });
 });

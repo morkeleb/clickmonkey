@@ -31,8 +31,9 @@ import { pickSeedPageId, resetToSeed } from "./seed.js";
 import { appendFindingReport } from "../persist/finding.js";
 import { polishPageDescription } from "../surveyor/describe.js";
 import { writeLog } from "../persist/log.js";
-import type { Config } from "../schema/config.js";
+import { requireVisionShots, resolveVision, type Config } from "../schema/config.js";
 import { formatExplorePlanItemLine, type UiExplorePlan } from "../schema/ui.js";
+import { probeVisionChat } from "../surveyor/vision.js";
 import { severityForKind, type Finding, type FindingSeverity } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
 import type { View } from "../schema/view.js";
@@ -211,6 +212,26 @@ export async function runExplore(opts: {
       messages: input.messages,
     });
   await probeExploreChat({ chat: boundChat, baseUrl: brainCfg.baseUrl, model: brainCfg.model });
+  let vision;
+  try {
+    requireVisionShots(opts.config);
+    vision = resolveVision(opts.config.vision, opts.config.brain);
+  } catch (err) {
+    throw new ExploreError(err instanceof Error ? err.message : String(err));
+  }
+  if (vision && (vision.issues || vision.assist)) {
+    const visionKey = resolveApiKey(vision.apiKeyEnv);
+    try {
+      await probeVisionChat({
+        chat: invokeChat,
+        baseUrl: vision.baseUrl,
+        model: vision.model,
+        apiKey: visionKey,
+      });
+    } catch (err) {
+      throw err instanceof ExploreError ? err : new ExploreError(err instanceof Error ? err.message : String(err));
+    }
+  }
   const retrySink: { path?: string } = {};
   const logRetry = (message: string): void => {
     process.stderr.write(`${formatLiveLine(message)}\n`);
@@ -310,6 +331,7 @@ export async function runExplore(opts: {
         notes: notesOf(brain),
         recent: recentSteps,
         pages: state.model.pages,
+        sight: state.lastSight,
         ...(plan ? { plan } : {}),
       });
       const line = decision.line.trim();

@@ -13,16 +13,18 @@ function writeJson(path: string, value: unknown): void {
 }
 
 function leashPayload(
-  config: Pick<Config, "url" | "fence" | "intro" | "skip" | "writePolicy" | "brain">,
+  config: Pick<Config, "url" | "fence" | "intro" | "skip" | "writePolicy" | "screenshots" | "brain" | "vision">,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {
     url: config.url,
     intro: config.intro,
     writePolicy: config.writePolicy,
+    screenshots: config.screenshots,
   };
   if (config.fence) out.fence = config.fence;
   if (config.skip && config.skip.length > 0) out.skip = config.skip;
   if (config.brain) out.brain = config.brain;
+  if (config.vision) out.vision = config.vision;
   return out;
 }
 

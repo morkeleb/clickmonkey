@@ -2,7 +2,7 @@ import type { Page } from "playwright";
 import { locatorOf } from "../schema/locator.js";
 import { PageModel, type PageModelDraft } from "../schema/page-model.js";
 import { toPlaywrightLocator } from "../executor/locators.js";
-import { isDocumentNotFound } from "../oracles/http.js";
+import { isNotFoundPage } from "../oracles/http.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
 import { loadConfig, persistSharedMap } from "../persist/config.js";
 import {
@@ -87,7 +87,7 @@ async function modelForPage(page: Page, ctx: SurveyorContext): Promise<{
 }
 
 export async function inspect(page: Page, ctx: SurveyorContext): Promise<InspectResult> {
-  if (isDocumentNotFound(page)) {
+  if (await isNotFoundPage(page)) {
     const fallback = ctx.model.pages[0];
     return {
       model: ctx.model,
@@ -215,7 +215,7 @@ export async function inspectAndSaveConfig(
     model: config.map,
     appOrigin: originOfHref(config.url),
   });
-  if (isDocumentNotFound(page)) {
+  if (await isNotFoundPage(page)) {
     reportDocumentNotFound(configPath, page);
     return result;
   }

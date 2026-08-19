@@ -15,8 +15,13 @@ import { newRunId } from "../persist/run-id.js";
 import { replaysDir, workspaceDir } from "../persist/workspace.js";
 import { writeBundle } from "../ui/bundle.js";
 import { isFindingsReport } from "../reports/fences.js";
-import { enrichWithBrain, outlinesFromRunDirs, renderFindingsReport } from "../reports/findings-report.js";
-import { emptyConfig } from "../schema/config.js";
+import {
+  collapseFindingCases,
+  enrichWithBrain,
+  outlinesFromRunDirs,
+  renderFindingsReport,
+} from "../reports/findings-report.js";
+import { emptyConfig, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
 import { inspectAndSaveConfig } from "../surveyor/inspect.js";
@@ -40,6 +45,7 @@ import {
 import { startUiServer } from "../ui/server.js";
 import {
   BRAIN_HELP,
+  VISION_HELP,
   EXIT_FINDINGS,
   EXIT_LIVE,
   EXIT_OK,
@@ -265,6 +271,15 @@ export async function cmdMap(opts: {
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
+  if (config.vision) {
+    try {
+      resolveVision(config.vision, config.brain);
+      requireVisionShots(config);
+    } catch (err) {
+      process.stderr.write(VISION_HELP);
+      fail(EXIT_USAGE, errMessage(err));
+    }
+  }
   const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
@@ -284,6 +299,10 @@ export async function cmdMap(opts: {
     }
     return result.ok ? EXIT_OK : EXIT_FINDINGS;
   } catch (err) {
+    if (err instanceof VisionError) {
+      process.stderr.write(VISION_HELP);
+      fail(EXIT_USAGE, err.message);
+    }
     fail(EXIT_FINDINGS, errMessage(err));
   }
 }
@@ -300,6 +319,15 @@ export async function cmdUnleash(opts: {
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
+  if (config.vision) {
+    try {
+      resolveVision(config.vision, config.brain);
+      requireVisionShots(config);
+    } catch (err) {
+      process.stderr.write(VISION_HELP);
+      fail(EXIT_USAGE, errMessage(err));
+    }
+  }
   const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
@@ -319,6 +347,10 @@ export async function cmdUnleash(opts: {
     }
     return result.ok ? EXIT_OK : EXIT_FINDINGS;
   } catch (err) {
+    if (err instanceof VisionError) {
+      process.stderr.write(VISION_HELP);
+      fail(EXIT_USAGE, err.message);
+    }
     fail(EXIT_FINDINGS, errMessage(err));
   }
 }
@@ -340,6 +372,15 @@ export async function cmdExplore(opts: {
   if (!config.brain) {
     process.stderr.write(BRAIN_HELP);
     return EXIT_USAGE;
+  }
+  if (config.vision) {
+    try {
+      resolveVision(config.vision, config.brain);
+      requireVisionShots(config);
+    } catch (err) {
+      process.stderr.write(VISION_HELP);
+      fail(EXIT_USAGE, errMessage(err));
+    }
   }
   let skills: string | undefined;
   if (opts.skills) {
@@ -436,7 +477,7 @@ export async function cmdReport(opts: {
     url: config.url,
     generatedAt,
     runIds,
-    findingCount: cases.length,
+    findingCount: collapseFindingCases(cases).length,
     markdown,
     id: reportId,
   });

@@ -9,9 +9,10 @@ import {
   pathMatches,
 } from "../surveyor/ready.js";
 import { checkFence } from "./fence.js";
+import { oneLineBug } from "../schema/dsl.js";
 import type { Step } from "../schema/log.js";
 import type { Action, Field, Page as PageDef, Surface, Widget } from "../schema/page-model.js";
-import { mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { slug } from "../surveyor/ids.js";
 import {
@@ -161,6 +162,7 @@ async function writePolicyBlocked(
   action: Action,
   loc: Locator,
 ): Promise<StepFailure | undefined> {
+  if (state.config.writePolicy !== "validationOnly") return undefined;
   const actionEl = await pickActable(widgetLocator(state.page, surface, loc), state.page);
   const inputType = actionEl ? await domInputType(actionEl) : undefined;
   if (!isPotentialWrite(action, inputType)) return undefined;
@@ -229,9 +231,10 @@ async function performClick(
   try {
     await pw.click({ timeout: 2_000 });
   } catch (err) {
+    const raw = err instanceof Error ? err.message : `${actable.key} click failed`;
     return {
       kind: "expectFailed",
-      message: err instanceof Error ? err.message : `${actable.key} click failed`,
+      message: oneLineBug(raw) || `${actable.key} click failed`,
       widgetRef: actable.key,
     };
   }
@@ -332,18 +335,41 @@ async function performExpectVisible(
   };
 }
 
+/** Latest still of the page the live URL maps to — not a stale `state.pageId`. */
+export function writePageStill(state: RunState, shotPath: string): void {
+  if (!existsSync(shotPath)) return;
+  const appOrigin = originOfHref(state.config.url);
+  const matched = appOrigin
+    ? findPageForHref(state.model.pages, state.page.url(), appOrigin)
+    : undefined;
+  const pageId = matched?.id ?? (appOrigin ? undefined : state.pageId?.trim());
+  if (!pageId) return;
+  const pagesDir = join(state.outDir, "shots", "pages");
+  mkdirSync(pagesDir, { recursive: true });
+  copyFileSync(shotPath, join(pagesDir, `${slug(pageId)}.png`));
+}
+
+export async function captureStepShot(
+  state: RunState,
+  opts?: { label?: string },
+): Promise<string | undefined> {
+  const dir = join(state.outDir, "shots");
+  mkdirSync(dir, { recursive: true });
+  const n = String(state.log.steps.length).padStart(3, "0");
+  const filename = opts?.label ? `step-${n}-${slug(opts.label)}.png` : `step-${n}.png`;
+  const path = join(dir, filename);
+  await state.page.screenshot({ path, fullPage: true }).catch(() => undefined);
+  if (!existsSync(path)) return undefined;
+  state.lastScreenshotPath = path;
+  return path;
+}
+
 async function performScreenshot(
   state: RunState,
   label?: string,
   ui?: boolean,
 ): Promise<StepFailure | undefined> {
-  const dir = join(state.outDir, "shots");
-  mkdirSync(dir, { recursive: true });
-  const n = String(state.log.steps.length).padStart(3, "0");
-  const tail = label ? `-${slug(label)}` : "";
-  const path = join(dir, `step-${n}${tail}.png`);
-  await state.page.screenshot({ path, fullPage: true }).catch(() => undefined);
-  state.lastScreenshotPath = path;
+  await captureStepShot(state, label ? { label } : undefined);
   if (!ui) return undefined;
   return {
     kind: "uiIssue",

@@ -52,7 +52,7 @@ function RunRow({ run, active, onClick }: { run: UiRun; active: boolean; onClick
     >
       <span
         className="mt-1 size-2.5 shrink-0 rounded-full"
-        style={{ backgroundColor: runHue(run.hue) }}
+        style={run.live ? { backgroundColor: runHue(run.hue) } : undefined}
         aria-hidden
       />
       <span className="min-w-0 flex-1">

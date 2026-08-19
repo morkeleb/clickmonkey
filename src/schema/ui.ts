@@ -16,9 +16,11 @@ export const UiGraphNode = z
     origin: z.string().min(1).optional(),
     entry: z.boolean().optional(),
     blurb: z.string().min(1).optional(),
-    describedBy: z.enum(["inspect", "explore"]).optional(),
+    describedBy: z.enum(["inspect", "explore", "vision"]).optional(),
     red: z.number().int().nonnegative(),
     yellow: z.number().int().nonnegative(),
+    /** Latest still taken while on this page (`/files/runs/.../shots/pages/{pageId}.png`). */
+    screenshotUrl: z.string().min(1).optional(),
   })
   .strict();
 export type UiGraphNode = z.infer<typeof UiGraphNode>;
@@ -71,6 +73,8 @@ export const UiRunStep = z
     ts: z.string().min(1),
     line: z.string().min(1),
     pageId: z.string().min(1).optional(),
+    /** Page after the step — where the screenshot was taken. */
+    atPageId: z.string().min(1).optional(),
     phase: z.string().min(1).optional(),
     ok: z.boolean().optional(),
     ms: z.number().nonnegative().optional(),
@@ -82,6 +86,7 @@ export const UiRunStep = z
     findingSeverity: z.string().min(1).optional(),
     note: z.string().min(1).optional(),
     good: z.string().min(1).optional(),
+    sight: z.string().min(1).optional(),
   })
   .strict();
 export type UiRunStep = z.infer<typeof UiRunStep>;
@@ -192,7 +197,9 @@ export const UiLeash = z
     intro: z.array(z.string()).default([]),
     skip: z.array(z.string()).default([]),
     writePolicy: z.string().min(1),
+    screenshots: z.boolean().default(true),
     brainModel: z.string().min(1).optional(),
+    visionModel: z.string().min(1).optional(),
   })
   .strict();
 export type UiLeash = z.infer<typeof UiLeash>;

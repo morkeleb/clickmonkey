@@ -20,6 +20,8 @@ export const ShownAction = z
     label: z.string().min(1).optional(),
     /** Inside a navigation landmark. Map prefers these; unleash prefers the rest. */
     nav: z.boolean().optional(),
+    /** ARIA role when the map locator is `by: "role"` (`button`, `link`, `menuitem`, …). */
+    role: z.string().min(1).optional(),
   })
   .strict();
 export type ShownAction = z.infer<typeof ShownAction>;

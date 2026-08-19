@@ -12,7 +12,14 @@ import type { Config } from "../schema/config.js";
 import { UiLeash, UiRun, UiSnapshot, type UiRunStep } from "../schema/ui.js";
 import { buildUiGraph } from "./graph.js";
 import { identityFromRunId } from "./identity.js";
-import { runFileUrl, stepsFromNavLog } from "./run-detail.js";
+import {
+  latestPageScreenshotUrls,
+  listShotRunDirs,
+  runFileUrl,
+  stepShotRel,
+  stepsFromNavLog,
+} from "./run-detail.js";
+import { originOfHref } from "../surveyor/ready.js";
 
 function withNav(run: UiRun, dir: string): UiRun {
   const nav = join(dir, "nav.jsonl");
@@ -20,10 +27,12 @@ function withNav(run: UiRun, dir: string): UiRun {
   const parsed = stepsFromNavLog(readFileSync(nav, "utf8"));
   const steps: UiRunStep[] = parsed.steps.map((step) => {
     const { hops: _hops, ...rest } = step;
-    const shot = step.finding
-      ? runFileUrl(run.id, `findings/fnd_${step.index}_${step.finding}/screenshot.png`)
-      : undefined;
-    return { ...rest, ...(shot ? { screenshotUrl: shot } : {}) };
+    const findingRel = step.finding ? `findings/fnd_${step.index}_${step.finding}/screenshot.png` : undefined;
+    const findingShot =
+      findingRel && existsSync(join(dir, findingRel)) ? runFileUrl(run.id, findingRel) : undefined;
+    const rel = stepShotRel(dir, step.index);
+    const screenshotUrl = findingShot ?? (rel ? runFileUrl(run.id, rel) : undefined);
+    return { ...rest, ...(screenshotUrl ? { screenshotUrl } : {}) };
   });
   return UiRun.parse({
     ...run,
@@ -57,7 +66,9 @@ function leashFromConfig(config: Config): UiLeash {
     intro: config.intro,
     skip: config.skip,
     writePolicy: config.writePolicy,
+    screenshots: config.screenshots !== false,
     ...(config.brain?.model ? { brainModel: config.brain.model } : {}),
+    ...(config.vision?.model ? { visionModel: config.vision.model } : {}),
   });
 }
 
@@ -117,11 +128,23 @@ export function buildUiSnapshot(configPath: string): UiSnapshot {
     if (!existsSync(nav)) return [];
     return hopsFromNavLog(readFileSync(nav, "utf8"));
   });
+  const shots = latestPageScreenshotUrls(listShotRunDirs(configPath), {
+    pages: config.map.pages,
+    appOrigin: originOfHref(config.url),
+  });
+  const graph = buildUiGraph(config.map, { testability, quality, findings, hops });
+  if (shots.size > 0) {
+    graph.nodes = graph.nodes.map((node) => {
+      if (node.kind !== "page") return node;
+      const screenshotUrl = shots.get(node.pageId);
+      return screenshotUrl ? { ...node, screenshotUrl } : node;
+    });
+  }
   return UiSnapshot.parse({
     schemaVersion: 1,
     leash: leashFromConfig(config),
     map: config.map,
-    graph: buildUiGraph(config.map, { testability, quality, findings, hops }),
+    graph,
     testability,
     quality,
     runs: collectUiRuns(configPath),

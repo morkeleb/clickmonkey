@@ -1,26 +1,37 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
+import { chat } from "../brains/chat.js";
 import { persistFinding, shouldPersistFinding } from "../persist/finding.js";
 import { touchPresence } from "../persist/presence.js";
-import { persistQualityRuntime } from "../persist/quality.js";
+import { persistSharedMap } from "../persist/config.js";
+import { lastVisualHash, persistQualityRuntime, persistQualityVisual } from "../persist/quality.js";
 import { normalizeQualityMessage } from "../schema/quality.js";
 import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { parseLine, formatLog, formatStep } from "../schema/dsl.js";
 import { findingId, severityForKind, type Finding, type FindingKind } from "../schema/finding.js";
 import type { Locator } from "../schema/locator.js";
 import type { Log, Step } from "../schema/log.js";
-import type { Config } from "../schema/config.js";
+import { resolveVision, type Config } from "../schema/config.js";
 import type { PageModel, PageModelDraft } from "../schema/page-model.js";
 import type { View } from "../schema/view.js";
-import { attachHttpOracle, isDocumentNotFound, type OracleFinding } from "../oracles/http.js";
+import { attachHttpOracle, isDocumentNotFound, isNotFoundPage, type OracleFinding } from "../oracles/http.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
 import { attachPageErrorOracle } from "../oracles/page-error.js";
+import { applyVisionBlurb, mechanicalDescription } from "../surveyor/describe.js";
+import { examineScreenshot, hashPngFile } from "../surveyor/vision.js";
 import { checkFence } from "./fence.js";
-import { performStep, syncPageFromUrl, syncSurfaceStack, type StepFailure } from "./steps.js";
-import { ledgerOrigin, originOfHref } from "../surveyor/ready.js";
+import {
+  captureStepShot,
+  performStep,
+  syncPageFromUrl,
+  syncSurfaceStack,
+  writePageStill,
+  type StepFailure,
+} from "./steps.js";
+import { ledgerOrigin, originOfHref, pathnameOf } from "../surveyor/ready.js";
 import { hoppablePages, hopContextOf } from "./hop.js";
-import { logLand, logStepDone, logStepStart } from "./nav-log.js";
+import { logLand, logSight, logStepDone, logStepStart } from "./nav-log.js";
 import { dumpVerboseState } from "./verbose.js";
 import { buildView } from "./view.js";
 
@@ -43,6 +54,10 @@ export interface RunState {
   configPath?: string;
   lastAction?: { surface: string; id: string; opens?: string; fromPage?: string };
   lastScreenshotPath?: string;
+  lastSight?: string;
+  lastSightByPage?: Record<string, string>;
+  /** PNG hash we already asked for a map blurb on, per page. */
+  blurbTriedHashByPage?: Record<string, string>;
   /** Intro is how we enter the leash; fence applies after it. */
   inIntro?: boolean;
   navMeta?: { step?: string; pageId?: string; phase?: string };
@@ -203,6 +218,90 @@ async function screenshotFinding(
   return finding;
 }
 
+function sightPageKey(path: string, origin?: string): string {
+  return `${origin ?? ""}\0${path}`;
+}
+
+function applyPageSight(state: RunState, pageKey: string): void {
+  state.lastSight = state.lastSightByPage?.[pageKey];
+}
+
+async function scanStepVision(
+  state: RunState,
+  step: Step,
+  bounced: boolean,
+  shotPath: string | undefined,
+): Promise<void> {
+  let path = "/";
+  try {
+    path = pathnameOf(state.page);
+  } catch {
+    path = "/";
+  }
+  const origin = ledgerOrigin(state.page.url(), originOfHref(state.config.url));
+  const pageKey = sightPageKey(path, origin);
+  applyPageSight(state, pageKey);
+  if (state.replay || bounced) return;
+  if (!shotPath || !existsSync(shotPath)) return;
+  if (step.kind === "screenshot" && step.ui) return;
+  try {
+    const vision = resolveVision(state.config.vision, state.config.brain);
+    if (!vision || (!vision.issues && !vision.assist)) return;
+    const key = { path, ...(origin ? { origin } : {}) };
+    const needSight = Boolean(vision.assist && !state.lastSightByPage?.[pageKey]);
+    const onPageSurface = state.surfaceStack.length <= 1;
+    const mapPage = onPageSurface ? state.model.pages.find((p) => p.id === state.pageId) : undefined;
+    const shotHash = hashPngFile(shotPath);
+    const needBlurb = Boolean(
+      mapPage && mapPage.describedBy !== "vision" && state.blurbTriedHashByPage?.[pageKey] !== shotHash,
+    );
+    const lastHash =
+      needSight || needBlurb || !state.configPath ? undefined : lastVisualHash(state.configPath, key);
+    const apiKey = vision.apiKeyEnv ? process.env[vision.apiKeyEnv] : undefined;
+    const result = await examineScreenshot({
+      chat,
+      baseUrl: vision.baseUrl,
+      model: vision.model,
+      apiKey,
+      pngPath: shotPath,
+      lastHash,
+      ...(mapPage ? { facts: mechanicalDescription(mapPage) } : {}),
+    });
+    if (result.status !== "ok") {
+      if (needBlurb) {
+        state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: shotHash };
+      }
+      applyPageSight(state, pageKey);
+      return;
+    }
+    if (vision.issues && result.persist && state.configPath) {
+      persistQualityVisual(state.configPath, {
+        ...key,
+        foundAt: new Date().toISOString(),
+        visual: result.issues,
+        visualHash: result.hash,
+      });
+    }
+    if (vision.assist && result.sight) {
+      state.lastSightByPage = { ...(state.lastSightByPage ?? {}), [pageKey]: result.sight };
+      if (state.navLogPath) {
+        logSight(state.navLogPath, { line: formatStep(step), sight: result.sight });
+      }
+    }
+    if (needBlurb) {
+      state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: result.hash };
+      if (result.blurb && mapPage && state.configPath && applyVisionBlurb(mapPage, result.blurb)) {
+        const saved = persistSharedMap(state.configPath, state.model);
+        state.config = saved;
+        state.model = saved.map;
+      }
+    }
+    applyPageSight(state, pageKey);
+  } catch {
+    applyPageSight(state, pageKey);
+  }
+}
+
 function lastActionFromStep(state: RunState, step: Step): RunState["lastAction"] {
   if (step.kind !== "click") return undefined;
   for (const page of state.model.pages) {
@@ -216,12 +315,76 @@ function lastActionFromStep(state: RunState, step: Step): RunState["lastAction"]
   return { surface: step.surface, id: step.id, fromPage: state.pageId };
 }
 
+async function captureNotFoundFinding(
+  state: RunState,
+  step: Step,
+  href: string,
+): Promise<Finding> {
+  if (state.configPath) reportDocumentNotFound(state.configPath, state.page);
+  const http404 = isDocumentNotFound(state.page);
+  const pending404 = state.pendingFindings.find((f) => f.kind === "notFound");
+  const finding = await screenshotFinding(
+    state,
+    pending404 ?? {
+      kind: "notFound",
+      message: http404 ? `HTTP 404 GET ${href}` : `Not found page GET ${href}`,
+      url: href,
+      httpStatus: 404,
+    },
+    step,
+  );
+  state.pendingFindings = state.pendingFindings.filter((f) => f !== pending404);
+  return finding;
+}
+
+function persistStepFinding(
+  state: RunState,
+  step: Step,
+  finding: Finding,
+): { finding: Finding; created: boolean } {
+  if (!shouldPersistFinding(finding.kind)) return { finding, created: false };
+  const persisted = persistFinding(state.outDir, finding, {
+    screenshotPath: finding.screenshotPath,
+    replayLog: formatLog(
+      compactLog(
+        {
+          schemaVersion: 1,
+          bug: finding.message,
+          found: new Date().toISOString(),
+          comments: state.log.comments,
+          steps: [...state.log.steps, step],
+          usedLocators: { ...state.usedLocators },
+          result: "failed",
+        },
+        state.navLogPath && existsSync(state.navLogPath)
+          ? { hopped: hoppedStepIndexes(readFileSync(state.navLogPath, "utf8")) }
+          : undefined,
+      ),
+    ),
+  });
+  if (step.kind === "screenshot" && persisted.finding.screenshotPath) {
+    state.lastScreenshotPath = persisted.finding.screenshotPath;
+  }
+  return { finding: persisted.finding, created: persisted.created };
+}
+
 async function finish(
   state: RunState,
   step: Step,
-  stepFailure?: StepFailure,
+  stepFailure: StepFailure | undefined,
+  hrefBefore: string,
 ): Promise<StepResult> {
   state.lastAction = lastActionFromStep(state, step);
+  if (step.kind === "click" || step.kind === "open") {
+    if (state.page.url() === hrefBefore) {
+      await state.page
+        .waitForURL((u) => u.href !== hrefBefore, { timeout: 400 })
+        .catch(() => undefined);
+    }
+    if (state.page.url() !== hrefBefore) {
+      await waitForUrlSettle(state.page, 400);
+    }
+  }
   syncPageFromUrl(state);
   await syncSurfaceStack(state);
 
@@ -233,22 +396,11 @@ async function finish(
   let finding: Finding | undefined;
   if (bounced) {
     // Left the leash. Recover without treating it as a website finding.
-  } else if (isDocumentNotFound(state.page)) {
-    if (state.configPath) reportDocumentNotFound(state.configPath, state.page);
-    const pending404 = state.pendingFindings.find((f) => f.kind === "notFound");
-    finding = await screenshotFinding(
-      state,
-      pending404 ?? {
-        kind: "notFound",
-        message: `HTTP 404 GET ${href}`,
-        httpStatus: 404,
-        url: href,
-      },
-      step,
-    );
-    state.pendingFindings = state.pendingFindings.filter((f) => f !== pending404);
+  } else if (await isNotFoundPage(state.page)) {
+    finding = await captureNotFoundFinding(state, step, href);
   } else {
     await state.afterStep?.(state);
+    syncPageFromUrl(state);
     if (state.outDir) touchPresence(state.outDir, state.pageId);
     if (stepFailure && stepFailure.kind !== "fenceViolation") {
       finding = await screenshotFinding(state, stepFailure, step);
@@ -258,32 +410,28 @@ async function finish(
   }
 
   let findingCreated = false;
-  if (finding && shouldPersistFinding(finding.kind)) {
-    const persisted = persistFinding(state.outDir, finding, {
-      screenshotPath: finding.screenshotPath,
-      replayLog: formatLog(
-        compactLog(
-          {
-            schemaVersion: 1,
-            bug: finding.message,
-            found: new Date().toISOString(),
-            comments: state.log.comments,
-            steps: [...state.log.steps, step],
-            usedLocators: { ...state.usedLocators },
-            result: "failed",
-          },
-          state.navLogPath && existsSync(state.navLogPath)
-            ? { hopped: hoppedStepIndexes(readFileSync(state.navLogPath, "utf8")) }
-            : undefined,
-        ),
-      ),
-    });
+  if (finding) {
+    const persisted = persistStepFinding(state, step, finding);
     finding = persisted.finding;
     findingCreated = persisted.created;
-    if (step.kind === "screenshot" && finding.screenshotPath) {
-      state.lastScreenshotPath = finding.screenshotPath;
-    }
   }
+
+  let shotPath = step.kind === "screenshot" ? state.lastScreenshotPath : undefined;
+  if (!state.replay && state.config.screenshots !== false && step.kind !== "screenshot") {
+    shotPath = await captureStepShot(state);
+  }
+  // Client-side Next.js 404 often paints after the document response (HTTP 200).
+  if (!finding && !bounced && !refusedFence && (await isNotFoundPage(state.page))) {
+    finding = await captureNotFoundFinding(state, step, state.page.url());
+    const persisted = persistStepFinding(state, step, finding);
+    finding = persisted.finding;
+    findingCreated = persisted.created;
+  }
+  // A 404 after a click from home must not become home's sitemap still.
+  if (shotPath && !bounced && finding?.kind !== "notFound") {
+    writePageStill(state, shotPath);
+  }
+  await scanStepVision(state, step, bounced, shotPath);
 
   state.log.steps.push(step);
 
@@ -339,6 +487,7 @@ export function createExecutor(state: RunState): {
         })
       : Date.now();
     let failure: StepFailure | undefined;
+    const hrefBefore = state.page.url();
     try {
       failure = await performStep(state, step);
     } catch (err) {
@@ -347,12 +496,13 @@ export function createExecutor(state: RunState): {
         message: err instanceof Error ? err.message : String(err),
       };
     }
-    const result = await finish(state, step, failure);
+    const result = await finish(state, step, failure, hrefBefore);
     if (state.navLogPath) {
       logStepDone(state.navLogPath, {
         line,
         ok: result.ok,
         started,
+        pageId: state.pageId,
         ...(result.finding
           ? { finding: result.finding.kind }
           : result.bounced || result.view.last?.finding === "fenceViolation"

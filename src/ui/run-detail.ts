@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { Finding, severityForKind } from "../schema/finding.js";
 import {
   UiRunDetail,
@@ -13,9 +13,125 @@ import { identityFromRunId } from "./identity.js";
 import { isPresenceLive, loadPresence, presencePath } from "../persist/presence.js";
 import { countFindings, listRuns } from "../persist/runs.js";
 import { runsDir } from "../persist/workspace.js";
+import { findPageForHref } from "../surveyor/ready.js";
+import { slug } from "../surveyor/ids.js";
 
 export function runFileUrl(runId: string, rel: string): string {
   return `/files/runs/${runId}/${rel.split("\\").join("/")}`;
+}
+
+export function stepShotRel(runDir: string, index: number): string | undefined {
+  const padded = String(index).padStart(3, "0");
+  const exact = `shots/step-${padded}.png`;
+  if (existsSync(join(runDir, exact))) return exact;
+  const shotsDir = join(runDir, "shots");
+  if (!existsSync(shotsDir)) return undefined;
+  const prefix = `step-${padded}-`;
+  const hit = readdirSync(shotsDir).find((name) => name.startsWith(prefix) && name.endsWith(".png"));
+  return hit ? `shots/${hit}` : undefined;
+}
+
+/** Live walks often have nav.jsonl + shots before log.txt exists, so listRuns misses them. */
+export function listShotRunDirs(configPath: string): Array<{ id: string; dir: string }> {
+  const byId = new Map<string, { id: string; dir: string }>();
+  const addRoot = (root: string) => {
+    if (!existsSync(root)) return;
+    for (const name of readdirSync(root)) {
+      if (byId.has(name)) continue;
+      const dir = join(root, name);
+      if (!statSync(dir).isDirectory()) continue;
+      if (!existsSync(join(dir, "nav.jsonl"))) continue;
+      byId.set(name, { id: name, dir });
+    }
+  };
+  addRoot(runsDir(configPath));
+  addRoot(join(dirname(configPath), "runs"));
+  return [...byId.values()];
+}
+
+export type ShotPageRef = { id: string; path: string; origin?: string };
+
+/**
+ * Page the PNG belongs to: after the step, not where the click started.
+ * A hop from home to a run detail must not become home's still.
+ * A notFound shot is not a portrait of any map page.
+ */
+export function shotPageId(
+  step: Pick<Step, "pageId" | "atPageId" | "hops" | "finding">,
+  pages?: readonly ShotPageRef[],
+  appOrigin?: string,
+): string | undefined {
+  if (step.finding === "notFound") return undefined;
+  return stillWrittenFor(step, pages, appOrigin);
+}
+
+function stillWrittenFor(
+  step: Pick<Step, "pageId" | "atPageId" | "hops">,
+  pages?: readonly ShotPageRef[],
+  appOrigin?: string,
+): string | undefined {
+  const hops = step.hops ?? [];
+  if (hops.length > 0 && pages && appOrigin) {
+    const to = hops[hops.length - 1]?.to;
+    if (to) return findPageForHref(pages, to, appOrigin)?.id;
+  }
+  if (step.atPageId) return step.atPageId;
+  return step.pageId;
+}
+
+/** Last visit that wrote this page's still was a 404 — do not use pages/{id}.png from this run. */
+function pageStillPoisoned(
+  steps: readonly Step[],
+  pageId: string,
+  pages?: readonly ShotPageRef[],
+  appOrigin?: string,
+): boolean {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i]!;
+    if (stillWrittenFor(step, pages, appOrigin) !== pageId) continue;
+    return step.finding === "notFound";
+  }
+  return false;
+}
+
+function pageStillRel(runDir: string, pageId: string): string | undefined {
+  const rel = `shots/pages/${slug(pageId)}.png`;
+  return existsSync(join(runDir, rel)) ? rel : undefined;
+}
+
+/** Newest still of each page. Prefer shots/pages/{pageId}.png; else infer from the step's landing page. */
+export function latestPageScreenshotUrls(
+  listed: Array<{ id: string; dir: string }>,
+  opts?: { pages?: readonly ShotPageRef[]; appOrigin?: string },
+): Map<string, string> {
+  const out = new Map<string, string>();
+  const runs = [...listed].sort((a, b) => b.id.localeCompare(a.id));
+  for (const run of runs) {
+    const nav = join(run.dir, "nav.jsonl");
+    if (!existsSync(nav)) continue;
+    const { steps } = stepsFromNavLog(readFileSync(nav, "utf8"));
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const step = steps[i]!;
+      const pageId = shotPageId(step, opts?.pages, opts?.appOrigin);
+      if (!pageId || out.has(pageId)) continue;
+      const rel = stepShotRel(run.dir, step.index) ?? pageStillRel(run.dir, pageId);
+      if (rel) out.set(pageId, runFileUrl(run.id, rel));
+    }
+  }
+  for (const run of runs) {
+    const pagesDir = join(run.dir, "shots", "pages");
+    if (!existsSync(pagesDir)) continue;
+    const nav = join(run.dir, "nav.jsonl");
+    const steps = existsSync(nav) ? stepsFromNavLog(readFileSync(nav, "utf8")).steps : [];
+    for (const name of readdirSync(pagesDir)) {
+      if (!name.endsWith(".png")) continue;
+      const pageId = name.slice(0, -4);
+      if (!pageId || out.has(pageId)) continue;
+      if (pageStillPoisoned(steps, pageId, opts?.pages, opts?.appOrigin)) continue;
+      out.set(pageId, runFileUrl(run.id, `shots/pages/${name}`));
+    }
+  }
+  return out;
 }
 
 function asString(value: unknown): string | undefined {
@@ -42,7 +158,7 @@ function hopOf(raw: Record<string, unknown>): Hop | undefined {
 
 export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[] }; steps: Step[] } {
   const steps: Step[] = [];
-  let pending: { line?: string; note?: string; good?: string } | undefined;
+  let pending: { line?: string; note?: string; good?: string; sight?: string } | undefined;
   let current: {
     ts: string;
     line: string;
@@ -51,6 +167,7 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
     hops: Hop[];
     note?: string;
     good?: string;
+    sight?: string;
   } | undefined;
   const prelude: Hop[] = [];
   let bootTs: string | undefined;
@@ -67,6 +184,7 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
         ...(current.phase ? { phase: current.phase } : {}),
         ...(current.note ? { note: current.note } : {}),
         ...(current.good ? { good: current.good } : {}),
+        ...(current.sight ? { sight: current.sight } : {}),
       }),
     );
     current = undefined;
@@ -90,6 +208,22 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
       }
       continue;
     }
+    if (type === "sight") {
+      const sight = asString(ev.sight);
+      if (!sight) continue;
+      const line = asString(ev.line);
+      if (current && (!line || current.line === line)) {
+        current.sight = sight;
+        continue;
+      }
+      const last = !current ? steps[steps.length - 1] : undefined;
+      if (last && (!line || last.line === line)) {
+        steps[steps.length - 1] = UiRunStep.parse({ ...last, sight });
+        continue;
+      }
+      pending = { line, sight };
+      continue;
+    }
     if (type === "land") {
       pending = undefined;
       continue;
@@ -110,6 +244,7 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
         ...(asString(ev.phase) ? { phase: asString(ev.phase) } : {}),
         ...(take && pending?.note ? { note: pending.note } : {}),
         ...(take && pending?.good ? { good: pending.good } : {}),
+        ...(take && pending?.sight ? { sight: pending.sight } : {}),
       };
       pending = undefined;
       continue;
@@ -117,12 +252,14 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
     if (type === "stepDone") {
       if (!current) continue;
       const hops = current.hops;
+      const atPageId = asString(ev.pageId);
       steps.push(
         UiRunStep.parse({
           index: steps.length,
           ts: current.ts,
           line: current.line,
           ...(current.pageId ? { pageId: current.pageId } : {}),
+          ...(atPageId ? { atPageId } : {}),
           ...(current.phase ? { phase: current.phase } : {}),
           ...(typeof ev.ok === "boolean" ? { ok: ev.ok } : {}),
           ...(asNumber(ev.ms) !== undefined ? { ms: asNumber(ev.ms) } : {}),
@@ -130,6 +267,7 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
           ...(hops.length > 0 ? { hops } : {}),
           ...(current.note ? { note: current.note } : {}),
           ...(current.good ? { good: current.good } : {}),
+          ...(current.sight ? { sight: current.sight } : {}),
         }),
       );
       current = undefined;
@@ -191,8 +329,8 @@ function attachShots(runDir: string, runId: string, steps: Step[], findings: UiR
   }
   return steps.map((step) => {
     const hit = byIndex.get(step.index)?.[0];
-    const padded = `shots/step-${String(step.index).padStart(3, "0")}.png`;
-    const shotFromStep = existsSync(join(runDir, padded)) ? runFileUrl(runId, padded) : undefined;
+    const rel = stepShotRel(runDir, step.index);
+    const shotFromStep = rel ? runFileUrl(runId, rel) : undefined;
     const screenshotUrl = hit?.screenshotUrl ?? shotFromStep;
     return UiRunStep.parse({
       ...step,

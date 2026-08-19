@@ -44,8 +44,30 @@ function loadFindingJson(path: string): Finding | undefined {
   }
 }
 
+function pathOfFindingUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const path = new URL(url).pathname;
+    return path === "" ? "/" : path;
+  } catch {
+    return undefined;
+  }
+}
+
 function samePersistedFinding(a: Finding, b: Finding): boolean {
-  if (a.kind !== b.kind || a.message !== b.message) return false;
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "notFound") {
+    const pa = pathOfFindingUrl(a.url);
+    const pb = pathOfFindingUrl(b.url);
+    return Boolean(pa && pb && pa === pb);
+  }
+  if (a.kind === "httpError") {
+    if (a.httpStatus !== b.httpStatus) return false;
+    const pa = pathOfFindingUrl(a.url);
+    const pb = pathOfFindingUrl(b.url);
+    return Boolean(pa && pb && pa === pb);
+  }
+  if (a.message !== b.message) return false;
   if (a.url && b.url && a.url !== b.url) return false;
   if (a.widgetRef && b.widgetRef && a.widgetRef !== b.widgetRef) return false;
   return true;

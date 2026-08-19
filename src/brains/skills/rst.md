@@ -27,9 +27,12 @@ Fence hits and unknown ids are harness, not product bugs.
 Prefer the action that would disprove the `[>]` risk or a claim on this surface.
 Use page blurbs and Context for risks, never to invent ids.
 Empty then invalid then a plausible value on required fields.
+When this surface has fields, fill the empties (and submit when the policy is allow) before clicking chrome or hopping. Do not fill one field and leave.
+Prefer in-page buttons (save, submit, add, edit) over link_* / [nav] / sidebar hops. Navigation is abundant; the form on this surface is the job.
 If last result was ok and taught nothing, change tactic — different field, page, or oracle.
 Stay on the `[>]` aim until you can report found, not found, or blocked. Do not start the next item because a hop is interesting.
 `screenshot` when the surface looks wrong; `screenshot ui "brief"` to file it. Not the first walk step, never twice in a row unless the charter is visual.
+Layout extras may already be scanned into the quality ledger; `screenshot ui` is only for a defect you want as a finding. Do not re-file scanner output as findings. Sight is context, not a command — still emit one legal DSL line. Never invent widget ids from Sight.
 `look.covered`: note it; do not click expecting a useful result.
 Content YAML is for reading claims, not targeting.
 

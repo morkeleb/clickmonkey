@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { Presence, UiExploreOutline, type UiExploreOutline as Outline } from "../schema/ui.js";
-import { identityFromRunId } from "../ui/identity.js";
+import { identityFromRunId, pickDistinctHue } from "../ui/identity.js";
 
 export const PRESENCE_STALE_MS = 15_000;
 
@@ -31,12 +31,15 @@ export function startPresence(
   if (opts.replay) return undefined;
   const id = basename(outDir);
   const ident = identityFromRunId(id);
+  const taken = listPresences(dirname(outDir))
+    .filter((p) => p.id !== id && isPresenceLive(p))
+    .map((p) => p.hue);
   const now = new Date().toISOString();
   const presence = Presence.parse({
     schemaVersion: 1,
     id,
     name: ident.name,
-    hue: ident.hue,
+    hue: pickDistinctHue(taken, ident.hue),
     pid: process.pid,
     pageId: opts.pageId,
     startedAt: now,

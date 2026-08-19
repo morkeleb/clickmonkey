@@ -71,4 +71,14 @@ describe("nasty payloads", () => {
     });
     assert.equal(decideUnleashNasty({ view, stepsUsed: 0 }).line, "open home");
   });
+
+  it("with writePolicy allow fills then submits without clicking away", () => {
+    const view = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [{ id: "submit" }, { id: "open_create" }],
+    });
+    const d = decideUnleashNasty({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
+    assert.equal(d.lines?.at(-1), "click page.submit");
+    assert.match(d.lines?.[0] ?? "", /^fill page\.name /);
+  });
 });

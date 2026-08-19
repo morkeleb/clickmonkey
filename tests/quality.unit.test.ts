@@ -4,15 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  lastVisualHash,
   loadQualityReport,
   persistQualityRuntime,
   persistQualitySnapshot,
+  persistQualityVisual,
   qualityReportPath,
 } from "../src/persist/quality.js";
 import { renderFindingsReport } from "../src/reports/findings-report.js";
 import {
+  mergeQualityIssues,
   mergeRuntimeEvents,
   normalizeQualityMessage,
+  qualityPageCounts,
+  QualityReport,
 } from "../src/schema/quality.js";
 import { validateHtml } from "../src/surveyor/html.js";
 
@@ -47,6 +52,37 @@ describe("quality ledger", () => {
     assert.equal(next[0]?.count, 3);
     assert.equal(next[0]?.lastSeen, "t2");
     assert.equal(next[0]?.firstSeen, "t1");
+  });
+
+  it("merges visual issues and keeps the higher confidence", () => {
+    const merged = mergeQualityIssues([
+      {
+        source: "visual",
+        rule: "overlap",
+        severity: "warning",
+        message: "chip on header",
+        count: 1,
+        confidence: "medium",
+      },
+      {
+        source: "visual",
+        rule: "overlap",
+        severity: "warning",
+        message: "chip on header",
+        count: 1,
+        confidence: "high",
+        where: "filter chip on table header",
+      },
+    ]);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0]?.count, 2);
+    assert.equal(merged[0]?.confidence, "high");
+    assert.equal(merged[0]?.where, "filter chip on table header");
+    const unioned = mergeQualityIssues([
+      { source: "a11y", rule: "color-contrast", severity: "error", message: "contrast", count: 1, where: 'a "Milkshake"' },
+      { source: "a11y", rule: "color-contrast", severity: "error", message: "contrast", count: 1, where: 'span "Settings"' },
+    ]);
+    assert.equal(unioned[0]?.where, 'a "Milkshake" · span "Settings"');
   });
 
   it("truncates messages used as keys", () => {
@@ -93,6 +129,107 @@ describe("quality ledger", () => {
     assert.equal(page.runtime[0]?.lastSeen, "2026-08-18T00:00:02.000Z");
   });
 
+  it("snapshot keeps visual when html/a11y are replaced", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-visual-keep-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistQualityVisual(configPath, {
+      path: "/",
+      foundAt: "t1",
+      visualHash: "png-1",
+      visual: [{ source: "visual", rule: "overlap", severity: "warning", message: "cards overlap", count: 1 }],
+    });
+    persistQualitySnapshot(configPath, {
+      path: "/",
+      foundAt: "t2",
+      htmlHash: "html-2",
+      html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "Duplicate ID", count: 1 }],
+      a11y: [],
+    });
+    persistQualityRuntime(configPath, { path: "/" }, {
+      source: "console",
+      rule: "console.error",
+      severity: "error",
+      message: "boom",
+      count: 1,
+      firstSeen: "t3",
+      lastSeen: "t3",
+    });
+    const page = loadQualityReport(qualityReportPath(configPath)).pages[0]!;
+    assert.equal(page.visual[0]?.rule, "overlap");
+    assert.equal(page.visualHash, "png-1");
+    assert.equal(page.html[0]?.rule, "no-dup-id");
+    assert.equal(page.runtime[0]?.message, "boom");
+  });
+
+  it("persistQualityVisual keeps html/runtime and lastVisualHash tracks the png", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-visual-"));
+    const configPath = join(dir, "clickmonkey.json");
+    assert.equal(lastVisualHash(configPath, { path: "/" }), undefined);
+    persistQualitySnapshot(configPath, {
+      path: "/",
+      foundAt: "t1",
+      htmlHash: "html-1",
+      html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "Duplicate ID", count: 1 }],
+      a11y: [],
+    });
+    assert.equal(lastVisualHash(configPath, { path: "/" }), undefined);
+    persistQualityRuntime(configPath, { path: "/" }, {
+      source: "pageError",
+      rule: "pageError",
+      severity: "error",
+      message: "cm-quality-boom",
+      count: 1,
+      firstSeen: "t2",
+      lastSeen: "t2",
+    });
+    persistQualityVisual(configPath, {
+      path: "/",
+      foundAt: "t3",
+      visualHash: "png-9",
+      visual: [{ source: "visual", rule: "overflow", severity: "error", message: "text clipped", count: 1 }],
+    });
+    const page = loadQualityReport(qualityReportPath(configPath)).pages[0]!;
+    assert.equal(page.html[0]?.rule, "no-dup-id");
+    assert.equal(page.htmlHash, "html-1");
+    assert.equal(page.runtime[0]?.message, "cm-quality-boom");
+    assert.equal(page.visual[0]?.rule, "overflow");
+    assert.equal(page.visualHash, "png-9");
+    assert.equal(lastVisualHash(configPath, { path: "/" }), "png-9");
+    assert.equal(lastVisualHash(configPath, { path: "/other" }), undefined);
+  });
+
+  it("qualityPageCounts includes visual errors", () => {
+    const counts = qualityPageCounts({
+      path: "/",
+      foundAt: "t",
+      html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "dup", count: 1 }],
+      a11y: [{ source: "a11y", rule: "image-alt", severity: "warning", message: "alt", count: 1 }],
+      visual: [{ source: "visual", rule: "overlap", severity: "error", message: "overlap", count: 1 }],
+      runtime: [
+        {
+          source: "console",
+          rule: "console.warning",
+          severity: "warning",
+          message: "w",
+          count: 1,
+          firstSeen: "t",
+          lastSeen: "t",
+        },
+      ],
+    });
+    assert.equal(counts.errors, 2);
+    assert.equal(counts.warnings, 2);
+  });
+
+  it("parses old quality.json without visual", () => {
+    const parsed = QualityReport.parse({
+      schemaVersion: 1,
+      pages: [{ path: "/", foundAt: "t", html: [], a11y: [], runtime: [] }],
+    });
+    assert.deepEqual(parsed.pages[0]?.visual, []);
+    assert.equal(parsed.pages[0]?.visualHash, undefined);
+  });
+
   it("keeps the same path on different origins apart", () => {
     const dir = mkdtempSync(join(tmpdir(), "cm-quality-origin-"));
     const configPath = join(dir, "clickmonkey.json");
@@ -123,13 +260,17 @@ describe("quality ledger", () => {
   <head><title>x</title></head>
   <body>
     <p><div>bad</div></p>
-    <button id="a">one</button>
+    <button id="a"><div>x</div></button>
     <span id="a">two</span>
   </body>
 </html>`);
     const rules = issues.map((i) => i.rule);
     assert.ok(rules.includes("no-dup-id"), JSON.stringify(issues));
     assert.ok(rules.includes("element-required-attributes"), JSON.stringify(issues));
+    const nested = issues.find((i) => i.rule === "element-permitted-content");
+    assert.ok(nested?.where?.includes("div"), JSON.stringify(nested));
+    const dup = issues.find((i) => i.rule === "no-dup-id");
+    assert.equal(dup?.where, "span");
   });
 
   it("report includes a Quality section from the ledgers", () => {
@@ -167,6 +308,15 @@ describe("quality ledger", () => {
                   count: 2,
                 },
               ],
+              visual: [
+                {
+                  source: "visual",
+                  rule: "overlap",
+                  severity: "warning",
+                  message: "cards overlap the footer",
+                  count: 1,
+                },
+              ],
               runtime: [
                 {
                   source: "console",
@@ -187,10 +337,45 @@ describe("quality ledger", () => {
     assert.match(md, /^## Quality/m);
     assert.match(md, /html-validate/);
     assert.match(md, /axe-core/);
-    assert.match(md, /No LLM/);
+    assert.match(md, /visual layout extras when a vision model ran/);
+    assert.doesNotMatch(md, /No LLM/);
     assert.match(md, /`opaqueControl` block/);
     assert.match(md, /`no-dup-id` error/);
     assert.match(md, /`image-alt` error ×2/);
+    assert.match(md, /\*\*Visual\*\*/);
+    assert.match(md, /`overlap` warning — cards overlap the footer/);
     assert.match(md, /`console.error` error — cm-quality-error/);
+    const digest = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "2026-08-18T00:00:00.000Z",
+        runIds: ["sess"],
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/",
+              foundAt: "t",
+              html: [],
+              a11y: [],
+              visual: [
+                {
+                  source: "visual",
+                  rule: "overlap",
+                  severity: "warning",
+                  message: "cards overlap the footer",
+                  count: 1,
+                },
+              ],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(digest, /`overlap` warning — cards overlap the footer/);
+    assert.doesNotMatch(digest, /\*\*Visual\*\*/);
   });
 });

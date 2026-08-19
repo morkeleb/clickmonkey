@@ -47,17 +47,19 @@ export function persistBrokenEntry(configPath: string, entry: BrokenEntry): Brok
 
 export function reportDocumentNotFound(configPath: string, page: Page): BrokenReport | undefined {
   const doc = lastDocument(page);
-  if (!doc || doc.status !== 404) return undefined;
+  const href = page.url();
+  const url = doc?.status === 404 ? doc.url : href;
+  if (!url) return undefined;
   let path = "/";
   try {
-    path = new URL(doc.url).pathname || "/";
+    path = new URL(url).pathname || "/";
   } catch {
-    path = doc.url;
+    path = url;
   }
   return persistBrokenEntry(configPath, {
     path,
-    url: doc.url,
-    status: doc.status,
+    url,
+    status: 404,
     foundAt: new Date().toISOString(),
     resourceType: "document",
   });

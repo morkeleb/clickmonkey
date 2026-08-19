@@ -33,6 +33,8 @@ describe("quality walk ledger", () => {
         assert.ok(htmlRules.includes("no-dup-id"), JSON.stringify(quality.pages[0]?.html));
         const a11yRules = quality.pages[0]?.a11y.map((i) => i.rule) ?? [];
         assert.ok(a11yRules.includes("image-alt"), JSON.stringify(quality.pages[0]?.a11y));
+        const alt = quality.pages[0]?.a11y.find((i) => i.rule === "image-alt");
+        assert.ok(alt?.where, JSON.stringify(alt));
       });
     } finally {
       await close();

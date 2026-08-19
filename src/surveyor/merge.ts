@@ -11,6 +11,7 @@ import type {
 import { locatorIdentity, type Locator } from "../schema/locator.js";
 import { readyKey } from "../schema/refs.js";
 import { mintedBase, uniqueMint } from "./ids.js";
+import { descriptionRank } from "./describe.js";
 
 export function identityKey(
   surfaceId: string,
@@ -200,14 +201,19 @@ function mergeSurface(keep: Surface, other: Surface): { surface: Surface; added:
   return { surface, added };
 }
 
+function preferIncomingDescription(keep: PageT, other: PageT): boolean {
+  if (!keep.description) return true;
+  const incoming = descriptionRank(other.describedBy);
+  const held = descriptionRank(keep.describedBy);
+  if (incoming !== held) return incoming > held;
+  return Boolean(other.describeKey && other.describeKey === keep.describeKey);
+}
+
 function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number } {
   const page = structuredClone(keep);
   if (!page.origin && other.origin) page.origin = other.origin;
   if (other.entry) page.entry = true;
-  if (
-    other.description &&
-    (!page.description || (other.describeKey && other.describeKey === page.describeKey))
-  ) {
+  if (other.description && preferIncomingDescription(page, other)) {
     page.description = other.description;
     if (other.describeKey) page.describeKey = other.describeKey;
     if (other.describedBy) page.describedBy = other.describedBy;

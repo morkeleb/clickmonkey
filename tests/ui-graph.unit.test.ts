@@ -126,6 +126,7 @@ describe("badgeCounts", () => {
             foundAt: "t",
             html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "dup", count: 1 }],
             a11y: [],
+            visual: [{ source: "visual", rule: "overlap", severity: "error", message: "overlap", count: 1 }],
             runtime: [
               {
                 source: "console",
@@ -141,7 +142,7 @@ describe("badgeCounts", () => {
         ],
       },
     });
-    assert.equal(counts.red, 2);
+    assert.equal(counts.red, 3);
     assert.equal(counts.yellow, 2);
   });
 

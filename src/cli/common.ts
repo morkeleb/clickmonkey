@@ -121,6 +121,24 @@ Explore pings the model before opening a browser. A missing key or a down
 endpoint is a hard error (exit 2), not a screenshot walk.
 `;
 
+export const VISION_HELP = `vision is optional. Same connection shape as brain (baseUrl, model, apiKeyEnv).
+
+  model is required on the vision block and is never copied from brain.
+  baseUrl inherits from brain when omitted.
+  apiKeyEnv inherits from brain only when vision.baseUrl is also omitted
+  (same host). A different vision.baseUrl does not copy the brain key.
+  "apiKeyEnv": false means no key.
+
+  Mix local models (qwen text + qwen-vl on another host):
+  "brain":  { "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5" }
+  "vision": { "baseUrl": "http://127.0.0.1:8080/v1", "model": "qwen2.5-vl" }
+
+issues (default true) writes extras into quality.json.
+assist (default true) adds explore sight notes.
+Per-step screenshots must stay on (the default).
+Vision is not findings; decide stays text-only.
+`;
+
 export function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }

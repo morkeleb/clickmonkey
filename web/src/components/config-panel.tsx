@@ -51,8 +51,12 @@ export function ConfigPanel({ leash }: { leash: UiLeash }) {
           <Row label="Write policy">
             <code className="font-mono text-xs">{leash.writePolicy}</code>
           </Row>
+          <Row label="Screenshots">{leash.screenshots ? "yes" : "no"}</Row>
           <Row label="Brain model">
             {leash.brainModel ? <code className="font-mono text-xs">{leash.brainModel}</code> : <Empty>unset</Empty>}
+          </Row>
+          <Row label="Vision model">
+            {leash.visionModel ? <code className="font-mono text-xs">{leash.visionModel}</code> : <Empty>unset</Empty>}
           </Row>
         </dl>
       </div>

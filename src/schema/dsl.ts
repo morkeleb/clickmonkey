@@ -10,6 +10,25 @@ export class DslParseError extends Error {
   }
 }
 
+export function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+/** First useful line of a finding message — Playwright Call logs must not become DSL. */
+export function oneLineBug(text: string): string {
+  const clean = stripAnsi(text).replace(/\r\n/g, "\n");
+  const first =
+    clean
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l && !/^call log:?$/i.test(l)) ?? clean.trim();
+  const intercept = /intercepts pointer events/i.test(clean);
+  if (intercept && !/intercepts pointer events/i.test(first)) {
+    return `${first} (pointer events intercepted)`;
+  }
+  return first;
+}
+
 function splitRef(ref: string, lineNo: number): { surface: string; id: string } {
   const i = ref.lastIndexOf(".");
   if (i <= 0 || i === ref.length - 1) {
@@ -119,19 +138,39 @@ export function parseLog(text: string): Log {
   let found: string | undefined;
   const steps: Step[] = [];
   const lines = text.split(/\r?\n/);
+  let inBug = false;
   for (let i = 0; i < lines.length; i++) {
-    const parsed = parseLine(lines[i] ?? "", i + 1);
-    if (!parsed) continue;
-    if ("comment" in parsed) {
-      const c = parsed.comment;
+    const raw = lines[i] ?? "";
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("#")) {
+      const c = trimmed.slice(1).trim();
       const bugMatch = c.match(/^bug:\s*(.+)$/i);
       const foundMatch = c.match(/^found:\s*(.+)$/i);
-      if (bugMatch?.[1]) bug = bugMatch[1].trim();
-      else if (foundMatch?.[1]) found = foundMatch[1].trim();
-      else if (c) comments.push(c);
+      if (bugMatch?.[1]) {
+        bug = bugMatch[1].trim();
+        inBug = true;
+      } else if (foundMatch?.[1]) {
+        found = foundMatch[1].trim();
+        inBug = false;
+      } else if (inBug && steps.length === 0) {
+        bug = `${bug ?? ""}\n${c}`.trim();
+      } else if (c) comments.push(c);
       continue;
     }
-    steps.push(parsed);
+    try {
+      const parsed = parseLine(raw, i + 1);
+      if (!parsed) continue;
+      if ("comment" in parsed) continue;
+      inBug = false;
+      steps.push(parsed);
+    } catch (err) {
+      if (inBug && steps.length === 0) {
+        bug = `${bug ?? ""}\n${stripAnsi(trimmed)}`.trim();
+        continue;
+      }
+      throw err;
+    }
   }
   return {
     schemaVersion: 1,
@@ -145,9 +184,9 @@ export function parseLog(text: string): Log {
 
 export function formatLog(log: Log): string {
   const out: string[] = [];
-  if (log.bug) out.push(`# bug: ${log.bug}`);
-  if (log.found) out.push(`# found: ${log.found}`);
-  for (const c of log.comments) out.push(`# ${c}`);
+  if (log.bug) out.push(`# bug: ${oneLineBug(log.bug)}`);
+  if (log.found) out.push(`# found: ${oneLineBug(log.found)}`);
+  for (const c of log.comments) out.push(`# ${oneLineBug(c)}`);
   if (out.length && log.steps.length) out.push("");
   for (const step of log.steps) out.push(formatStep(step));
   if (out.length === 0 || out[out.length - 1] !== "") out.push("");

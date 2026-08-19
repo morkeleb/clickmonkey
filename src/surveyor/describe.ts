@@ -4,7 +4,23 @@ import type { Page } from "../schema/page-model.js";
 
 export const DESCRIPTION_MAX = 200;
 
+export type DescriptionSource = "inspect" | "explore" | "vision";
 export type PageChrome = { title?: string; heading?: string };
+
+/** inspect < explore (LLM) < vision (VLM). Unlabeled counts as inspect. */
+export function descriptionRank(by: DescriptionSource | undefined): number {
+  if (by === "vision") return 2;
+  if (by === "explore") return 1;
+  return 0;
+}
+
+/** Same or higher source may write. Inspect cannot replace explore/vision; explore cannot replace vision. */
+export function descriptionSourceMayWrite(
+  held: DescriptionSource | undefined,
+  incoming: DescriptionSource,
+): boolean {
+  return descriptionRank(incoming) >= descriptionRank(held);
+}
 
 function titleCaseSegment(seg: string): string {
   return seg
@@ -84,10 +100,15 @@ export function mechanicalDescription(page: Page, chrome?: PageChrome): string {
   return clipDescription(line);
 }
 
-/** Write a mechanical blurb when missing or the widget set changed. */
+/** Mechanical blurb when missing or widgets changed. Never replaces explore/vision text. */
 export function applyPageDescription(page: Page, chrome?: PageChrome): boolean {
   const key = describeKeyOf(page);
   if (page.describeKey === key && page.description) return false;
+  if (page.description && !descriptionSourceMayWrite(page.describedBy, "inspect")) {
+    if (page.describeKey === key) return false;
+    page.describeKey = key;
+    return true;
+  }
   page.description = mechanicalDescription(page, chrome);
   page.describeKey = key;
   page.describedBy = "inspect";
@@ -119,6 +140,7 @@ export async function polishPageDescription(
   page: Page,
   chat: (input: { messages: ChatMessage[] }) => Promise<string>,
 ): Promise<boolean> {
+  if (!descriptionSourceMayWrite(page.describedBy, "explore")) return false;
   const facts = mechanicalDescription(page);
   try {
     const raw = await chat({
@@ -139,12 +161,28 @@ export async function polishPageDescription(
         },
       ],
     });
-    const line = clipDescription(raw.split(/\r?\n/).map((s) => s.trim()).find((s) => s.length > 0) ?? "");
-    if (line.length < 8 || line.includes("{") || /^click |^fill |^open /i.test(line)) return false;
+    const line = usableBlurb(raw);
+    if (!line) return false;
     page.description = line;
     page.describedBy = "explore";
     return true;
   } catch {
     return false;
   }
+}
+
+function usableBlurb(raw: string): string | undefined {
+  const line = clipDescription(raw.split(/\r?\n/).map((s) => s.trim()).find((s) => s.length > 0) ?? "");
+  if (line.length < 12 || line.includes("{") || /^click |^fill |^open /i.test(line)) return undefined;
+  return line;
+}
+
+/** VLM one-liner from a screenshot. Keeps mechanical on junk. */
+export function applyVisionBlurb(page: Page, raw: string): boolean {
+  const line = usableBlurb(raw);
+  if (!line) return false;
+  page.description = line;
+  page.describedBy = "vision";
+  page.describeKey = describeKeyOf(page);
+  return true;
 }

@@ -455,6 +455,10 @@ describe("default explore pack", () => {
     assert.match(skills, /done: true/);
     assert.match(skills, /Set `good`/);
     assert.match(skills, /blurb and required fields/);
+    assert.match(skills, /quality ledger/);
+    assert.match(skills, /Sight is context/);
+    assert.match(skills, /Never invent widget ids from Sight/);
+    assert.match(skills, /Prefer in-page buttons/);
     assert.match(DEFAULT_EXPLORE_CHARTER, /Explore .+ with .+ to discover/);
   });
 });
@@ -875,6 +879,44 @@ describe("createExploreBrain", () => {
     assert.match(prompt, /user would notice/);
     assert.match(prompt, /Stay on that aim/);
     assert.match(prompt, /Context:\nARCHITECTURE_MARKER/);
+  });
+
+  it("puts Sight in the decide prompt when ctx.sight is set", async () => {
+    let prompt = "";
+    const contents: unknown[] = [];
+    const brain = createExploreBrain({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))).join("\n");
+        for (const m of messages) contents.push(m.content);
+        return JSON.stringify({ line: "click page.openCreate" });
+      },
+      charter: "walk the form",
+      skills: "one step",
+      startedAt: Date.now(),
+    });
+    await brain.decide({
+      view: viewOf(),
+      stepsUsed: 1,
+      sight: "Login form with overlapping cards",
+    });
+    assert.match(prompt, /Sight: Login form with overlapping cards/);
+    assert.match(prompt, /Current view:/);
+    assert.ok(contents.every((c) => typeof c === "string"));
+  });
+
+  it("omits Sight from the decide prompt when ctx.sight is empty", async () => {
+    let prompt = "";
+    const brain = createExploreBrain({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n");
+        return JSON.stringify({ line: "click page.openCreate" });
+      },
+      charter: "walk the form",
+      skills: "one step",
+      startedAt: Date.now(),
+    });
+    await brain.decide({ view: viewOf(), stepsUsed: 1, sight: "  " });
+    assert.doesNotMatch(prompt, /Sight:/);
   });
 
   it("shows aim cards and via for the current plan item", async () => {

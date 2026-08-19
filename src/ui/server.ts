@@ -345,11 +345,22 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
       serveFile(res, candidate);
       return;
     }
+    if (pathname.startsWith("/api/") || pathname.endsWith(".json")) {
+      send(res, 404, "Not found", "text/plain; charset=utf-8");
+      return;
+    }
     serveFile(res, join(root, "index.html"));
   }
 
   await new Promise<void>((resolveListen, reject) => {
-    const onError = (err: Error) => reject(err);
+    const onError = (err: Error) => {
+      const code = "code" in err ? String(err.code) : "";
+      if (code === "EADDRINUSE") {
+        reject(new Error(`port ${port} is already in use (another clickmonkey ui?). Stop that process and retry.`));
+        return;
+      }
+      reject(err);
+    };
     server.once("error", onError);
     server.listen(port, "127.0.0.1", () => {
       server.off("error", onError);

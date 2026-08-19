@@ -8,7 +8,7 @@ import {
 } from "../schema/testability.js";
 import type { Fence } from "../schema/config.js";
 import { auditVisible } from "../surveyor/audit.js";
-import { isLeaveAction, matchesSkip } from "../brains/unleash.js";
+import { isLeaveAction, isPageHop, looksLikeNavWidget, matchesSkip } from "../brains/unleash.js";
 import { pageNotesFromModel } from "../surveyor/describe.js";
 import { hoppablePages } from "./hop.js";
 import { formatFont, lookIsEmpty, readLook } from "./look.js";
@@ -236,6 +236,7 @@ export async function buildView(state: {
         ...(action.opens ? { opens: action.opens } : {}),
         ...(label ? { label } : {}),
         ...(inNav ? { nav: true } : {}),
+        ...(action.by === "role" ? { role: action.value } : {}),
       });
     }
   }
@@ -311,6 +312,13 @@ function formatPagesLines(view: View): string[] {
   ];
 }
 
+/** Stay-on-page first, then hops, then landmark chrome — explore reads this list in order. */
+function actionListRank(action: ShownAction, hopIds?: readonly string[]): number {
+  if (action.nav) return 2;
+  if (looksLikeNavWidget(action) || isPageHop(action, undefined, hopIds)) return 1;
+  return 0;
+}
+
 export function formatView(view: View): string {
   const here = view.pageNotes?.[view.page];
   const lines: string[] = [
@@ -327,7 +335,8 @@ export function formatView(view: View): string {
     lines.push(field.label ? `${withFlags}  ${field.label}` : withFlags);
   }
   lines.push("actions:");
-  for (const action of view.actions) {
+  const listed = [...view.actions].sort((a, b) => actionListRank(a, view.pages) - actionListRank(b, view.pages));
+  for (const action of listed) {
     const base = action.opens ? `  ${action.id} → ${action.opens}` : `  ${action.id}`;
     const withLabel = action.label ? `${base}  ${action.label}` : base;
     lines.push(action.nav ? `${withLabel}  [nav]` : withLabel);

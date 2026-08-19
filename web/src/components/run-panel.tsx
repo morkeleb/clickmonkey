@@ -37,9 +37,9 @@ function Shot({
   alt: string;
   onOpen: (url: string) => void;
 }) {
-  const [ok, setOk] = useState(true);
   const href = url.startsWith("/") ? publicUrl(url) : url;
-  if (!ok) return null;
+  const [failedFor, setFailedFor] = useState<string | null>(null);
+  if (failedFor === href) return null;
   return (
     <button
       type="button"
@@ -47,11 +47,12 @@ function Shot({
       className="mt-2 block overflow-hidden rounded-md border border-border bg-zinc-950 text-left"
     >
       <img
+        key={href}
         src={href}
         alt={alt}
         loading="lazy"
         className="max-h-40 w-full object-cover object-top"
-        onError={() => setOk(false)}
+        onError={() => setFailedFor(href)}
       />
     </button>
   );
@@ -86,6 +87,7 @@ function StepRow({
       <div className={cn("mt-0.5 font-mono text-sm break-all", failed && "text-red-300")}>{step.line}</div>
       {step.note ? <p className="mt-0.5 text-xs text-zinc-400">{step.note}</p> : null}
       {step.good ? <p className="mt-0.5 text-xs text-zinc-500">{step.good}</p> : null}
+      {step.sight ? <p className="mt-0.5 text-xs text-zinc-400">Sight: {step.sight}</p> : null}
       {step.hops?.map((hop, i) => (
         <HopLine key={`${hop.from}-${hop.to}-${i}`} from={hop.from} to={hop.to} />
       ))}
@@ -300,7 +302,11 @@ export function RunPanel({ run }: { run: UiRun | undefined }) {
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-6 pt-6 pb-3">
         <div className="flex items-start gap-3">
-          <span className="mt-1.5 size-3 shrink-0 rounded-full" style={{ backgroundColor: runHue(run.hue) }} aria-hidden />
+          <span
+            className="mt-1.5 size-3 shrink-0 rounded-full"
+            style={run.live ? { backgroundColor: runHue(run.hue) } : undefined}
+            aria-hidden
+          />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-lg font-semibold">{run.name}</h1>

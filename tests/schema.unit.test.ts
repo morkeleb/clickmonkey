@@ -11,6 +11,8 @@ import {
   Config,
   LeashFile,
   emptyConfig,
+  resolveVision,
+  requireVisionShots,
   assertNotLegacyConfig,
   LegacyConfigError,
   Locator,
@@ -105,6 +107,11 @@ describe("PageModel schema", () => {
     });
     assert.equal(model.pages[0]?.description, "Invoices — 8 actions");
     assert.equal(model.pages[0]?.describedBy, "inspect");
+    const vision = PageModel.parse({
+      ...model,
+      pages: [{ ...model.pages[0]!, describedBy: "vision", description: "Customers dashboard with KPI cards." }],
+    });
+    assert.equal(vision.pages[0]?.describedBy, "vision");
   });
 
   it("rejects a page without surfaces", () => {
@@ -133,6 +140,28 @@ expect createDialog.name invalid
     assert.equal(log.bug, "empty name is accepted on create");
     assert.equal(log.steps.length, 5);
     assert.equal(formatLog(log), src);
+  });
+
+  it("keeps Playwright Call log out of the DSL tape", () => {
+    const dirty = `# bug: locator.click: Timeout 2000ms exceeded.
+Call log:
+  - waiting for getByRole('link', { name: 'Customers' })
+      - <html lang="en"> intercepts pointer events
+
+# found: 2026-08-19T19:18:21.170Z
+
+open customers
+click page.link_pipelines
+`;
+    const log = parseLog(dirty);
+    assert.match(log.bug ?? "", /Timeout 2000ms exceeded/);
+    assert.match(log.bug ?? "", /intercepts pointer events/);
+    assert.equal(log.found, "2026-08-19T19:18:21.170Z");
+    assert.equal(log.steps.length, 2);
+    const out = formatLog(log);
+    assert.match(out, /^# bug: locator\.click: Timeout 2000ms exceeded\. \(pointer events intercepted\)$/m);
+    assert.doesNotMatch(out, /^Call log:/m);
+    assert.match(out, /^open customers$/m);
   });
 
   it("parses secret tokens without resolving them", () => {
@@ -263,6 +292,12 @@ describe("config", () => {
       map: { schemaVersion: 1, app: "fixture", pages: [] },
     });
     assert.equal(cfg.writePolicy, "validationOnly");
+    const allow = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      writePolicy: "allow",
+      map: { schemaVersion: 1, app: "x", pages: [] },
+    });
+    assert.equal(allow.writePolicy, "allow");
     assert.equal(cfg.map.pages.length, 0);
   });
 
@@ -298,6 +333,136 @@ describe("config", () => {
         map: { schemaVersion: 1, app: "fixture", pages: [] },
         brain: { baseUrl: "http://127.0.0.1:11434/v1", model: "x", extra: true },
       }),
+    );
+  });
+
+  it("defaults screenshots on when omitted", () => {
+    const cfg = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+    });
+    assert.equal(cfg.screenshots, true);
+    assert.equal(emptyConfig("http://127.0.0.1:4173/").screenshots, true);
+    const off = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      screenshots: false,
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+    });
+    assert.equal(off.screenshots, false);
+  });
+
+  it("accepts optional vision and rejects extra keys", () => {
+    const omitted = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+    });
+    assert.equal(omitted.vision, undefined);
+    assert.throws(() =>
+      Config.parse({
+        url: "http://127.0.0.1:4173/",
+        map: { schemaVersion: 1, app: "fixture", pages: [] },
+        vision: { model: "qwen2.5-vl", extra: true },
+      }),
+    );
+    assert.throws(() =>
+      Config.parse({
+        url: "http://127.0.0.1:4173/",
+        map: { schemaVersion: 1, app: "fixture", pages: [] },
+        vision: { baseUrl: "http://127.0.0.1:11434/v1" },
+      }),
+    );
+  });
+
+  it("resolveVision inherits baseUrl/apiKeyEnv but never brain.model", () => {
+    const inherited = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+      brain: { baseUrl: "http://127.0.0.1:11434/v1", model: "qwen2.5" },
+      vision: { model: "qwen2.5-vl" },
+    });
+    const resolved = resolveVision(inherited.vision, inherited.brain);
+    assert.equal(resolved?.model, "qwen2.5-vl");
+    assert.equal(resolved?.baseUrl, "http://127.0.0.1:11434/v1");
+    const override = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+      brain: {
+        baseUrl: "http://127.0.0.1:11434/v1",
+        model: "qwen2.5",
+        apiKeyEnv: "BRAIN_KEY",
+      },
+      vision: {
+        baseUrl: "http://127.0.0.1:8080/v1",
+        model: "qwen2.5-vl",
+        apiKeyEnv: "VISION_KEY",
+      },
+    });
+    const full = resolveVision(override.vision, override.brain);
+    assert.equal(full?.baseUrl, "http://127.0.0.1:8080/v1");
+    assert.equal(full?.model, "qwen2.5-vl");
+    assert.equal(full?.apiKeyEnv, "VISION_KEY");
+    const mixed = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+      brain: {
+        baseUrl: "https://api.x.ai/v1",
+        model: "grok-4",
+        apiKeyEnv: "XAI_API_KEY",
+      },
+      vision: { baseUrl: "http://127.0.0.1:8080/v1", model: "qwen2.5-vl" },
+    });
+    const mixedResolved = resolveVision(mixed.vision, mixed.brain);
+    assert.equal(mixedResolved?.baseUrl, "http://127.0.0.1:8080/v1");
+    assert.equal(mixedResolved?.apiKeyEnv, undefined);
+    const offKey = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+      brain: { baseUrl: "http://127.0.0.1:11434/v1", model: "qwen2.5", apiKeyEnv: "BRAIN_KEY" },
+      vision: { model: "qwen2.5-vl", apiKeyEnv: false },
+    });
+    assert.equal(resolveVision(offKey.vision, offKey.brain)?.apiKeyEnv, undefined);
+  });
+
+  it("requireVisionShots rejects screenshots false with vision", () => {
+    const cfg = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      screenshots: false,
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+      vision: { baseUrl: "http://127.0.0.1:8080/v1", model: "qwen2.5-vl" },
+    });
+    assert.throws(() => requireVisionShots(cfg), /vision needs per-step screenshots/);
+  });
+
+  it("rejects vision with both issues and assist false", () => {
+    assert.throws(
+      () =>
+        Config.parse({
+          url: "http://127.0.0.1:4173/",
+          map: { schemaVersion: 1, app: "fixture", pages: [] },
+          vision: { model: "qwen2.5-vl", issues: false, assist: false },
+        }),
+      /vision.issues and vision.assist cannot both be false/,
+    );
+  });
+
+  it("accepts a vision-only leash", () => {
+    const leash = LeashFile.parse({
+      url: "http://127.0.0.1:4173/",
+      vision: { baseUrl: "http://127.0.0.1:11434/v1", model: "qwen2.5-vl" },
+    });
+    assert.equal(leash.brain, undefined);
+    const resolved = resolveVision(leash.vision, leash.brain);
+    assert.equal(resolved?.baseUrl, "http://127.0.0.1:11434/v1");
+    assert.equal(resolved?.model, "qwen2.5-vl");
+    assert.equal(resolved?.issues, true);
+    assert.equal(resolved?.assist, true);
+  });
+
+  it("resolveVision is undefined without a vision block and throws without a baseUrl", () => {
+    assert.equal(resolveVision(undefined), undefined);
+    assert.throws(
+      () => resolveVision({ model: "x" }, undefined),
+      /vision.baseUrl is required \(set vision.baseUrl or brain.baseUrl\)/,
     );
   });
 

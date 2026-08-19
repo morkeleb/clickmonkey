@@ -24,7 +24,7 @@ export function cannedReport(finding: Finding): string {
       return [
         `# ${finding.id}`,
         "",
-        "HTTP 404. The path is on the broken report, not the map.",
+        "Not found (HTTP 404 or an in-app 404 page). The path is on the broken report, not the map.",
         "",
         finding.message,
         "",

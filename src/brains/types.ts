@@ -4,10 +4,18 @@ import type { View } from "../schema/view.js";
 
 export interface BrainDecision {
   line: string;
+  /** Fill remaining empties then submit — run in order without re-deciding. */
+  lines?: string[];
   note?: string;
   /** Observed good behaviour — not a finding. */
   good?: string;
   done?: boolean;
+}
+
+export function decisionLines(d: BrainDecision): string[] {
+  if (d.lines && d.lines.length > 0) return d.lines;
+  const line = d.line.trim();
+  return line ? [line] : [];
 }
 
 export interface BrainContext {
@@ -18,8 +26,13 @@ export interface BrainContext {
   notes?: string[];
   /** Last executed walk lines (oldest → newest). Used to refuse hop/close cycles. */
   recent?: string[];
+  /** Last clicks on this page (oldest → newest). Unleash skips an id after two appearances. */
+  recentClicks?: readonly string[];
   plan?: UiExplorePlan;
   pages?: readonly Page[];
+  /** Last vision assist note. Context only — never a command or widget id. */
+  sight?: string;
+  writePolicy?: "validationOnly" | "allow";
 }
 
 export interface Brain {

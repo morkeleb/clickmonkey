@@ -18,7 +18,7 @@ export type GraphNodeData = {
   yellow: number;
   rings: { hue: number; name: string }[];
   blurb?: string;
-  describedBy?: "inspect" | "explore";
+  describedBy?: "inspect" | "explore" | "vision";
   count?: number;
   collapsed?: boolean;
   section?: string;

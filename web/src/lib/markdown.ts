@@ -1,6 +1,18 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
+import { escapeHtmlToken } from "@/lib/html-escape";
 import { publicUrl } from "@/lib/paths";
+
+export { escapeHtmlToken };
+
+marked.use({
+  renderer: {
+    html(token) {
+      const text = typeof token === "string" ? token : token.text;
+      return escapeHtmlToken(text);
+    },
+  },
+});
 
 /** Point report screenshots at the CLI file server when they look like run paths. */
 export function rewriteRunFileSrc(src: string): string {

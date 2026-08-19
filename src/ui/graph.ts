@@ -40,7 +40,7 @@ export function badgeCounts(opts: {
   }
   const q = opts.quality?.pages.find((p) => sameLedgerPage(p, key));
   if (q) {
-    for (const i of [...q.html, ...q.a11y, ...q.runtime]) {
+    for (const i of [...q.html, ...q.a11y, ...q.visual, ...q.runtime]) {
       if (i.severity === "error") red += 1;
       else yellow += 1;
     }

@@ -76,7 +76,7 @@ describe("reports folder", () => {
 
 - \`nested-interactive\` error
 
-### Pages with the most issues
+### Pages with unique issues
 
 - \`/\` — 1 error
 `;

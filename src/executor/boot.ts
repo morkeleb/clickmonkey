@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { persistSharedMap } from "../persist/config.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
 import { startPresence, touchPresence } from "../persist/presence.js";
-import { isDocumentNotFound } from "../oracles/http.js";
+import { isNotFoundPage } from "../oracles/http.js";
 import type { Config } from "../schema/config.js";
 import type { Locator } from "../schema/locator.js";
 import type { PageModel, PageModelDraft } from "../schema/page-model.js";
@@ -33,7 +33,7 @@ export function locatorsFromModel(model: PageModel | PageModelDraft): Record<str
 
 export function attachInspectAfterStep(state: RunState): void {
   state.afterStep = async (s) => {
-    if (isDocumentNotFound(s.page)) {
+    if (await isNotFoundPage(s.page)) {
       if (s.configPath) reportDocumentNotFound(s.configPath, s.page);
       return;
     }
@@ -127,7 +127,7 @@ export async function bootRun(
   };
   attachInspectAfterStep(state);
   if (!opts?.replay) touchPresence(outDir, state.pageId);
-  if (state.configPath && !isDocumentNotFound(handle.page)) {
+  if (state.configPath && !(await isNotFoundPage(handle.page))) {
     const saved = persistSharedMap(state.configPath, inspected.model);
     state.config = saved;
     state.model = saved.map;

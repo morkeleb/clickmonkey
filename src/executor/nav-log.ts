@@ -85,6 +85,17 @@ export function logBrainDecide(
   });
 }
 
+export function logSight(path: string, info: { line: string; sight: string }): void {
+  const sight = info.sight.trim();
+  if (!sight) return;
+  appendEvent(path, {
+    ts: new Date().toISOString(),
+    type: "sight",
+    line: info.line,
+    sight,
+  });
+}
+
 export function logStepStart(
   path: string,
   info: { line: string; pageId: string; phase: string; echo?: { write(chunk: string): unknown } },
@@ -108,6 +119,8 @@ export function logStepDone(
     ok: boolean;
     started: number;
     finding?: string;
+    /** Page the walker was on after the step (where the screenshot was taken). */
+    pageId?: string;
     echo?: { write(chunk: string): unknown };
   },
 ): void {
@@ -119,6 +132,7 @@ export function logStepDone(
     ok: info.ok,
     ms,
     ...(info.finding ? { finding: info.finding } : {}),
+    ...(info.pageId ? { pageId: info.pageId } : {}),
   });
   const outcome = info.ok ? "ok" : (info.finding ?? "fail");
   info.echo?.write(`${formatLiveLine(`${outcome.padEnd(4)} ${info.line}  ${ms}ms`)}\n`);

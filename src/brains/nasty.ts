@@ -1,9 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatStep } from "../schema/dsl.js";
 import type { BrainContext, BrainDecision } from "./types.js";
-import { formatClick, hopPage, pickAction } from "./unleash.js";
+import { decideUnleashWork } from "./unleash.js";
 
 const defaultDir = join(dirname(fileURLToPath(import.meta.url)), "../../payloads");
 
@@ -83,29 +82,7 @@ export function pickNasty(fieldType: string | undefined, rng: () => number = Mat
   return interpret(pick(pool, rng));
 }
 
-/** Same 50% click / 30% fill / 20% click weights as decideUnleash; fills use pickNasty. */
+/** Same form-then-button order as decideUnleash; fills use pickNasty. */
 export function decideUnleashNasty(ctx: BrainContext, rng: () => number = Math.random): BrainDecision {
-  const { view } = ctx;
-  const actions = view.actions;
-  const fields = view.shown;
-  const surface = view.surface;
-
-  if (actions.length === 0 && fields.length === 0) return hopPage(view, rng);
-
-  const roll = rng();
-  const wantFill = fields.length > 0 && roll >= 0.5 && roll < 0.8;
-  if (wantFill || actions.length === 0) {
-    const field = pick(fields, rng);
-    return {
-      line: formatStep({
-        kind: "fill",
-        surface,
-        id: field.id,
-        value: pickNasty(field.type, rng),
-      }),
-    };
-  }
-
-  const action = pickAction(actions, rng, "main");
-  return { line: formatClick(surface, action) };
+  return decideUnleashWork(ctx, rng, (type) => pickNasty(type, rng));
 }

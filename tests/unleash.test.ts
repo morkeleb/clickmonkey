@@ -5,7 +5,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { decideMap, decideUnleash, isLeaveAction, isWriteAction } from "../src/brains/unleash.js";
+import {
+  decideMap,
+  decideUnleash,
+  formSubmitAction,
+  inPageActions,
+  isDismissAction,
+  isLeaveAction,
+  isPageHop,
+  isWriteAction,
+  looksLikeNavWidget,
+  sharedChromeIds,
+  stayActions,
+  rememberClick,
+  freshClicks,
+} from "../src/brains/unleash.js";
+import { decisionLines } from "../src/brains/types.js";
+import type { Page } from "../src/schema/page-model.js";
 import { parseLine } from "../src/schema/dsl.js";
 import type { View } from "../src/schema/view.js";
 import { loadConfig } from "../src/persist/config.js";
@@ -51,6 +67,23 @@ describe("isLeaveAction", () => {
     assert.equal(isLeaveAction({ id: "openCreate" }), false);
     assert.equal(isLeaveAction({ id: "button_invoicing" }), false);
     assert.equal(isLeaveAction({ id: "button_close_period_close", opens: "dialog" }), false);
+    assert.equal(isLeaveAction({ id: "button_close" }), false);
+  });
+});
+
+describe("isDismissAction", () => {
+  it("treats dialog close and cancel as dismiss, not submit", () => {
+    assert.equal(isDismissAction({ id: "button_close" }), true);
+    assert.equal(isDismissAction({ id: "button_close", label: "Close" }), true);
+    assert.equal(isDismissAction({ id: "cancel", label: "Cancel" }), true);
+    assert.equal(isDismissAction({ id: "create", label: "Create" }), false);
+    assert.equal(
+      formSubmitAction([
+        { id: "button_close", label: "Close" },
+        { id: "create", label: "Create" },
+      ])?.id,
+      "create",
+    );
   });
 });
 
@@ -112,6 +145,202 @@ describe("unleash brain", () => {
     for (let i = 0; i < 20; i++) {
       const decision = decideUnleash({ view, stepsUsed: i }, () => 0.1);
       assert.equal(decision.line, "click page.your_account");
+    }
+  });
+
+  it("ignores site chrome that is on most pages and hops when nothing local remains", () => {
+    const pages: Page[] = ["home", "customers", "pipelines", "connectors"].map((id) => ({
+      id,
+      path: `/${id}`,
+      params: [],
+      ready: { by: "testId", value: id },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "link_customers", by: "role", value: "link", status: "ok" },
+            { id: "link_pipelines", by: "role", value: "link", status: "ok" },
+            ...(id === "customers"
+              ? [{ id: "button_add_customer", by: "role", value: "button", status: "ok" as const }]
+              : []),
+          ],
+        },
+      ],
+    }));
+    assert.ok(sharedChromeIds(pages).has("link_customers"));
+    assert.equal(sharedChromeIds(pages).has("button_add_customer"), false);
+    const customers = viewOf({
+      page: "customers",
+      pages: pages.map((p) => p.id),
+      actions: [
+        { id: "link_customers", opens: "customers" },
+        { id: "link_pipelines", opens: "pipelines" },
+        { id: "button_add_customer" },
+      ],
+    });
+    assert.deepEqual(
+      inPageActions(customers, pages).map((a) => a.id),
+      ["button_add_customer"],
+    );
+    for (let i = 0; i < 20; i++) {
+      assert.equal(decideUnleash({ view: customers, stepsUsed: i, pages }).line, "click page.button_add_customer");
+    }
+    const chromeOnly = viewOf({
+      page: "home",
+      pages: pages.map((p) => p.id),
+      actions: [
+        { id: "link_customers", opens: "customers" },
+        { id: "link_pipelines", opens: "pipelines" },
+      ],
+    });
+    const hop = decideUnleash({ view: chromeOnly, stepsUsed: 0, pages });
+    assert.match(hop.line, /^open /);
+  });
+
+  it("clicks an in-page button instead of a pile of unique record links", () => {
+    const hops = Array.from({ length: 40 }, (_, i) => ({
+      id: `link_row_${i}`,
+      opens: `row_${i}`,
+      role: "link",
+    }));
+    const view = viewOf({
+      pages: hops.map((h) => h.opens),
+      actions: [...hops, { id: "button_save_draft", label: "Save draft" }],
+    });
+    assert.deepEqual(
+      stayActions(view).map((a) => a.id),
+      ["button_save_draft"],
+    );
+    for (let i = 0; i < 40; i++) {
+      assert.equal(decideUnleash({ view, stepsUsed: i }).line, "click page.button_save_draft");
+    }
+  });
+
+  it("fills empty fields instead of clicking leftover hops", () => {
+    const view = viewOf({
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "email", value: "", type: "email" },
+      ],
+      actions: [
+        { id: "link_overview", role: "link", opens: "home" },
+        { id: "button_save", label: "Save" },
+      ],
+      pages: ["home"],
+    });
+    for (let i = 0; i < 20; i++) {
+      const d = decideUnleash({ view, stepsUsed: i });
+      const text = (d.lines ?? [d.line]).join("\n");
+      assert.doesNotMatch(text, /link_overview/);
+      assert.match(text, /^fill page\.(name|email) /m);
+    }
+  });
+
+  it("stops flipping a sort toggle after it has been clicked twice on this page", () => {
+    const view = viewOf({
+      page: "runs",
+      pages: ["home", "runs"],
+      actions: [
+        { id: "button_sorted_descending__switch_to_ascending" },
+        { id: "button_sorted_ascending__switch_to_descending" },
+      ],
+    });
+    const first = decideUnleash({ view, stepsUsed: 0, recentClicks: [] }, () => 0);
+    assert.equal(first.line, "click page.button_sorted_descending__switch_to_ascending");
+    const afterOne = decideUnleash(
+      { view, stepsUsed: 1, recentClicks: ["button_sorted_descending__switch_to_ascending"] },
+      () => 0,
+    );
+    assert.equal(afterOne.line, "click page.button_sorted_ascending__switch_to_descending");
+    const pingPong = [
+      "button_sorted_descending__switch_to_ascending",
+      "button_sorted_ascending__switch_to_descending",
+      "button_sorted_descending__switch_to_ascending",
+      "button_sorted_ascending__switch_to_descending",
+    ];
+    const next = decideUnleash({ view, stepsUsed: 4, recentClicks: pingPong }, () => 0);
+    assert.match(next.line, /^open /);
+    assert.equal(
+      freshClicks(view.actions, pingPong).length,
+      0,
+    );
+    assert.deepEqual(rememberClick(["a", "b", "c"], "d", 3), ["b", "c", "d"]);
+  });
+
+  it("treats role=link and minted link_ ids as navigation, not stay", () => {
+    assert.equal(looksLikeNavWidget({ id: "open_row", role: "link" }), true);
+    assert.equal(looksLikeNavWidget({ id: "link_customers" }), true);
+    assert.equal(looksLikeNavWidget({ id: "menuitem_profile" }), true);
+    assert.equal(looksLikeNavWidget({ id: "button_save_draft" }), false);
+    assert.equal(isPageHop({ id: "open_row", opens: "row_1" }, undefined, ["row_1"]), true);
+    assert.equal(isPageHop({ id: "open_create", opens: "create" }, undefined, ["home"]), false);
+  });
+
+  it("with writePolicy allow fills empty fields then submits", () => {
+    const view = viewOf({
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "email", value: "", type: "email" },
+      ],
+      actions: [{ id: "submit" }, { id: "open_create" }],
+    });
+    const first = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
+    assert.deepEqual(first.lines, [
+      "fill page.name x",
+      "fill page.email user@example.com",
+      "click page.submit",
+    ]);
+    assert.equal(first.line, "fill page.name x");
+    assert.deepEqual(decisionLines(first), first.lines);
+    const mid = viewOf({
+      shown: [
+        { id: "name", value: "x", type: "text" },
+        { id: "email", value: "", type: "email" },
+      ],
+      actions: [{ id: "submit" }],
+    });
+    const midD = decideUnleash({ view: mid, stepsUsed: 1, writePolicy: "allow" });
+    assert.deepEqual(midD.lines, ["fill page.email user@example.com", "click page.submit"]);
+    const ready = viewOf({
+      shown: [
+        { id: "name", value: "x", type: "text" },
+        { id: "email", value: "user@example.com", type: "email" },
+      ],
+      actions: [{ id: "submit" }, { id: "open_create" }],
+    });
+    assert.equal(decideUnleash({ view: ready, stepsUsed: 2, writePolicy: "allow" }).line, "click page.submit");
+  });
+
+  it("treats Add/Create as form submit without blocking map from opening them", () => {
+    assert.equal(formSubmitAction([{ id: "button_add_customer" }])?.id, "button_add_customer");
+    assert.equal(formSubmitAction([{ id: "create", label: "Create pipeline" }])?.id, "create");
+    assert.equal(formSubmitAction([{ id: "open_create", opens: "create" }]), undefined);
+    assert.equal(isWriteAction({ id: "button_add_customer" }), false);
+  });
+
+  it("fills a dialog form instead of clicking close", () => {
+    const view = viewOf({
+      page: "customers",
+      surface: "add_customer",
+      stack: ["page", "add_customer"],
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "notes", value: "", type: "text" },
+      ],
+      actions: [
+        { id: "button_close", label: "Close" },
+        { id: "cancel", label: "Cancel" },
+        { id: "create", label: "Create" },
+      ],
+    });
+    for (let i = 0; i < 20; i++) {
+      const d = decideUnleash({ view, stepsUsed: i, writePolicy: "allow" }, () => 0.1);
+      const text = (d.lines ?? [d.line]).join("\n");
+      assert.doesNotMatch(text, /button_close|cancel/);
+      assert.match(text, /fill add_customer\.(name|notes) /);
+      assert.match(text, /click add_customer\.create/);
     }
   });
 

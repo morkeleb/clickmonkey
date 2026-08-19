@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -37,6 +37,33 @@ describe("presence", () => {
       assert.equal(isPresenceLive(stopped), false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("gives concurrent runs hues far apart", () => {
+    const root = mkdtempSync(join(tmpdir(), "cm-presence-hues-"));
+    try {
+      const dirA = join(root, "run-a");
+      const dirB = join(root, "run-b");
+      const dirC = join(root, "run-c");
+      mkdirSync(dirA);
+      mkdirSync(dirB);
+      mkdirSync(dirC);
+      const a = startPresence(dirA, { pageId: "home" });
+      const b = startPresence(dirB, { pageId: "home" });
+      const c = startPresence(dirC, { pageId: "home" });
+      assert.ok(a && b && c);
+      const hues = [a.hue, b.hue, c.hue];
+      assert.equal(new Set(hues).size, 3);
+      const dist = (x: number, y: number) => {
+        const d = Math.abs(x - y) % 360;
+        return Math.min(d, 360 - d);
+      };
+      assert.ok(dist(a.hue, b.hue) >= 90);
+      assert.ok(dist(a.hue, c.hue) >= 90);
+      assert.ok(dist(b.hue, c.hue) >= 90);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

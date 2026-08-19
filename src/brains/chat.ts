@@ -1,6 +1,12 @@
+export type ChatImageUrl = { url: string; detail?: "low" | "high" | "auto" };
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: ChatImageUrl };
+export type ChatContent = string | ChatContentPart[];
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: ChatContent;
 }
 
 export interface ChatRequest {
@@ -20,10 +26,31 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 }
 
+function contentText(content: ChatContent): string {
+  if (typeof content === "string") return content;
+  const parts: string[] = [];
+  for (const part of content) {
+    if (part.type === "text") parts.push(part.text);
+  }
+  return parts.join("");
+}
+
 function openAiText(data: unknown): string {
   const choice = asRecord(asRecord(data)?.choices instanceof Array ? (data as { choices: unknown[] }).choices[0] : undefined);
   const message = asRecord(choice?.message);
-  return typeof message?.content === "string" ? message.content : "";
+  const content = message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const block of content) {
+    if (typeof block === "string") {
+      parts.push(block);
+      continue;
+    }
+    const rec = asRecord(block);
+    if (rec?.type === "text" && typeof rec.text === "string") parts.push(rec.text);
+  }
+  return parts.join("");
 }
 
 function anthropicText(data: unknown): string {
@@ -35,6 +62,32 @@ function anthropicText(data: unknown): string {
     if (rec?.type === "text" && typeof rec.text === "string") parts.push(rec.text);
   }
   return parts.join("");
+}
+
+function parseDataUrl(url: string): { media_type: string; data: string } | undefined {
+  const m = /^data:([^;,]+);base64,([\s\S]+)$/i.exec(url);
+  if (!m?.[1] || m[2] === undefined) return undefined;
+  return { media_type: m[1], data: m[2] };
+}
+
+function toAnthropicContent(content: ChatContent): string | unknown[] {
+  if (typeof content === "string") return content;
+  const blocks: unknown[] = [];
+  for (const part of content) {
+    if (part.type === "text") {
+      blocks.push({ type: "text", text: part.text });
+      continue;
+    }
+    const data = parseDataUrl(part.image_url.url);
+    if (data) {
+      blocks.push({ type: "image", source: { type: "base64", media_type: data.media_type, data: data.data } });
+      continue;
+    }
+    if (/^https?:\/\//i.test(part.image_url.url)) {
+      blocks.push({ type: "image", source: { type: "url", url: part.image_url.url } });
+    }
+  }
+  return blocks;
 }
 
 async function readError(res: Response): Promise<string> {
@@ -63,11 +116,11 @@ async function chatAnthropic(req: ChatRequest): Promise<string> {
   const origin = new URL(req.baseUrl).origin;
   const system = req.messages
     .filter((m) => m.role === "system")
-    .map((m) => m.content)
+    .map((m) => contentText(m.content))
     .join("\n\n");
   const messages = req.messages
     .filter((m) => m.role !== "system")
-    .map((m) => ({ role: m.role, content: m.content }));
+    .map((m) => ({ role: m.role, content: toAnthropicContent(m.content) }));
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "anthropic-version": "2023-06-01",

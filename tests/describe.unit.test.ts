@@ -4,6 +4,7 @@ import type { Page } from "../src/schema/page-model.js";
 import {
   applyMissingPageDescriptions,
   applyPageDescription,
+  applyVisionBlurb,
   describeKeyOf,
   mechanicalDescription,
   polishPageDescription,
@@ -100,6 +101,43 @@ describe("applyPageDescription", () => {
     assert.notEqual(page.describeKey, key);
     assert.match(page.description ?? "", /Name/);
   });
+
+  it("does not replace a vision blurb when widgets change", () => {
+    const page = pageOf({ id: "home", path: "/" });
+    applyPageDescription(page);
+    applyVisionBlurb(page, "Home dashboard with KPI cards and a search field.");
+    const blurb = page.description;
+    page.surfaces[0]!.fields.push({
+      id: "name",
+      required: false,
+      type: "text",
+      by: "name",
+      value: "name",
+      status: "ok",
+    });
+    assert.equal(applyPageDescription(page), true);
+    assert.equal(page.description, blurb);
+    assert.equal(page.describedBy, "vision");
+  });
+
+  it("does not replace an explore (LLM) blurb when widgets change", () => {
+    const page = pageOf({ id: "home", path: "/" });
+    applyPageDescription(page);
+    page.description = "Shop home with search and create.";
+    page.describedBy = "explore";
+    const blurb = page.description;
+    page.surfaces[0]!.fields.push({
+      id: "name",
+      required: false,
+      type: "text",
+      by: "name",
+      value: "name",
+      status: "ok",
+    });
+    assert.equal(applyPageDescription(page), true);
+    assert.equal(page.description, blurb);
+    assert.equal(page.describedBy, "explore");
+  });
 });
 
 describe("applyMissingPageDescriptions", () => {
@@ -132,5 +170,49 @@ describe("polishPageDescription", () => {
     const ok = await polishPageDescription(page, async () => 'click page.go');
     assert.equal(ok, false);
     assert.equal(page.description, before);
+  });
+
+  it("does not overwrite a vision blurb", async () => {
+    const page = pageOf({ id: "invoices", path: "/invoices" });
+    applyVisionBlurb(page, "Invoice list with a create dialog.");
+    const before = page.description;
+    const ok = await polishPageDescription(page, async () => "Something else from the text brain.");
+    assert.equal(ok, false);
+    assert.equal(page.description, before);
+    assert.equal(page.describedBy, "vision");
+  });
+});
+
+describe("applyVisionBlurb", () => {
+  it("replaces the mechanical line and stamps describedBy vision", () => {
+    const page = pageOf({ id: "customers", path: "/customers" });
+    applyPageDescription(page);
+    assert.equal(
+      applyVisionBlurb(page, "Customers list with KPI cards and an Add customer form."),
+      true,
+    );
+    assert.equal(page.description, "Customers list with KPI cards and an Add customer form.");
+    assert.equal(page.describedBy, "vision");
+  });
+
+  it("keeps the mechanical line on junk", () => {
+    const page = pageOf({ id: "customers", path: "/customers" });
+    applyPageDescription(page);
+    const before = page.description;
+    assert.equal(applyVisionBlurb(page, "click page.go"), false);
+    assert.equal(page.description, before);
+    assert.equal(page.describedBy, "inspect");
+  });
+
+  it("replaces an explore blurb", () => {
+    const page = pageOf({ id: "customers", path: "/customers" });
+    page.description = "Customers list from the text brain.";
+    page.describedBy = "explore";
+    assert.equal(
+      applyVisionBlurb(page, "Customers dashboard with KPI cards and Add customer."),
+      true,
+    );
+    assert.equal(page.describedBy, "vision");
+    assert.match(page.description ?? "", /KPI/);
   });
 });

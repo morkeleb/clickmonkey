@@ -5,7 +5,16 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { collectFindingCases, contextAtStep } from "../src/persist/runs.js";
 import { extractClickmonkeyFences } from "../src/reports/fences.js";
-import { caseKey, enrichWithBrain, isChromeRow, renderFindingsReport } from "../src/reports/findings-report.js";
+import {
+  caseKey,
+  collapseFindingCases,
+  enrichWithBrain,
+  isChromeRow,
+  isClusterRow,
+  markdownSafeQualityMessage,
+  pathFamily,
+  renderFindingsReport,
+} from "../src/reports/findings-report.js";
 import { findingId } from "../src/schema/finding.js";
 
 describe("findings report", () => {
@@ -54,6 +63,71 @@ describe("findings report", () => {
     const fences = extractClickmonkeyFences(md);
     assert.equal(fences.length, 1);
     assert.equal(fences[0]?.log.steps.some((s) => s.kind === "expectInvalid"), true);
+  });
+
+  it("collapses the same notFound and httpError across runs", () => {
+    const root = mkdtempSync(join(tmpdir(), "cm-rep-dedup-"));
+    function writeCase(runId: string, id: string, kind: "notFound" | "httpError", message: string, url: string) {
+      const folder = join(root, "runs", runId, "findings", id);
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(
+        join(folder, "finding.json"),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          id,
+          kind,
+          message,
+          tapePath: join(folder, "replay.log"),
+          stepIndex: 1,
+          url,
+          ...(kind === "httpError" ? { httpStatus: 403 } : {}),
+        })}\n`,
+      );
+      writeFileSync(join(folder, "replay.log"), "open home\n");
+    }
+    writeCase(
+      "run-a",
+      "fnd_1_notFound",
+      "notFound",
+      "Not found page GET http://127.0.0.1:3000/applications",
+      "http://127.0.0.1:3000/applications",
+    );
+    writeCase(
+      "run-b",
+      "fnd_1_notFound",
+      "notFound",
+      "HTTP 404 GET http://127.0.0.1:3000/applications",
+      "http://127.0.0.1:3000/applications",
+    );
+    writeCase(
+      "run-a",
+      "fnd_5_httpError",
+      "httpError",
+      "HTTP 403 GET http://127.0.0.1:3000/api/trpc/migration.get?batch=1",
+      "http://127.0.0.1:3000/api/trpc/migration.get?batch=1",
+    );
+    writeCase(
+      "run-b",
+      "fnd_3_httpError",
+      "httpError",
+      "HTTP 403 GET http://127.0.0.1:3000/api/trpc/migration.get?batch=2",
+      "http://127.0.0.1:3000/api/trpc/migration.get?batch=2",
+    );
+    const cases = collectFindingCases([join(root, "runs", "run-a"), join(root, "runs", "run-b")]);
+    assert.equal(cases.length, 4);
+    assert.equal(collapseFindingCases(cases).length, 2);
+    const md = renderFindingsReport(
+      cases,
+      {
+        url: "http://127.0.0.1:3000/",
+        generatedAt: "2026-08-19T22:00:00.000Z",
+        runIds: ["run-a", "run-b"],
+      },
+      join(root, "findings.md"),
+    );
+    assert.match(md, /2 findings from 2 runs/);
+    assert.match(md, /\*\*seen:\*\* 2× in 2 runs/);
+    assert.equal((md.match(/^### /gm) ?? []).length, 2);
   });
 
   it("renders an Explore outline from selected runs", () => {
@@ -236,8 +310,18 @@ describe("findings report", () => {
             {
               path: "/",
               foundAt: "t",
-              html: [{ source: "html", rule: "no-multiple-main", severity: "error", message: "dup main", count: 1 }],
+              html: [
+                {
+                  source: "html",
+                  rule: "no-multiple-main",
+                  severity: "error",
+                  message: "dup main",
+                  count: 1,
+                  where: "main.layout",
+                },
+              ],
               a11y: [],
+              visual: [],
               runtime: [
                 {
                   source: "console",
@@ -264,6 +348,7 @@ describe("findings report", () => {
               foundAt: "t",
               html: [{ source: "html", rule: "no-multiple-main", severity: "error", message: "dup main", count: 1 }],
               a11y: [],
+              visual: [],
               runtime: [],
             },
           ],
@@ -271,16 +356,19 @@ describe("findings report", () => {
       },
       "/tmp/findings.md",
     );
+    assert.match(md, /### Start here/);
     assert.match(md, /### Chrome/);
-    assert.match(md, /Pages with the most issues/);
+    assert.match(md, /Pages with unique issues/);
     assert.match(md, /2 pages/);
     assert.match(md, /no-multiple-main/);
+    assert.match(md, /main\.layout/);
     assert.match(md, /Ga\(\.\.\.\) is not a function/);
     assert.match(md, /`\/` — 1 error, 0 warnings/);
     assert.match(md, / {2}- `pageError` error — Ga\(\.\.\.\) is not a function/);
     assert.doesNotMatch(md, / {2}- `no-multiple-main`/);
     assert.doesNotMatch(md, /`\/vendors` —/);
     assert.doesNotMatch(md, /Recurring rules/);
+    assert.doesNotMatch(md, /Pages with the most issues/);
     assert.doesNotMatch(md, /preloaded but not used/);
     assert.doesNotMatch(md, /### `\/` —/);
   });
@@ -293,6 +381,171 @@ describe("findings report", () => {
     assert.equal(isChromeRow({ pages: 15 }, 62), false);
     assert.equal(isChromeRow({ pages: 3 }, 8), true);
     assert.equal(isChromeRow({ pages: 2 }, 8), false);
+  });
+
+  it("treats a few routes as a cluster, not chrome", () => {
+    assert.equal(isClusterRow({ pages: 4 }, 13), true);
+    assert.equal(isClusterRow({ pages: 2 }, 13), false);
+    assert.equal(isClusterRow({ pages: 3 }, 8), false);
+    assert.equal(isClusterRow({ pages: 24 }, 62), false);
+  });
+
+  it("wraps HTML tags in quality messages so markdown does not eat the report", () => {
+    assert.equal(
+      markdownSafeQualityMessage("<style> element is not permitted as content under <div>"),
+      "`<style>` element is not permitted as content under `<div>`",
+    );
+    const pages = Array.from({ length: 13 }, (_, i) => ({
+      path: `/p${i}`,
+      foundAt: "t",
+      html: [
+        {
+          source: "html" as const,
+          rule: "no-multiple-main",
+          severity: "error" as const,
+          message: "dup main",
+          count: 1,
+        },
+      ],
+      a11y:
+        i < 4
+          ? [
+              {
+                source: "a11y" as const,
+                rule: "clickableNonWidget",
+                severity: "error" as const,
+                message: "<div>",
+                count: 1,
+              },
+            ]
+          : [],
+      visual: [],
+      runtime:
+        i === 0
+          ? [
+              {
+                source: "pageError" as const,
+                rule: "pageError",
+                severity: "error" as const,
+                message: "<style> element is not permitted as content under <div>",
+                count: 1,
+                firstSeen: "t",
+                lastSeen: "t",
+              },
+            ]
+          : [],
+    }));
+    const md = renderFindingsReport(
+      [],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: [], quality: { schemaVersion: 1, pages } },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /### Start here/);
+    assert.match(md, /### On several pages/);
+    assert.match(md, /clickableNonWidget/);
+    assert.match(md, /`<div>`/);
+    assert.match(md, /`<style>` element is not permitted as content under `<div>`/);
+    assert.doesNotMatch(md, / — <style>/);
+    assert.match(md, /## Appendix/);
+    const full = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: [],
+        qualityFull: true,
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/",
+              foundAt: "t",
+              html: [
+                {
+                  source: "html",
+                  rule: "element-permitted-content",
+                  severity: "error",
+                  message: "<style> element is not permitted as content under <div>",
+                  count: 1,
+                },
+              ],
+              a11y: [],
+              visual: [],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(full, /`<style>` element is not permitted as content under `<div>`/);
+    assert.doesNotMatch(full, / — <style>/);
+  });
+
+  it("Start here prefers a path-family component over scattered same-count issues", () => {
+    assert.equal(
+      pathFamily([
+        "/pipelines/00000000-0000-4000-8000-0000000000b1",
+        "/pipelines/00000000-0000-4000-8000-0000000000b5/designer",
+        "/pipelines/00000000-0000-4000-8000-0000000000b9",
+        "/pipelines/00000000-0000-4000-8000-0000000000bd",
+      ]),
+      "/pipelines",
+    );
+    assert.equal(pathFamily(["/connectors", "/customers", "/pipelines", "/runs", "/sync-sessions"]), undefined);
+
+    const pages = Array.from({ length: 13 }, (_, i) => {
+      const path =
+        i < 4 ? `/pipelines/${i}` : i < 8 ? ["/connectors", "/customers", "/runs", "/sync-sessions"][i - 4]! : `/other${i}`;
+      return {
+        path,
+        foundAt: "t",
+        html: [
+          {
+            source: "html" as const,
+            rule: "color-contrast",
+            severity: "error" as const,
+            message: "Elements must meet minimum color contrast ratio thresholds",
+            count: 1,
+          },
+        ],
+        a11y:
+          i < 4
+            ? [
+                {
+                  source: "a11y" as const,
+                  rule: "clickableNonWidget",
+                  severity: "error" as const,
+                  message: "div",
+                  count: 1,
+                },
+              ]
+            : i < 8
+              ? [
+                  {
+                    source: "a11y" as const,
+                    rule: "button-name",
+                    severity: "error" as const,
+                    message: "Buttons must have discernible text",
+                    count: 1,
+                  },
+                ]
+              : [],
+        visual: [],
+        runtime: [],
+      };
+    });
+    const md = renderFindingsReport(
+      [],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: [], quality: { schemaVersion: 1, pages } },
+      "/tmp/findings.md",
+    );
+    const start = md.slice(md.indexOf("### Start here"), md.indexOf("### Chrome"));
+    assert.match(start, /Fix `color-contrast` \(shared shell/);
+    assert.match(start, /one token\/CSS change/);
+    assert.match(start, /2\. Fix `clickableNonWidget` \(same component/);
+    assert.match(start, /mostly `\/pipelines`/);
+    assert.ok(start.indexOf("clickableNonWidget") < start.indexOf("button-name"));
   });
 
   it("enrichWithBrain keeps only known ids", async () => {
@@ -335,6 +588,40 @@ describe("findings report", () => {
     assert.equal(extras.summary, "One UI overlap.");
     assert.equal(extras.extras.get("r/fnd_1_uiIssue")?.title, "Create – buttons overlap");
     assert.equal(extras.extras.has("invented"), false);
+  });
+
+  it("enrichWithBrain returns empty extras on invalid JSON", async () => {
+    const extras = await enrichWithBrain(
+      [
+        {
+          id: "fnd_1_uiIssue",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_1_uiIssue",
+            kind: "uiIssue",
+            message: "overlap",
+            tapePath: "/tmp/x",
+            stepIndex: 1,
+          },
+          severity: "suggestion",
+          title: "overlap",
+          description: "overlap",
+          tape: "screenshot ui overlap\n",
+        },
+      ],
+      {
+        url: "http://127.0.0.1:4173/",
+        intro: [],
+        writePolicy: "validationOnly",
+        map: { schemaVersion: 1, app: "x", generation: 0, pages: [] },
+        brain: { baseUrl: "http://127.0.0.1:9", model: "mock" },
+      },
+      async () => `{ "summary": "x", "items": [ { "id": "r/fnd_1_uiIssue" `,
+    );
+    assert.equal(extras.summary, "");
+    assert.equal(extras.extras.size, 0);
   });
 
   it("keeps LLM extras distinct when two runs share a finding id", async () => {

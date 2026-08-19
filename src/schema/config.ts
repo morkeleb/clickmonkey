@@ -9,7 +9,7 @@ export const Fence = z
   .strict();
 export type Fence = z.infer<typeof Fence>;
 
-export const WritePolicy = z.enum(["validationOnly"]);
+export const WritePolicy = z.enum(["validationOnly", "allow"]);
 export type WritePolicy = z.infer<typeof WritePolicy>;
 
 export const BrainConfig = z
@@ -21,6 +21,75 @@ export const BrainConfig = z
   .strict();
 export type BrainConfig = z.infer<typeof BrainConfig>;
 
+export const VisionConfig = z
+  .object({
+    baseUrl: z.string().url().optional(),
+    /** Required on the vision block; never inherited from brain. */
+    model: z.string().min(1),
+    /** false = no key, even on the same host as brain. */
+    apiKeyEnv: z.union([z.string().min(1), z.literal(false)]).optional(),
+    issues: z.boolean().default(true),
+    assist: z.boolean().default(true),
+  })
+  .strict()
+  .superRefine((vision, ctx) => {
+    if (vision.issues === false && vision.assist === false) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "vision.issues and vision.assist cannot both be false",
+      });
+    }
+  });
+export type VisionConfig = z.infer<typeof VisionConfig>;
+
+export type ResolvedVision = {
+  baseUrl: string;
+  model: string;
+  apiKeyEnv?: string;
+  issues: boolean;
+  assist: boolean;
+};
+
+export class VisionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VisionError";
+  }
+}
+
+export function resolveVision(
+  vision: VisionConfig | undefined,
+  brain: BrainConfig | undefined,
+): ResolvedVision | undefined {
+  if (!vision) return undefined;
+  const baseUrl = vision.baseUrl ?? brain?.baseUrl;
+  if (!baseUrl) {
+    throw new VisionError("vision.baseUrl is required (set vision.baseUrl or brain.baseUrl)");
+  }
+  let apiKeyEnv: string | undefined;
+  if (vision.apiKeyEnv === false) {
+    apiKeyEnv = undefined;
+  } else if (typeof vision.apiKeyEnv === "string") {
+    apiKeyEnv = vision.apiKeyEnv;
+  } else if (!vision.baseUrl) {
+    apiKeyEnv = brain?.apiKeyEnv;
+  }
+  return {
+    baseUrl,
+    model: vision.model,
+    ...(apiKeyEnv ? { apiKeyEnv } : {}),
+    issues: vision.issues,
+    assist: vision.assist,
+  };
+}
+
+export function requireVisionShots(config: Pick<Config, "screenshots" | "vision" | "brain">): void {
+  const vision = resolveVision(config.vision, config.brain);
+  if (vision && config.screenshots === false) {
+    throw new VisionError('vision needs per-step screenshots; set "screenshots": true or omit vision');
+  }
+}
+
 /** On-disk leash. load still accepts an inline map so one-file leashes work. */
 export const LeashFile = z
   .object({
@@ -30,8 +99,11 @@ export const LeashFile = z
     /** Substrings of widget id or label the walker will not click (logout, close panel, …). */
     skip: z.array(z.string().min(1)).default([]),
     writePolicy: WritePolicy.default("validationOnly"),
+    /** Per-step screenshots. Omit = on. */
+    screenshots: z.boolean().default(true),
     map: PageModelDraft.optional(),
     brain: BrainConfig.optional(),
+    vision: VisionConfig.optional(),
   })
   .strict();
 export type LeashFile = z.infer<typeof LeashFile>;
@@ -44,8 +116,11 @@ export const Config = z
     intro: z.array(z.string()).default([]),
     skip: z.array(z.string().min(1)).default([]),
     writePolicy: WritePolicy.default("validationOnly"),
+    /** Per-step screenshots. Omit = on. */
+    screenshots: z.boolean().default(true),
     map: PageModelDraft,
     brain: BrainConfig.optional(),
+    vision: VisionConfig.optional(),
   })
   .strict();
 export type Config = z.infer<typeof Config>;

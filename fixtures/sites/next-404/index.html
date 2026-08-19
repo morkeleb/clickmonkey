@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Home</title>
+  </head>
+  <body>
+    <aside>
+      <h2>Overview</h2>
+      <a href="/">Home</a>
+    </aside>
+    <main data-testid="home">
+      <div data-testid="events-failed">404 events failed</div>
+      <a data-testid="dead-card" href="/gone.html">Events failed 24h</a>
+      <a data-testid="spa-dead" href="/applications">Applications</a>
+    </main>
+    <script>
+      document.querySelector("[data-testid='spa-dead']")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        history.pushState({}, "", "/applications");
+        document.title = "Milkshake";
+        const main = document.querySelector("main");
+        if (main) {
+          main.innerHTML =
+            '<div><span style="font-size:3rem">404</span> This page could not be found.</div>';
+        }
+      });
+    </script>
+  </body>
+</html>
