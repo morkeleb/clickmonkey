@@ -112,11 +112,11 @@ export function formatExplorePlanItemCoverage(item: UiExplorePlanItem): string {
   const steps = item.stepCount ?? 0;
   const ids = item.findingIds ?? [];
   const stepBit = `${steps} step${steps === 1 ? "" : "s"}`;
-  if (item.status === "pending") return "never started";
-  if (item.status === "skipped") return `skipped, ${stepBit}`;
-  if (item.status === "now") return `in progress, ${stepBit}`;
   const findings =
     ids.length > 0 ? `, ${ids.length} finding${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}` : "";
+  if (item.status === "pending") return "never started";
+  if (item.status === "skipped") return `skipped, ${stepBit}${findings}`;
+  if (item.status === "now") return `in progress, ${stepBit}${findings}`;
   return `${stepBit}${findings}`;
 }
 

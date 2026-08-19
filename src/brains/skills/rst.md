@@ -1,18 +1,31 @@
-# Rapid Software Testing — explore pack
+# Explore pack
 
-- One step at a time. Emit a single DSL line per turn.
-- `pages:` lists hop targets with blurbs. `open <id>` only for an exact id in that list.
-- Never invent a page id from the charter, skills, or content. If `pages:` is empty, do not emit open — click a mapped action.
-- Runtime errors first (uncaught JS, HTTP errors, 404). Note them, then keep walking.
-- Only emit DSL that targets mapped ids from `shown` and `actions`. Never invent ids.
-- click/fill must be `surface.id` with a dot. Example: `click page.x`. Never `click x`.
-- Prefer `open <pageId>` from `pages:` to leave chrome. If the id is not listed, do not open it.
-- Do not click Close-tab chrome (`button_close_*`). That only returns home. Do not re-open a page you just left.
-- `screenshot` when you need a visual of the current surface. Not the first walk step, and never twice in a row, unless the charter is visual.
-- `screenshot ui "brief note"` to file a UI bug. That also counts as a screenshot.
-- `look.fonts` is a palette, not CSS to target. A face that does not match the rest of the surface is a UI note — screenshot it.
-- `look.covered` means a mapped id is under other content. Note it; do not click it and expect a useful result.
-- Never click or fill from the content YAML. Content is for reading, not targeting.
-- Prefer empty and invalid input on required fields, then a plausible value.
-- Follow the plan item marked `[>]`. When that item is exercised, set `done: true`.
-- Reply with JSON only: `{ "line": "click page.x", "note": "why", "done": false }`.
+Each step should teach the next one. Runtime errors first.
+
+## Oracles
+
+Name one in `note` (`<oracle>: <saw> → <next>`):
+
+- Runtime: uncaught JS, HTTP, 404, testability
+- Claim: label, button, or copy vs what happened
+- Purpose: can the user finish the job on this surface?
+- Consistency: same control, different behavior
+- Empty: 0 items, required blank, very long text
+- Interruption: leave mid-flow, come back
+- Affordance: looks clickable but isn't, or the reverse
+- Visual: overlap, fonts that don't match `look.fonts`, covered widgets
+
+## Next
+
+Prefer the action that would disprove the `[>]` risk or a claim on this surface.
+Use page blurbs and Context for risks, never to invent ids.
+Empty then invalid then a plausible value on required fields.
+If last result was ok and taught nothing, change tactic — different field, page, or oracle.
+`screenshot` when the surface looks wrong; `screenshot ui "brief"` to file it. Not the first walk step, never twice in a row unless the charter is visual.
+`look.covered`: note it; do not click expecting a useful result.
+Content YAML is for reading claims, not targeting.
+
+## Done
+
+Set `done: true` when you can say what you learned about `[>]` (found, not found, blocked). One click is not enough.
+Do not repeat a recent note. Positive observations belong in notes too.

@@ -19,6 +19,8 @@ import {
   formatExplorePlan,
   recordPlanStep,
   isNewProductFinding,
+  defaultExploreSkills,
+  DEFAULT_EXPLORE_CHARTER,
 } from "../src/brains/explore.js";
 import { formatExplorePlanItemLine } from "../src/schema/ui.js";
 import type { ChatMessage } from "../src/brains/chat.js";
@@ -65,6 +67,7 @@ describe("explore plan", () => {
     assert.equal(next.items[0]?.status, "done");
     assert.equal(next.items[1]?.status, "now");
     assert.match(formatExplorePlan(next), /\[x\].*Empty invoice name/);
+    assert.match(formatExplorePlan(next), /in progress/);
   });
 
   it("records stepCount and findingIds on the current item", () => {
@@ -82,6 +85,7 @@ describe("explore plan", () => {
     const stepped = recordPlanStep(recordPlanStep(plan), { findingId: "fnd_2_uiIssue" });
     assert.equal(stepped.items[0]?.stepCount, 2);
     assert.deepEqual(stepped.items[0]?.findingIds, ["fnd_2_uiIssue"]);
+    assert.match(formatExplorePlan(stepped), /in progress, 2 steps, 1 finding/);
     assert.equal(stepped.items[1]?.stepCount, 0);
     assert.deepEqual(stepped.items[1]?.findingIds, []);
     const done = completeCurrentPlanItem(stepped, "done");
@@ -136,6 +140,17 @@ describe("explore plan", () => {
       formatExplorePlanItemLine({ id: "4", title: "Reports", status: "pending", stepCount: 0, findingIds: [] }),
       "- [ ] Reports — never started",
     );
+  });
+});
+
+describe("default explore pack", () => {
+  it("teaches oracles and compounding notes", () => {
+    const skills = defaultExploreSkills();
+    assert.match(skills, /Each step should teach the next one/);
+    assert.match(skills, /Claim:/);
+    assert.match(skills, /Interruption:/);
+    assert.match(skills, /done: true/);
+    assert.match(DEFAULT_EXPLORE_CHARTER, /Explore .+ with .+ to discover/);
   });
 });
 
@@ -510,6 +525,25 @@ describe("createExploreBrain", () => {
     });
     assert.match(prompt, /last step was already a screenshot/);
     assert.match(prompt, /Do not emit screenshot/);
+  });
+
+  it("asks for an oracle note the next step can use", async () => {
+    let prompt = "";
+    const brain = createExploreBrain({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => m.content).join("\n");
+        return JSON.stringify({ line: "click page.openCreate" });
+      },
+      charter: DEFAULT_EXPLORE_CHARTER,
+      skills: defaultExploreSkills(),
+      startedAt: Date.now(),
+    });
+    await brain.decide({ view: viewOf(), stepsUsed: 1 });
+    assert.match(prompt, /<oracle>: <saw> → <next>/);
+    assert.match(prompt, /One click is not enough/);
+    assert.match(prompt, /Do not repeat a recent note/);
+    assert.match(prompt, /Each step should teach the next one/);
+    assert.match(prompt, /Claim:/);
   });
 });
 

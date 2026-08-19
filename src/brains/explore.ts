@@ -5,13 +5,13 @@ import { formatLiveLine } from "../executor/nav-log.js";
 import { formatView } from "../executor/view.js";
 import { DslParseError, parseLine } from "../schema/dsl.js";
 import type { Step } from "../schema/log.js";
-import type { UiExplorePlan } from "../schema/ui.js";
+import { formatExplorePlanItemCoverage, type UiExplorePlan } from "../schema/ui.js";
 import type { View } from "../schema/view.js";
 import type { ChatMessage } from "./chat.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
 
 export const DEFAULT_EXPLORE_CHARTER =
-  "General exploratory test: walk legal actions, try empty/invalid input, record runtime errors.";
+  "Explore the mapped product with empty/invalid input, claims vs behavior, and interruption to discover runtime errors, data loss, and silent failures.";
 
 const ExploreReply = z.object({
   line: z.string().min(1),
@@ -32,24 +32,37 @@ const PlanReply = z.object({
     .max(8),
 });
 
-const RST_FALLBACK = `# Rapid Software Testing — explore pack
+const RST_FALLBACK = `# Explore pack
 
-- One step at a time. Emit a single DSL line per turn.
-- \`pages:\` lists hop targets with blurbs. \`open <id>\` only for an exact id in that list.
-- Never invent a page id from the charter, skills, or content. If \`pages:\` is empty, do not emit open — click a mapped action.
-- Runtime errors first (uncaught JS, HTTP errors, 404). Note them, then keep walking.
-- Only emit DSL that targets mapped ids from \`shown\` and \`actions\`. Never invent ids.
-- click/fill must be \`surface.id\` with a dot. Example: \`click page.x\`. Never \`click x\`.
-- Prefer \`open <pageId>\` from \`pages:\` to leave chrome. If the id is not listed, do not open it.
-- Do not click Close-tab chrome (\`button_close_*\`). That only returns home. Do not re-open a page you just left.
-- \`screenshot\` when you need a visual of the current surface. Not the first walk step, and never twice in a row, unless the charter is visual.
-- \`screenshot ui "brief note"\` to file a UI bug. That also counts as a screenshot.
-- \`look.fonts\` is a palette. A face that does not match the rest of the surface is a UI note — screenshot it.
-- \`look.covered\` means a mapped id is under other content. Note it; do not click it expecting a useful result.
-- Never click or fill from the content YAML. Content is for reading, not targeting.
-- Prefer empty and invalid input on required fields, then a plausible value.
-- Follow the plan item marked \`[>]\`. When that item is exercised, set \`done: true\`.
-- Reply with JSON only: \`{ "line": "click page.x", "note": "why", "done": false }\`.
+Each step should teach the next one. Runtime errors first.
+
+## Oracles
+
+Name one in \`note\` (\`<oracle>: <saw> → <next>\`):
+
+- Runtime: uncaught JS, HTTP, 404, testability
+- Claim: label, button, or copy vs what happened
+- Purpose: can the user finish the job on this surface?
+- Consistency: same control, different behavior
+- Empty: 0 items, required blank, very long text
+- Interruption: leave mid-flow, come back
+- Affordance: looks clickable but isn't, or the reverse
+- Visual: overlap, fonts that don't match \`look.fonts\`, covered widgets
+
+## Next
+
+Prefer the action that would disprove the \`[>]\` risk or a claim on this surface.
+Use page blurbs and Context for risks, never to invent ids.
+Empty then invalid then a plausible value on required fields.
+If last result was ok and taught nothing, change tactic — different field, page, or oracle.
+\`screenshot\` when the surface looks wrong; \`screenshot ui "brief"\` to file it. Not the first walk step, never twice in a row unless the charter is visual.
+\`look.covered\`: note it; do not click expecting a useful result.
+Content YAML is for reading claims, not targeting.
+
+## Done
+
+Set \`done: true\` when you can say what you learned about \`[>]\` (found, not found, blocked). One click is not enough.
+Do not repeat a recent note. Positive observations belong in notes too.
 `;
 
 export function defaultExploreSkills(): string {
@@ -333,7 +346,7 @@ export function formatExplorePlan(plan: UiExplorePlan): string {
     ...plan.items.map((it, i) => {
       const mark = it.status === "done" ? "x" : it.status === "now" ? ">" : it.status === "skipped" ? "-" : " ";
       const page = it.page ? ` [page: ${it.page}]` : "";
-      return `${i + 1}. [${mark}] ${it.title}${page}`;
+      return `${i + 1}. [${mark}] ${it.title}${page} — ${formatExplorePlanItemCoverage(it)}`;
     }),
   ].join("\n");
 }
@@ -395,11 +408,11 @@ export async function draftExplorePlan(opts: {
       role: "system",
       content: [
         EXPLORE_PLAN_PROMPT,
-        "You are planning exploratory testing, not walking yet.",
-        'JSON: { "goal": "one line", "items": [ { "title": "what to try", "page": "optional exact pages: id" } ] }',
-        "2 to 6 items. Order by risk (writes, money, permissions first).",
+        "You are planning a time-boxed explore session, not walking yet.",
+        'JSON: { "goal": "Explore X with Y to discover Z", "items": [ { "title": "risk or question", "page": "optional exact pages: id" } ] }',
+        "2 to 6 items. Order: money/writes/permissions, empty/error states, claims vs UI, interruption.",
+        "Titles are risks, not DSL and not page names. Do not emit click/fill/open lines.",
         "page must be copied exactly from Legal open ids. Omit page if unsure. Never invent ids.",
-        "Titles are goals, not DSL. Do not emit click/fill/open lines.",
       ].join("\n"),
     },
     {
@@ -488,8 +501,9 @@ export function createExploreBrain(opts: {
           role: "system",
           content: [
             "You are an exploratory tester. Reply with JSON only.",
-            'Shape: { "line": "<one DSL line>", "note": "one-line why", "done": false }',
-            "Follow the plan item marked [>]. When that item is exercised, set done: true.",
+            'Shape: { "line": "<one DSL line>", "note": "<oracle>: <saw> → <next>", "done": false }',
+            "Follow the plan item marked [>]. Set done: true only when you can report on that risk (found, not found, or blocked). One click is not enough.",
+            "note must add something Recent notes do not already say. Use Last result.",
             'Legal lines: open <pageId>, click <surface.id>, fill <surface.id> <value>, expect, screenshot, screenshot ui "note".',
             "click/fill must be surface.id with a dot. Example: click page.x. Never click x.",
             "open <id> only if that exact id is listed under pages:. Never invent a page id from the charter or skills.",
@@ -526,6 +540,7 @@ export function createExploreBrain(opts: {
               ? `Recent steps: ${recentSteps.slice(-6).join(" → ")}. Do not ping-pong (open X, leave, open X).`
               : "",
             recentNotes.length ? `Recent notes:\n${recentNotes.map((n) => `- ${n}`).join("\n")}` : "Recent notes: (none)",
+            "Choose a step that uses Last result and Recent notes against the [>] risk. Do not repeat a recent note.",
             "",
             "Current view:",
             formatViewForBrain(ctx.view),
