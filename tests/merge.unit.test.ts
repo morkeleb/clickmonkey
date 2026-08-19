@@ -198,6 +198,61 @@ describe("mergePageModel", () => {
     assert.equal(still.actions[0]?.status, "ok");
     assert.equal(omitted.model.generation, 0);
   });
+
+  it("stamps lastOpensHint.opens onto the fromPage action", () => {
+    const result = mergePageModel(loadHome(), {
+      pageId: "home",
+      surfaceId: "page",
+      surfaceKind: "page",
+      candidates: [{ kind: "action", by: "testId", value: "open-create", resolves: true }],
+      leftoverResolves: {},
+      lastOpensHint: {
+        actionId: "openCreate",
+        actionSurfaceId: "page",
+        opens: "projects",
+        fromPage: "home",
+      },
+    });
+    const opener = surface(result.model, "page").actions.find((a) => a.id === "openCreate");
+    assert.equal(opener?.opens, "createDialog");
+    const stamped = mergePageModel(loadHome(), {
+      pageId: "home",
+      surfaceId: "page",
+      surfaceKind: "page",
+      candidates: [],
+      leftoverResolves: {},
+      lastOpensHint: {
+        actionId: "openCreate",
+        actionSurfaceId: "page",
+        opens: "projects",
+        fromPage: "home",
+      },
+    });
+    const already = surface(stamped.model, "page").actions.find((a) => a.id === "openCreate");
+    assert.equal(already?.opens, "createDialog");
+  });
+
+  it("stamps a page hop when the opener has no opens yet", () => {
+    const model = loadHome();
+    const opener = surface(model, "page").actions.find((a) => a.id === "openCreate");
+    assert.ok(opener);
+    delete opener.opens;
+    const result = mergePageModel(model, {
+      pageId: "home",
+      surfaceId: "page",
+      surfaceKind: "page",
+      candidates: [],
+      leftoverResolves: {},
+      lastOpensHint: {
+        actionId: "openCreate",
+        actionSurfaceId: "page",
+        opens: "projects",
+        fromPage: "home",
+      },
+    });
+    const stamped = surface(result.model, "page").actions.find((a) => a.id === "openCreate");
+    assert.equal(stamped?.opens, "projects");
+  });
 });
 
 describe("mergeTrees", () => {

@@ -21,8 +21,16 @@ import {
   isNewProductFinding,
   defaultExploreSkills,
   DEFAULT_EXPLORE_CHARTER,
+  formatPlanningCards,
+  formatReachDag,
+  draftExplorePlan,
+  legalDirectOpenIds,
+  parseExploreReply,
+  PLAN_CONTEXT_MAX,
+  pathParentPage,
 } from "../src/brains/explore.js";
 import { formatExplorePlanItemLine } from "../src/schema/ui.js";
+import { PageModel } from "../src/schema/page-model.js";
 import type { ChatMessage } from "../src/brains/chat.js";
 import { saveConfig } from "../src/persist/config.js";
 import { Config } from "../src/schema/config.js";
@@ -143,14 +151,321 @@ describe("explore plan", () => {
   });
 });
 
+describe("formatPlanningCards", () => {
+  const home = PageModel.parse(homeMap).pages[0]!;
+
+  it("prints blurb, required fields, opens, and dialogs without locators", () => {
+    const text = formatPlanningCards([
+      { ...home, description: "workspace home" },
+      {
+        id: "invoices",
+        path: "/invoices",
+        params: [],
+        ready: { by: "testId", value: "invoices" },
+        description: "list and create invoices",
+        surfaces: [
+          {
+            id: "page",
+            kind: "page",
+            fields: [
+              { id: "name", required: true, type: "text", by: "testId", value: "name", status: "ok" },
+              { id: "gone", required: false, type: "text", by: "testId", value: "gone", status: "unresolved" },
+            ],
+            actions: [
+              { id: "create", by: "testId", value: "create", opens: "createDialog", status: "ok" },
+              { id: "button_close_invoices", by: "testId", value: "close", status: "ok" },
+            ],
+          },
+          {
+            id: "createDialog",
+            kind: "dialog",
+            fields: [
+              { id: "amount", required: true, type: "number", by: "testId", value: "amount", status: "ok" },
+            ],
+            actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
+          },
+        ],
+      },
+    ]);
+    assert.match(text, /^sitemap \(open only where via says open\):/m);
+    assert.match(text, /home — workspace home/);
+    assert.match(text, /via: open home/);
+    assert.match(text, /openCreate→createDialog/);
+    assert.match(text, /createDialog \(name!, submit\)/);
+    assert.match(text, /invoices — list and create invoices/);
+    assert.match(text, /fields: name!/);
+    assert.match(text, /actions: create→createDialog/);
+    assert.match(text, /dialogs: createDialog \(amount!, submit\)/);
+    assert.equal(text.includes("open-create"), false);
+    assert.equal(text.includes("testId"), false);
+    assert.equal(text.includes("button_close_invoices"), false);
+    assert.equal(text.includes("gone"), false);
+  });
+
+  it("keeps legal id order and clips on a card boundary", () => {
+    const invoices = {
+      ...home,
+      id: "invoices",
+      path: "/invoices",
+      description: "invoices",
+    };
+    const text = formatPlanningCards([home, invoices], { ids: ["invoices", "home"] });
+    const inv = text.indexOf("invoices");
+    const hom = text.indexOf("\nhome");
+    assert.ok(inv > 0 && hom > inv);
+    const clipped = formatPlanningCards([home, invoices], { ids: ["home", "invoices"], max: 180 });
+    assert.match(clipped, /sitemap/);
+    assert.match(clipped, /…$/);
+    assert.equal(clipped.includes("invoices"), false);
+  });
+
+  it("marks nested pages as click-via, not direct open", () => {
+    const invoices = {
+      id: "invoices",
+      path: "/invoices",
+      params: [],
+      ready: { by: "testId", value: "invoices" },
+      description: "invoice list",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "open_row", by: "testId", value: "row", opens: "invoice_detail", status: "ok" },
+          ],
+        },
+      ],
+    };
+    const detail = {
+      id: "invoice_detail",
+      path: "/invoices/:id",
+      params: ["id"],
+      ready: { by: "testId", value: "detail" },
+      description: "one invoice",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "amount", required: true, type: "number", by: "testId", value: "amount", status: "ok" }],
+          actions: [],
+        },
+      ],
+    };
+    const text = formatPlanningCards([home, invoices, detail]);
+    assert.match(text, /invoices — invoice list\n  via: open invoices/);
+    assert.match(text, /invoice_detail — one invoice\n  via: click open_row on invoices/);
+    assert.equal(/invoice_detail[\s\S]*via: open invoice_detail/.test(text), false);
+    const view = viewOf({ pages: ["home", "invoices", "invoice_detail"] });
+    assert.deepEqual(legalDirectOpenIds(view, [home, invoices, detail]), ["home", "invoices"]);
+    const blocked = checkExploreLine("open invoice_detail", view, {
+      stepsUsed: 1,
+      charter: "walk",
+      pages: [home, invoices, detail],
+    });
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.match(blocked.error, /not a direct hop/);
+    const ok = checkExploreLine("open invoices", view, {
+      stepsUsed: 1,
+      charter: "walk",
+      pages: [home, invoices, detail],
+    });
+    assert.equal(ok.ok, true);
+    const dag = formatReachDag([home, invoices, detail]);
+    assert.match(dag, /^reach:/m);
+    assert.match(dag, /open: home, invoices/);
+    assert.match(dag, /click: invoices -open_row-> invoice_detail/);
+    assert.doesNotMatch(dag, /open invoice_detail/);
+  });
+
+  it("uses path parent when no action.opens points at the nested page", () => {
+    const invoices = {
+      id: "invoices",
+      path: "/invoices",
+      params: [],
+      ready: { by: "testId", value: "invoices" },
+      description: "invoice list",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [{ id: "open_row", by: "testId", value: "row", status: "ok" }],
+        },
+      ],
+    };
+    const detail = {
+      id: "invoice_detail",
+      path: "/invoices/:id",
+      params: ["id"],
+      ready: { by: "testId", value: "detail" },
+      description: "one invoice",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "amount", required: true, type: "number", by: "testId", value: "amount", status: "ok" }],
+          actions: [],
+        },
+      ],
+    };
+    assert.equal(pathParentPage([home, invoices, detail], detail)?.id, "invoices");
+    const text = formatPlanningCards([home, invoices, detail]);
+    assert.match(text, /invoice_detail — one invoice\n  via: from invoices/);
+    assert.equal(text.includes("via: click"), false);
+    const dag = formatReachDag([home, invoices, detail]);
+    assert.match(dag, /from: invoices -> invoice_detail/);
+    const here = viewOf({ page: "invoice_detail", pages: ["home", "invoices", "invoice_detail"] });
+    assert.deepEqual(legalDirectOpenIds(here, [home, invoices, detail]), ["home", "invoices"]);
+    const ghost = viewOf({ pages: ["home", "missing_page"] });
+    assert.deepEqual(legalDirectOpenIds(ghost, [home]), ["home"]);
+  });
+});
+
+describe("draftExplorePlan", () => {
+  it("feeds sitemap cards and refuses invented page ids", async () => {
+    const pages = PageModel.parse(homeMap).pages;
+    let prompt = "";
+    const plan = await draftExplorePlan({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => m.content).join("\n");
+        return JSON.stringify({
+          goal: "Explore create with empty name to discover validation",
+          items: [
+            { title: "Empty create name", page: "home" },
+            { title: "Invented hop", page: "accounts_receivable_invoicing" },
+          ],
+        });
+      },
+      charter: DEFAULT_EXPLORE_CHARTER,
+      skills: "",
+      view: viewOf({ pages: ["home"] }),
+      pages,
+      logRetry: () => undefined,
+    });
+    assert.match(prompt, /page on an item may be any sitemap id/);
+    assert.match(prompt, /The charter is the mission/);
+    assert.match(prompt, /No architecture file\. Plan only from sitemap, charter, and oracles/);
+    assert.match(prompt, /Empty: required name on create dialog/);
+    assert.match(prompt, /Legal open ids \(direct hops only\):/);
+    assert.match(prompt, /sitemap \(open only where via says open\):/);
+    assert.match(prompt, /^reach:/m);
+    assert.match(prompt, /dialog: home -openCreate-> createDialog/);
+    assert.match(prompt, /openCreate→createDialog/);
+    assert.match(prompt, /Current view \(start here\):/);
+    assert.equal(prompt.includes("open-create"), false);
+    assert.equal(plan.items[0]?.page, "home");
+    assert.equal(plan.items[1]?.page, undefined);
+  });
+
+  it("shows nested sitemap cards and lets a plan item aim at them", async () => {
+    const home = PageModel.parse(homeMap).pages[0]!;
+    const invoices = {
+      id: "invoices",
+      path: "/invoices",
+      params: [],
+      ready: { by: "testId", value: "invoices" },
+      description: "invoice list",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "open_row", by: "testId", value: "row", opens: "invoice_detail", status: "ok" },
+          ],
+        },
+      ],
+    };
+    const detail = {
+      id: "invoice_detail",
+      path: "/invoices/:id",
+      params: ["id"],
+      ready: { by: "testId", value: "detail" },
+      description: "one invoice",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "amount", required: true, type: "number", by: "testId", value: "amount", status: "ok" }],
+          actions: [],
+        },
+      ],
+    };
+    let prompt = "";
+    const plan = await draftExplorePlan({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => m.content).join("\n");
+        return JSON.stringify({
+          goal: "Explore invoice detail with empty amount to discover silent save",
+          items: [
+            { title: "Empty amount on a real invoice", page: "invoice_detail" },
+            { title: "Runtime errors" },
+          ],
+        });
+      },
+      charter: DEFAULT_EXPLORE_CHARTER,
+      skills: "",
+      view: viewOf({ pages: ["home", "invoices", "invoice_detail"] }),
+      pages: [home, invoices, detail],
+      logRetry: () => undefined,
+    });
+    assert.match(prompt, /invoice_detail — one invoice\n  via: click open_row on invoices/);
+    assert.match(prompt, /Legal open ids \(direct hops only\): home, invoices/);
+    assert.equal(prompt.includes("Legal open ids (direct hops only): home, invoices, invoice_detail"), false);
+    assert.equal(plan.items[0]?.page, "invoice_detail");
+    assert.match(prompt, /click: invoices -open_row-> invoice_detail/);
+  });
+
+  it("puts oracles in Look for and does not clip architecture behind them", async () => {
+    let prompt = "";
+    await draftExplorePlan({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => m.content).join("\n");
+        return JSON.stringify({
+          goal: "Explore home with empty create to discover validation",
+          items: [{ title: "Empty name", page: "home" }, { title: "Runtime" }],
+        });
+      },
+      charter: DEFAULT_EXPLORE_CHARTER,
+      oracles: `${"ORACLEPACK ".repeat(300)}Claim:`,
+      skills: "ARCHITECTURE_MARKER how billing posts invoices",
+      view: viewOf({ pages: ["home"] }),
+      pages: PageModel.parse(homeMap).pages,
+      logRetry: () => undefined,
+    });
+    assert.match(prompt, /Look for:/);
+    assert.match(prompt, /Claim:/);
+    assert.match(prompt, /ARCHITECTURE_MARKER/);
+    const lookAt = prompt.indexOf("Look for:");
+    const ctxAt = prompt.indexOf("Context:");
+    assert.ok(lookAt >= 0 && ctxAt > lookAt);
+    assert.ok(prompt.length > PLAN_CONTEXT_MAX);
+  });
+});
+
 describe("default explore pack", () => {
   it("teaches oracles and compounding notes", () => {
     const skills = defaultExploreSkills();
-    assert.match(skills, /Each step should teach the next one/);
+    assert.match(skills, /The charter is the mission/);
     assert.match(skills, /Claim:/);
     assert.match(skills, /Interruption:/);
+    assert.match(skills, /user would notice/);
     assert.match(skills, /done: true/);
+    assert.match(skills, /Set `good`/);
+    assert.match(skills, /blurb and required fields/);
     assert.match(DEFAULT_EXPLORE_CHARTER, /Explore .+ with .+ to discover/);
+  });
+});
+
+describe("parseExploreReply", () => {
+  it("keeps optional good observations", () => {
+    const parsed = parseExploreReply(
+      JSON.stringify({ line: "click page.openCreate", note: "Empty: try name", good: "dialog opened" }),
+    );
+    assert.equal(parsed?.line, "click page.openCreate");
+    assert.equal(parsed?.note, "Empty: try name");
+    assert.equal(parsed?.good, "dialog opened");
   });
 });
 
@@ -535,15 +850,92 @@ describe("createExploreBrain", () => {
         return JSON.stringify({ line: "click page.openCreate" });
       },
       charter: DEFAULT_EXPLORE_CHARTER,
-      skills: defaultExploreSkills(),
+      oracles: defaultExploreSkills(),
+      skills: "ARCHITECTURE_MARKER",
       startedAt: Date.now(),
     });
     await brain.decide({ view: viewOf(), stepsUsed: 1 });
     assert.match(prompt, /<oracle>: <saw> → <next>/);
     assert.match(prompt, /One click is not enough/);
     assert.match(prompt, /Do not repeat a recent note/);
-    assert.match(prompt, /Each step should teach the next one/);
+    assert.match(prompt, /Look for:/);
+    assert.match(prompt, /The charter is the mission/);
     assert.match(prompt, /Claim:/);
+    assert.match(prompt, /user would notice/);
+    assert.match(prompt, /Stay on that aim/);
+    assert.match(prompt, /Context:\nARCHITECTURE_MARKER/);
+  });
+
+  it("shows aim cards and via for the current plan item", async () => {
+    const home = PageModel.parse(homeMap).pages[0]!;
+    const invoices = {
+      id: "invoices",
+      path: "/invoices",
+      params: [],
+      ready: { by: "testId", value: "invoices" },
+      description: "invoice list",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "open_row", by: "testId", value: "row", opens: "invoice_detail", status: "ok" },
+          ],
+        },
+      ],
+    };
+    const detail = {
+      id: "invoice_detail",
+      path: "/invoices/:id",
+      params: ["id"],
+      ready: { by: "testId", value: "detail" },
+      description: "one invoice",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "amount", required: true, type: "number", by: "testId", value: "amount", status: "ok" }],
+          actions: [],
+        },
+      ],
+    };
+    let prompt = "";
+    const brain = createExploreBrain({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => m.content).join("\n");
+        return JSON.stringify({
+          line: "open invoices",
+          note: "Empty: need a row to open detail",
+          good: "invoice list rendered",
+        });
+      },
+      charter: DEFAULT_EXPLORE_CHARTER,
+      skills: "",
+      pages: [home, invoices, detail],
+      startedAt: Date.now(),
+    });
+    const plan = parseExplorePlanReply(
+      JSON.stringify({
+        goal: "Explore invoice detail with empty amount to discover silent save",
+        items: [
+          { title: "Empty amount on a real invoice", page: "invoice_detail" },
+          { title: "Runtime" },
+        ],
+      }),
+      ["home", "invoices", "invoice_detail"],
+    );
+    const decision = await brain.decide({
+      view: viewOf({ pages: ["home", "invoices", "invoice_detail"] }),
+      stepsUsed: 1,
+      plan,
+    });
+    assert.match(prompt, /Aim \[Empty amount on a real invoice\]:/);
+    assert.match(prompt, /aim \(follow via\):/);
+    assert.match(prompt, /via: click open_row on invoices/);
+    assert.match(prompt, /invoices -open_row-> invoice_detail/);
+    assert.equal(decision.good, "invoice list rendered");
+    assert.deepEqual(brain.getGoods(), ["invoice list rendered"]);
   });
 });
 

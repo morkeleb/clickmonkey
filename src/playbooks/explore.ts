@@ -83,6 +83,7 @@ function writeSessionMd(opts: {
   config: Config;
   findings: Finding[];
   notes: string[];
+  goods: string[];
   plan?: UiExplorePlan;
 }): void {
   const bySev: Record<FindingSeverity, Finding[]> = {
@@ -99,6 +100,7 @@ function writeSessionMd(opts: {
   }
   const brain = opts.config.brain;
   const notes = opts.notes.length ? opts.notes.map((n) => `- ${n}`).join("\n") : "(none)";
+  const goods = opts.goods.length ? opts.goods.map((n) => `- ${n}`).join("\n") : "(none)";
   const body = [
     `# Explore session — ${new Date(opts.startedAt).toISOString()} — ${opts.charter}`,
     "## Configuration",
@@ -123,7 +125,7 @@ function writeSessionMd(opts: {
     "## Notes",
     notes,
     "## Positive observations",
-    "(none)",
+    goods,
     "",
   ].join("\n");
   writeFileSync(opts.path, body, "utf8");
@@ -169,6 +171,12 @@ function notesOf(brain: Brain): string[] {
     : [];
 }
 
+function goodsOf(brain: Brain): string[] {
+  return "getGoods" in brain && typeof (brain as ExploreBrain).getGoods === "function"
+    ? (brain as ExploreBrain).getGoods()
+    : [];
+}
+
 export async function runExplore(opts: {
   config: Config;
   configPath: string;
@@ -188,7 +196,8 @@ export async function runExplore(opts: {
   const steps = opts.steps ?? EXPLORE_DEFAULT_STEPS;
   const minutes = opts.minutes ?? EXPLORE_DEFAULT_MINUTES;
   const charter = opts.charter?.trim() || DEFAULT_EXPLORE_CHARTER;
-  const skills = [defaultExploreSkills(), opts.skills?.trim()].filter(Boolean).join("\n\n");
+  const oracles = defaultExploreSkills();
+  const architecture = opts.skills?.trim() ?? "";
   const startedAt = Date.now();
   const deadline = startedAt + minutes * 60_000;
   const logPath = join(opts.outDir, "log.txt");
@@ -210,7 +219,17 @@ export async function runExplore(opts: {
     }
   };
   const brain =
-    opts.brain ?? createExploreBrain({ chat: boundChat, charter, skills, startedAt, minutes, logRetry });
+    opts.brain ??
+    createExploreBrain({
+      chat: boundChat,
+      charter,
+      skills: architecture,
+      oracles,
+      startedAt,
+      minutes,
+      skip: opts.config.skip,
+      logRetry,
+    });
 
   try {
     return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
@@ -264,8 +283,11 @@ export async function runExplore(opts: {
       plan = await draftExplorePlan({
         chat: boundChat,
         charter,
-        skills,
+        skills: architecture,
+        oracles,
         view,
+        pages: state.model.pages,
+        skip: state.config.skip,
         logRetry,
       });
       setPresenceOutline(opts.outDir, exploreOutlineOf({ charter, plan, now: plan.items.find((i) => i.status === "now")?.title }));
@@ -287,6 +309,7 @@ export async function runExplore(opts: {
         charter,
         notes: notesOf(brain),
         recent: recentSteps,
+        pages: state.model.pages,
         ...(plan ? { plan } : {}),
       });
       const line = decision.line.trim();
@@ -295,6 +318,7 @@ export async function runExplore(opts: {
         charter,
         rejected: [...refused],
         recent: recentSteps,
+        pages: state.model.pages,
       });
       if (!check.ok) {
         consecutiveRefusals += 1;
@@ -400,6 +424,7 @@ export async function runExplore(opts: {
       config: opts.config,
       findings,
       notes: notesOf(brain),
+      goods: goodsOf(brain),
       plan,
     });
 

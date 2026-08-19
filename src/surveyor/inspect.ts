@@ -25,7 +25,7 @@ import { bindSurfaces } from "./surfaces.js";
 
 export interface SurveyorContext {
   model: PageModel | PageModelDraft;
-  lastAction?: { surface: string; id: string; opens?: string };
+  lastAction?: { surface: string; id: string; opens?: string; fromPage?: string };
   /** Origin of the leash `url`. Off-leash pages get `page.origin`. */
   appOrigin?: string;
   /** Pages first seen during intro are entry pages, not hop targets. */
@@ -146,14 +146,26 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
 
     const isCurrentDialog =
       entry.kind === "dialog" && entry.surfaceId === bound.stack[bound.stack.length - 1];
-    const lastOpensHint =
-      ctx.lastAction && isCurrentDialog
-        ? {
-            actionId: ctx.lastAction.id,
-            actionSurfaceId: ctx.lastAction.surface,
-            opens: ctx.lastAction.opens ?? entry.surfaceId,
-          }
-        : undefined;
+    const lastOpensHint = (() => {
+      if (!ctx.lastAction) return undefined;
+      if (isCurrentDialog) {
+        return {
+          actionId: ctx.lastAction.id,
+          actionSurfaceId: ctx.lastAction.surface,
+          opens: ctx.lastAction.opens ?? entry.surfaceId,
+        };
+      }
+      const fromPage = ctx.lastAction.fromPage;
+      if (fromPage && fromPage !== pageId) {
+        return {
+          actionId: ctx.lastAction.id,
+          actionSurfaceId: ctx.lastAction.surface,
+          opens: pageId,
+          fromPage,
+        };
+      }
+      return undefined;
+    })();
 
     const result = mergePageModel(model, {
       pageId,

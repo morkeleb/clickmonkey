@@ -41,7 +41,7 @@ export interface RunState {
   afterStep?: AfterStep;
   replay?: boolean;
   configPath?: string;
-  lastAction?: { surface: string; id: string; opens?: string };
+  lastAction?: { surface: string; id: string; opens?: string; fromPage?: string };
   lastScreenshotPath?: string;
   /** Intro is how we enter the leash; fence applies after it. */
   inIntro?: boolean;
@@ -210,10 +210,10 @@ function lastActionFromStep(state: RunState, step: Step): RunState["lastAction"]
     const action = surface?.actions.find((a) => a.id === step.id);
     if (!action) continue;
     return action.opens
-      ? { surface: step.surface, id: step.id, opens: action.opens }
-      : { surface: step.surface, id: step.id };
+      ? { surface: step.surface, id: step.id, opens: action.opens, fromPage: state.pageId }
+      : { surface: step.surface, id: step.id, fromPage: state.pageId };
   }
-  return { surface: step.surface, id: step.id };
+  return { surface: step.surface, id: step.id, fromPage: state.pageId };
 }
 
 async function finish(

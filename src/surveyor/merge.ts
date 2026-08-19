@@ -38,7 +38,7 @@ export interface MergeInput {
   surfaceLocator?: Locator;
   candidates: Candidate[];
   leftoverResolves: Record<string, boolean>;
-  lastOpensHint?: { actionId: string; actionSurfaceId: string; opens: string };
+  lastOpensHint?: { actionId: string; actionSurfaceId: string; opens: string; fromPage?: string };
 }
 
 export interface MergeResult {
@@ -80,13 +80,14 @@ function applyLastOpensHint(model: PageModel, input: MergeInput): void {
   const hint = input.lastOpensHint;
   if (!hint) return;
   for (const page of model.pages) {
+    if (hint.fromPage && page.id !== hint.fromPage) continue;
     const surface = page.surfaces.find((s) => s.id === hint.actionSurfaceId);
     if (!surface) continue;
     const opener = surface.actions.find((a) => a.id === hint.actionId);
     if (opener && !opener.opens) {
-      opener.opens = input.surfaceId;
+      opener.opens = hint.opens;
     }
-    return;
+    if (hint.fromPage || opener) return;
   }
 }
 
