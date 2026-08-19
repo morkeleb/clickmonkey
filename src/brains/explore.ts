@@ -240,6 +240,15 @@ function viaBits(page: Page, pages: readonly Page[], skip?: readonly string[]): 
   return via;
 }
 
+export function usefulExploreNote(raw?: string): string | undefined {
+  const t = raw?.trim();
+  if (!t) return undefined;
+  if (/^optional(?:\s+what worked)?$/i.test(t)) return undefined;
+  if (/^what worked$/i.test(t)) return undefined;
+  if (/^<oracle>: <saw> → <next>$/i.test(t)) return undefined;
+  return t;
+}
+
 export function isBrainMissFinding(kind: string | undefined): boolean {
   return kind === "unknownId" || kind === "unresolvedId";
 }
@@ -816,7 +825,7 @@ export function createExploreBrain(opts: {
           content: [
             "You are an exploratory tester. Reply with JSON only.",
             "The charter is the mission. Do not invent a second one.",
-            'Shape: { "line": "<one DSL line>", "note": "<oracle>: <saw> → <next>", "good": "optional what worked", "done": false }',
+            'Shape: { "line": "<one DSL line>", "note": "<oracle>: <saw> → <next>", "done": false }',
             "Follow the plan item marked [>]. Stay on that aim until you can report found, not found, or blocked. Do not hop away because another page looks interesting.",
             "Set done: true only when you can report on [>]. One click is not enough.",
             "note must add something Recent notes do not already say. Use Last result. Aim cards show via for nested pages.",
@@ -912,9 +921,16 @@ export function createExploreBrain(opts: {
           continue;
         }
 
-        if (parsed.note) notes.push(parsed.note);
-        if (parsed.good) goods.push(parsed.good);
-        return parsed;
+        const note = usefulExploreNote(parsed.note);
+        const good = usefulExploreNote(parsed.good);
+        if (note) notes.push(note);
+        if (good) goods.push(good);
+        return {
+          line: parsed.line,
+          ...(note ? { note } : {}),
+          ...(good ? { good } : {}),
+          ...(parsed.done ? { done: true } : {}),
+        };
       }
 
       throw new ExploreError(

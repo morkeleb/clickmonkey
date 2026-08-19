@@ -42,12 +42,15 @@ function hopOf(raw: Record<string, unknown>): Hop | undefined {
 
 export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[] }; steps: Step[] } {
   const steps: Step[] = [];
+  let pending: { line?: string; note?: string; good?: string } | undefined;
   let current: {
     ts: string;
     line: string;
     pageId?: string;
     phase?: string;
     hops: Hop[];
+    note?: string;
+    good?: string;
   } | undefined;
   const prelude: Hop[] = [];
   let bootTs: string | undefined;
@@ -62,6 +65,8 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
         hops: current.hops,
         ...(current.pageId ? { pageId: current.pageId } : {}),
         ...(current.phase ? { phase: current.phase } : {}),
+        ...(current.note ? { note: current.note } : {}),
+        ...(current.good ? { good: current.good } : {}),
       }),
     );
     current = undefined;
@@ -77,17 +82,36 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
     }
     const type = asString(ev.type);
     const ts = asString(ev.ts) ?? new Date().toISOString();
+    if (type === "brain") {
+      const note = asString(ev.note);
+      const good = asString(ev.good);
+      if (note || good) {
+        pending = { line: asString(ev.line), ...(note ? { note } : {}), ...(good ? { good } : {}) };
+      }
+      continue;
+    }
+    if (type === "land") {
+      pending = undefined;
+      continue;
+    }
     if (type === "step") {
       flushOpen();
       const line = asString(ev.line);
-      if (!line) continue;
+      if (!line) {
+        pending = undefined;
+        continue;
+      }
+      const take = pending && (!pending.line || pending.line === line);
       current = {
         ts,
         line,
         hops: [],
         ...(asString(ev.pageId) ? { pageId: asString(ev.pageId) } : {}),
         ...(asString(ev.phase) ? { phase: asString(ev.phase) } : {}),
+        ...(take && pending?.note ? { note: pending.note } : {}),
+        ...(take && pending?.good ? { good: pending.good } : {}),
       };
+      pending = undefined;
       continue;
     }
     if (type === "stepDone") {
@@ -104,6 +128,8 @@ export function stepsFromNavLog(text: string): { boot?: { ts: string; hops: Hop[
           ...(asNumber(ev.ms) !== undefined ? { ms: asNumber(ev.ms) } : {}),
           ...(asString(ev.finding) ? { finding: asString(ev.finding) } : {}),
           ...(hops.length > 0 ? { hops } : {}),
+          ...(current.note ? { note: current.note } : {}),
+          ...(current.good ? { good: current.good } : {}),
         }),
       );
       current = undefined;

@@ -20,7 +20,7 @@ import {
 } from "../brains/explore.js";
 import type { Brain } from "../brains/types.js";
 import { bootRun } from "../executor/boot.js";
-import { formatLiveLine } from "../executor/nav-log.js";
+import { formatLiveLine, logBrainDecide } from "../executor/nav-log.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
@@ -354,6 +354,13 @@ export async function runExplore(opts: {
         throw new ExploreError(
           `explore will not take a screenshot when the last step was already a screenshot (${view.last?.step})`,
         );
+      }
+      if (state.navLogPath) {
+        logBrainDecide(state.navLogPath, {
+          line,
+          note: decision.note,
+          good: decision.good,
+        });
       }
       const result = await exec.runLine(line);
       view = result.view;

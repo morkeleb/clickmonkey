@@ -67,6 +67,92 @@ describe("stepsFromNavLog", () => {
     assert.equal(parsed.steps[1]?.finding, "fenceViolation");
     assert.equal(parsed.steps[1]?.ok, false);
   });
+
+  it("attaches a preceding brain note to the next step", () => {
+    const parsed = stepsFromNavLog(
+      [
+        JSON.stringify({
+          ts: "2026-08-19T15:55:02.000Z",
+          type: "brain",
+          line: 'fill page.search ""',
+          note: "Empty: tried empty value in search field",
+          good: "search box accepted empty",
+        }),
+        JSON.stringify({
+          ts: "2026-08-19T15:55:02.100Z",
+          type: "step",
+          line: 'fill page.search ""',
+          pageId: "invoices",
+          phase: "walk",
+        }),
+        JSON.stringify({
+          ts: "2026-08-19T15:55:02.200Z",
+          type: "stepDone",
+          line: 'fill page.search ""',
+          ok: true,
+          ms: 100,
+        }),
+      ].join("\n"),
+    );
+    assert.equal(parsed.steps[0]?.note, "Empty: tried empty value in search field");
+    assert.equal(parsed.steps[0]?.good, "search box accepted empty");
+    assert.equal(parsed.steps[0]?.line, 'fill page.search ""');
+  });
+
+  it("ignores retry brain events and does not attach a mismatched decide", () => {
+    const parsed = stepsFromNavLog(
+      [
+        JSON.stringify({
+          ts: "2026-08-19T15:55:01.000Z",
+          type: "brain",
+          line: 'fill page.search ""',
+          note: "Empty: try search",
+        }),
+        JSON.stringify({
+          ts: "2026-08-19T15:55:01.050Z",
+          type: "brain",
+          message: "brain retry: not json",
+        }),
+        JSON.stringify({
+          ts: "2026-08-19T15:55:01.100Z",
+          type: "step",
+          line: 'fill page.search ""',
+          pageId: "invoices",
+          phase: "walk",
+        }),
+        JSON.stringify({
+          ts: "2026-08-19T15:55:01.200Z",
+          type: "stepDone",
+          line: 'fill page.search ""',
+          ok: true,
+          ms: 100,
+        }),
+        JSON.stringify({
+          ts: "2026-08-19T15:55:02.000Z",
+          type: "brain",
+          line: "open home",
+          note: "Purpose: go home",
+        }),
+        JSON.stringify({
+          ts: "2026-08-19T15:55:02.100Z",
+          type: "step",
+          line: "click page.save",
+          pageId: "invoices",
+          phase: "walk",
+        }),
+        JSON.stringify({
+          ts: "2026-08-19T15:55:02.200Z",
+          type: "stepDone",
+          line: "click page.save",
+          ok: true,
+          ms: 100,
+        }),
+      ].join("\n"),
+    );
+    assert.equal(parsed.steps[0]?.note, "Empty: try search");
+    assert.equal(parsed.steps[1]?.note, undefined);
+    assert.equal(parsed.steps[1]?.line, "click page.save");
+  });
 });
 
 describe("buildRunDetail", () => {

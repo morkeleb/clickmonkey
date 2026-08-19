@@ -69,6 +69,22 @@ export function logLand(
   info.echo?.write(`${formatLiveLine(`land  ${info.url}  page=${info.pageId}  hoppable=${hops}`)}\n`);
 }
 
+export function logBrainDecide(
+  path: string,
+  info: { line: string; note?: string; good?: string },
+): void {
+  const note = info.note?.trim();
+  const good = info.good?.trim();
+  if (!note && !good) return;
+  appendEvent(path, {
+    ts: new Date().toISOString(),
+    type: "brain",
+    line: info.line,
+    ...(note ? { note } : {}),
+    ...(good ? { good } : {}),
+  });
+}
+
 export function logStepStart(
   path: string,
   info: { line: string; pageId: string; phase: string; echo?: { write(chunk: string): unknown } },

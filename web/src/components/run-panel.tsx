@@ -84,6 +84,8 @@ function StepRow({
         {step.ms !== undefined ? <span className="text-[11px] text-zinc-500">{step.ms}ms</span> : null}
       </div>
       <div className={cn("mt-0.5 font-mono text-sm break-all", failed && "text-red-300")}>{step.line}</div>
+      {step.note ? <p className="mt-0.5 text-xs text-zinc-400">{step.note}</p> : null}
+      {step.good ? <p className="mt-0.5 text-xs text-zinc-500">{step.good}</p> : null}
       {step.hops?.map((hop, i) => (
         <HopLine key={`${hop.from}-${hop.to}-${i}`} from={hop.from} to={hop.to} />
       ))}
@@ -255,13 +257,6 @@ function OutlineCard({ outline }: { outline: NonNullable<UiRunDetail["outline"]>
           </ol>
         </div>
       ) : null}
-      {outline.notes.length > 0 ? (
-        <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-zinc-400">
-          {outline.notes.map((note, i) => (
-            <li key={`${i}-${note.slice(0, 24)}`}>{note}</li>
-          ))}
-        </ul>
-      ) : null}
     </div>
   );
 }
@@ -304,26 +299,31 @@ export function RunPanel({ run }: { run: UiRun | undefined }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-6 pt-6 pb-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="size-3 rounded-full" style={{ backgroundColor: runHue(run.hue) }} aria-hidden />
-          <h1 className="text-lg font-semibold">{run.name}</h1>
-          <Badge variant={run.live ? "default" : "secondary"}>{run.live ? "live" : "idle"}</Badge>
-          {error ? <span className="text-xs text-red-400">{error}</span> : null}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          <span>
-            brain <span className="text-foreground">{run.brain ?? "—"}</span>
-          </span>
-          <span>
-            page <span className="font-mono text-foreground">{shown.pageId ?? "—"}</span>
-          </span>
-          <span>
-            <span className="text-foreground">{shown.steps.length}</span> steps
-          </span>
-          <span>
-            <span className="text-foreground">{shown.findingCount}</span> findings
-          </span>
-          <span className="font-mono text-xs">{run.id}</span>
+        <div className="flex items-start gap-3">
+          <span className="mt-1.5 size-3 shrink-0 rounded-full" style={{ backgroundColor: runHue(run.hue) }} aria-hidden />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-lg font-semibold">{run.name}</h1>
+              <Badge variant={run.live ? "default" : "secondary"}>{run.live ? "live" : "idle"}</Badge>
+              {error ? <span className="text-xs text-red-400">{error}</span> : null}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <span>
+                brain <span className="text-foreground">{run.brain ?? "—"}</span>
+              </span>
+              <span>
+                page <span className="font-mono text-foreground">{shown.pageId ?? "—"}</span>
+              </span>
+              <span>
+                <span className="text-foreground">{shown.steps.length}</span> steps
+              </span>
+              <span>
+                <span className="text-foreground">{shown.findingCount}</span> finding
+                {shown.findingCount === 1 ? "" : "s"}
+              </span>
+              <span className="font-mono text-xs">{run.id}</span>
+            </div>
+          </div>
         </div>
         {shown.outline ? <OutlineCard outline={shown.outline} /> : null}
       </div>

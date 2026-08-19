@@ -80,6 +80,8 @@ export const UiRunStep = z
     findingId: z.string().min(1).optional(),
     findingMessage: z.string().min(1).optional(),
     findingSeverity: z.string().min(1).optional(),
+    note: z.string().min(1).optional(),
+    good: z.string().min(1).optional(),
   })
   .strict();
 export type UiRunStep = z.infer<typeof UiRunStep>;

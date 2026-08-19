@@ -47,6 +47,7 @@ export {
   formatLiveLine,
   formatNavLine,
   logLand,
+  logBrainDecide,
   logStepDone,
   logStepStart,
 } from "./executor/nav-log.js";

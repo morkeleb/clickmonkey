@@ -28,6 +28,7 @@ import {
   parseExploreReply,
   PLAN_CONTEXT_MAX,
   pathParentPage,
+  usefulExploreNote,
 } from "../src/brains/explore.js";
 import { formatExplorePlanItemLine } from "../src/schema/ui.js";
 import { PageModel } from "../src/schema/page-model.js";
@@ -455,6 +456,16 @@ describe("default explore pack", () => {
     assert.match(skills, /Set `good`/);
     assert.match(skills, /blurb and required fields/);
     assert.match(DEFAULT_EXPLORE_CHARTER, /Explore .+ with .+ to discover/);
+  });
+});
+
+describe("usefulExploreNote", () => {
+  it("drops placeholder optional copied from the JSON example", () => {
+    assert.equal(usefulExploreNote("optional"), undefined);
+    assert.equal(usefulExploreNote("optional what worked"), undefined);
+    assert.equal(usefulExploreNote("what worked"), undefined);
+    assert.equal(usefulExploreNote("<oracle>: <saw> → <next>"), undefined);
+    assert.equal(usefulExploreNote("Empty: tried empty value in search field"), "Empty: tried empty value in search field");
   });
 });
 
