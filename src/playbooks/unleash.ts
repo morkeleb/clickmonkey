@@ -6,6 +6,7 @@ import { bootRun } from "../executor/boot.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
+import { shouldPersistFinding } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
 import { stopPresence } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
@@ -72,6 +73,7 @@ export async function runUnleash(opts: {
       fence: state.config.fence,
       intro: state.config.intro,
       skip: state.config.skip,
+      inIntro: Boolean(state.inIntro),
     });
 
     let stepsUsed = 0;
@@ -83,7 +85,7 @@ export async function runUnleash(opts: {
       const result = await exec.runLine(decision.line);
       view = result.view;
       stepsUsed += 1;
-      if (result.finding) {
+      if (result.finding && shouldPersistFinding(result.finding.kind)) {
         findings.push(result.finding);
         view = await resetToSeed(exec, state, seedPageId);
       } else if (result.bounced) {

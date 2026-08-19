@@ -4,7 +4,7 @@ import { chat, type ChatClient } from "../brains/chat.js";
 import type { FindingCase } from "../persist/runs.js";
 import { loadPresence, presencePath } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
-import type { UiExploreOutline } from "../schema/ui.js";
+import { formatExplorePlanItemLine, type UiExploreOutline } from "../schema/ui.js";
 import { severityForKind, type FindingSeverity } from "../schema/finding.js";
 import { parseLog } from "../schema/dsl.js";
 import type { QualityReport, QualityPage, QualityIssue, QualityRuntimeEvent } from "../schema/quality.js";
@@ -379,11 +379,7 @@ function renderExploreOutlines(outlines: ReportMeta["outlines"]): string[] {
     if (outline.now) lines.push(`**Now:** ${outline.now}`, "");
     if (outline.plan) {
       lines.push(`**Plan:** ${outline.plan.goal}`, "");
-      for (const item of outline.plan.items) {
-        const mark = item.status === "done" ? "x" : item.status === "now" ? ">" : item.status === "skipped" ? "-" : " ";
-        const page = item.page ? ` (${item.page})` : "";
-        lines.push(`- [${mark}] ${item.title}${page}`);
-      }
+      for (const item of outline.plan.items) lines.push(formatExplorePlanItemLine(item));
       lines.push("");
     }
     if (outline.notes.length > 0) {

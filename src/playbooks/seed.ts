@@ -29,5 +29,6 @@ export async function resetToSeed(
     fence: state.config.fence,
     intro: state.config.intro,
     skip: state.config.skip,
+    inIntro: Boolean(state.inIntro),
   });
 }

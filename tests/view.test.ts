@@ -3,7 +3,14 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { withRun } from "../src/executor/session.js";
-import { buildView, clipContent, CONTENT_MAX, formatView, usefulLabel } from "../src/executor/view.js";
+import {
+  buildView,
+  clipContent,
+  CONTENT_MAX,
+  formatView,
+  includeWalkAction,
+  usefulLabel,
+} from "../src/executor/view.js";
 import { PageModel, View } from "../src/schema/index.js";
 import { serveSite } from "./helpers/fixture-server.js";
 
@@ -127,6 +134,31 @@ describe("formatView", () => {
     assert.match(text, /look:/);
     assert.match(text, /fonts: Arial 16px\/400 \(4\), Times New Roman 20px\/700 \(1\)/);
     assert.match(text, /covered: go ← blocker/);
+  });
+});
+
+describe("includeWalkAction", () => {
+  it("drops nav chrome after intro", () => {
+    assert.equal(includeWalkAction({ inNav: true, hasIntro: true, inIntro: false }), false);
+  });
+
+  it("keeps nav chrome during intro", () => {
+    assert.equal(includeWalkAction({ inNav: true, hasIntro: true, inIntro: true }), true);
+  });
+
+  it("keeps nav chrome when there is no intro", () => {
+    assert.equal(includeWalkAction({ inNav: true, hasIntro: false, inIntro: false }), true);
+    assert.equal(includeWalkAction({ inNav: true }), true);
+  });
+
+  it("always keeps main-pane widgets", () => {
+    assert.equal(includeWalkAction({ inNav: false, hasIntro: true, inIntro: false }), true);
+  });
+
+  it("keeps in-page nav and dialog launchers after intro", () => {
+    assert.equal(includeWalkAction({ inNav: true, inMain: true, hasIntro: true, inIntro: false }), true);
+    assert.equal(includeWalkAction({ inNav: true, opens: true, hasIntro: true, inIntro: false }), true);
+    assert.equal(includeWalkAction({ inNav: true, inMain: false, opens: false, hasIntro: true, inIntro: false }), false);
   });
 });
 
@@ -283,5 +315,110 @@ describe("buildView", () => {
     } finally {
       await close();
     }
+  });
+
+  it("omits nav-landmark actions after intro and still lists pages", async () => {
+    const model = PageModel.parse({
+      schemaVersion: 1,
+      app: "chrome",
+      generation: 0,
+      pages: [
+        {
+          id: "home",
+          path: "/",
+          params: [],
+          ready: { by: "testId", value: "home" },
+          surfaces: [
+            {
+              id: "page",
+              kind: "page",
+              fields: [
+                {
+                  id: "q",
+                  required: false,
+                  type: "text",
+                  by: "testId",
+                  value: "q",
+                  status: "ok",
+                },
+                {
+                  id: "nav_q",
+                  required: false,
+                  type: "text",
+                  by: "testId",
+                  value: "nav-q",
+                  status: "ok",
+                },
+              ],
+              actions: [
+                { id: "projects", by: "testId", value: "projects", status: "ok" },
+                { id: "filters", by: "testId", value: "filters", opens: "filtersDialog", status: "ok" },
+                { id: "invoices_tab", by: "testId", value: "invoices-tab", status: "ok" },
+                { id: "save", by: "testId", value: "save", status: "ok" },
+              ],
+            },
+          ],
+        },
+        {
+          id: "about",
+          path: "/about",
+          params: [],
+          ready: { by: "testId", value: "about" },
+          surfaces: [
+            {
+              id: "page",
+              kind: "page",
+              fields: [],
+              actions: [{ id: "ok", by: "testId", value: "ok", status: "ok" }],
+            },
+          ],
+        },
+      ],
+    });
+    await withRun({}, async ({ page }) => {
+      await page.setContent(`
+        <nav>
+          <input data-testid="nav-q" />
+          <button data-testid="projects">Projects</button>
+          <button data-testid="filters">Filters</button>
+        </nav>
+        <main data-testid="home">
+          <nav>
+            <button data-testid="invoices-tab">Invoices</button>
+          </nav>
+          <input data-testid="q" />
+          <button data-testid="save">Save</button>
+        </main>
+      `);
+      const base = { page, pageId: "home", surfaceStack: ["page"], model };
+      const intro = ["click login.submit"];
+
+      const after = await buildView({ ...base, intro, inIntro: false });
+      assert.equal(after.actions.some((a) => a.id === "projects"), false);
+      assert.equal(after.shown.some((f) => f.id === "nav_q"), false);
+      const filters = after.actions.find((a) => a.id === "filters");
+      assert.ok(filters);
+      assert.equal(filters.opens, "filtersDialog");
+      const tab = after.actions.find((a) => a.id === "invoices_tab");
+      assert.ok(tab);
+      assert.equal(tab.nav, true);
+      const save = after.actions.find((a) => a.id === "save");
+      assert.ok(save);
+      assert.equal(save.nav, undefined);
+      assert.ok(after.shown.some((f) => f.id === "q"));
+      assert.deepEqual(after.pages, ["home", "about"]);
+
+      const during = await buildView({ ...base, intro, inIntro: true });
+      const projects = during.actions.find((a) => a.id === "projects");
+      assert.ok(projects);
+      assert.equal(projects.nav, true);
+      assert.ok(during.shown.some((f) => f.id === "nav_q"));
+      assert.ok(during.actions.some((a) => a.id === "save"));
+
+      const none = await buildView(base);
+      const projectsNone = none.actions.find((a) => a.id === "projects");
+      assert.ok(projectsNone);
+      assert.equal(projectsNone.nav, true);
+    });
   });
 });

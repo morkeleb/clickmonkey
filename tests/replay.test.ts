@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -136,5 +136,25 @@ describe("replayLog", () => {
       rmSync(tmp, { recursive: true, force: true });
       await close();
     }
+  });
+
+  it("does not write a findings folder for an offline unknownId", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "cm-rp-offline-"));
+    const configPath = join(tmp, "clickmonkey.json");
+    const logPath = join(tmp, "missing.log");
+    const outDir = join(tmp, "out");
+    const config = { ...emptyConfig("http://127.0.0.1/"), map: loadModel("valid-home.json") };
+    saveConfig(configPath, config);
+    writeLog(logPath, {
+      schemaVersion: 1,
+      comments: [],
+      steps: [{ kind: "click", surface: "page", id: "does_not_exist" }],
+      usedLocators: {},
+    });
+    const replayed = await replayLog({ config, configPath, logPath, outDir });
+    assert.equal(replayed.ok, false);
+    assert.equal(replayed.findings[0]?.kind, "unknownId");
+    assert.equal(existsSync(join(outDir, "findings")), false);
+    rmSync(tmp, { recursive: true, force: true });
   });
 });

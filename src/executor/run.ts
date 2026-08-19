@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { persistFinding } from "../persist/finding.js";
+import { persistFinding, shouldPersistFinding } from "../persist/finding.js";
 import { touchPresence } from "../persist/presence.js";
 import { persistQualityRuntime } from "../persist/quality.js";
 import { normalizeQualityMessage } from "../schema/quality.js";
@@ -56,6 +56,8 @@ export interface StepResult {
   ok: boolean;
   step: Step;
   finding?: Finding;
+  /** True only when persist minted a new folder (not a dedup or a quiet kind). */
+  findingCreated?: boolean;
   /** Left the leash. Recover and keep walking — not a website finding. */
   bounced?: boolean;
   view: View;
@@ -168,15 +170,18 @@ async function screenshotFinding(
   const stepIndex = state.log.steps.length;
   const kind = partial.kind;
   const id = findingId(stepIndex, kind);
-  mkdirSync(state.outDir, { recursive: true });
-  const liveShot =
-    step?.kind === "screenshot" && state.lastScreenshotPath && existsSync(state.lastScreenshotPath)
-      ? state.lastScreenshotPath
-      : undefined;
-  let screenshotPath = liveShot;
-  if (!screenshotPath) {
-    screenshotPath = join(state.outDir, `.shot-${id}.png`);
-    await state.page.screenshot({ path: screenshotPath }).catch(() => undefined);
+  let screenshotPath: string | undefined;
+  if (shouldPersistFinding(kind)) {
+    mkdirSync(state.outDir, { recursive: true });
+    const liveShot =
+      step?.kind === "screenshot" && state.lastScreenshotPath && existsSync(state.lastScreenshotPath)
+        ? state.lastScreenshotPath
+        : undefined;
+    screenshotPath = liveShot;
+    if (!screenshotPath) {
+      screenshotPath = join(state.outDir, `.shot-${id}.png`);
+      await state.page.screenshot({ path: screenshotPath }).catch(() => undefined);
+    }
   }
   const finding: Finding = {
     schemaVersion: 1,
@@ -185,8 +190,8 @@ async function screenshotFinding(
     severity: severityForKind(kind),
     message: partial.message,
     tapePath: join(state.outDir, "replay.log"),
-    screenshotPath,
     stepIndex,
+    ...(screenshotPath ? { screenshotPath } : {}),
   };
   if ("httpStatus" in partial && partial.httpStatus !== undefined) {
     finding.httpStatus = partial.httpStatus;
@@ -252,8 +257,9 @@ async function finish(
     }
   }
 
-  if (finding) {
-    persistFinding(state.outDir, finding, {
+  let findingCreated = false;
+  if (finding && shouldPersistFinding(finding.kind)) {
+    const persisted = persistFinding(state.outDir, finding, {
       screenshotPath: finding.screenshotPath,
       replayLog: formatLog(
         compactLog(
@@ -272,6 +278,8 @@ async function finish(
         ),
       ),
     });
+    finding = persisted.finding;
+    findingCreated = persisted.created;
     if (step.kind === "screenshot" && finding.screenshotPath) {
       state.lastScreenshotPath = finding.screenshotPath;
     }
@@ -288,6 +296,7 @@ async function finish(
     fence: state.config.fence,
     intro: state.config.intro,
     skip: state.config.skip,
+    inIntro: state.inIntro,
     last: {
       step: formatStep(step),
       ok: !finding,
@@ -301,7 +310,7 @@ async function finish(
     ok: !finding,
     step,
     view,
-    ...(finding ? { finding } : {}),
+    ...(finding ? { finding, findingCreated } : {}),
     ...(bounced ? { bounced: true } : {}),
   };
 }
@@ -418,6 +427,7 @@ export function createExecutor(state: RunState): {
         fence: state.config.fence,
         intro: state.config.intro,
         skip: state.config.skip,
+        inIntro: state.inIntro,
       });
       await dumpVerboseState(state, "land", landView);
     }

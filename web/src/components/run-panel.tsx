@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { UiRun, UiRunDetail, UiRunFinding, UiRunStep } from "@schema/ui";
+import { explorePlanItemMark, formatExplorePlanItemCoverage, type UiRun, type UiRunDetail, type UiRunFinding, type UiRunStep } from "@schema/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -242,15 +242,16 @@ function OutlineCard({ outline }: { outline: NonNullable<UiRunDetail["outline"]>
           <div className="text-[10px] tracking-wide text-zinc-500 uppercase">Plan</div>
           <p className="mt-0.5 text-xs text-zinc-300">{outline.plan.goal}</p>
           <ol className="mt-1 space-y-0.5 text-xs text-zinc-400">
-            {outline.plan.items.map((item) => (
-              <li key={item.id} className={item.status === "now" ? "text-zinc-200" : undefined}>
-                <span className="font-mono text-zinc-500">
-                  {item.status === "done" ? "[x]" : item.status === "now" ? "[>]" : item.status === "skipped" ? "[-]" : "[ ]"}
-                </span>{" "}
-                {item.title}
-                {item.page ? <span className="text-zinc-600"> · {item.page}</span> : null}
-              </li>
-            ))}
+            {outline.plan.items.map((item) => {
+              return (
+                <li key={item.id} className={item.status === "now" ? "text-zinc-200" : undefined}>
+                  <span className="font-mono text-zinc-500">[{explorePlanItemMark(item.status)}]</span>{" "}
+                  {item.title}
+                  {item.page ? <span className="text-zinc-600"> · {item.page}</span> : null}
+                  <span className="text-zinc-600"> — {formatExplorePlanItemCoverage(item)}</span>
+                </li>
+              );
+            })}
           </ol>
         </div>
       ) : null}

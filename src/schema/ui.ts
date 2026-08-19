@@ -98,9 +98,32 @@ export const UiExplorePlanItem = z
     title: z.string().min(1),
     page: z.string().min(1).optional(),
     status: z.enum(["pending", "now", "done", "skipped"]).default("pending"),
+    stepCount: z.number().int().nonnegative().default(0),
+    findingIds: z.array(z.string().min(1)).default([]),
   })
   .strict();
 export type UiExplorePlanItem = z.infer<typeof UiExplorePlanItem>;
+
+export function explorePlanItemMark(status: UiExplorePlanItem["status"]): string {
+  return status === "done" ? "x" : status === "now" ? ">" : status === "skipped" ? "-" : " ";
+}
+
+export function formatExplorePlanItemCoverage(item: UiExplorePlanItem): string {
+  const steps = item.stepCount ?? 0;
+  const ids = item.findingIds ?? [];
+  const stepBit = `${steps} step${steps === 1 ? "" : "s"}`;
+  if (item.status === "pending") return "never started";
+  if (item.status === "skipped") return `skipped, ${stepBit}`;
+  if (item.status === "now") return `in progress, ${stepBit}`;
+  const findings =
+    ids.length > 0 ? `, ${ids.length} finding${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}` : "";
+  return `${stepBit}${findings}`;
+}
+
+export function formatExplorePlanItemLine(item: UiExplorePlanItem): string {
+  const page = item.page ? ` (${item.page})` : "";
+  return `- [${explorePlanItemMark(item.status)}] ${item.title}${page} — ${formatExplorePlanItemCoverage(item)}`;
+}
 
 export const UiExplorePlan = z
   .object({

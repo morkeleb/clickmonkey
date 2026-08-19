@@ -124,6 +124,47 @@ describe("findings report", () => {
     assert.ok(exploreAt > 0 && exploreAt < findingsAt);
   });
 
+  it("renders plan coverage on explore outlines", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: ["r"],
+        outlines: [
+          {
+            runId: "r",
+            outline: {
+              charter: "walk invoicing",
+              notes: [],
+              plan: {
+                goal: "Cover invoicing",
+                items: [
+                  {
+                    id: "1",
+                    title: "Empty name",
+                    page: "invoices",
+                    status: "done",
+                    stepCount: 3,
+                    findingIds: ["fnd_1_uiIssue"],
+                  },
+                  { id: "2", title: "Period close", status: "skipped", stepCount: 10, findingIds: [] },
+                  { id: "3", title: "Credits", status: "now", stepCount: 2, findingIds: [] },
+                  { id: "4", title: "Reports", status: "pending" },
+                ],
+              },
+            },
+          },
+        ],
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /\[x\] Empty name \(invoices\) — 3 steps, 1 finding: fnd_1_uiIssue/);
+    assert.match(md, /\[-\] Period close — skipped, 10 steps/);
+    assert.match(md, /\[>\] Credits — in progress, 2 steps/);
+    assert.match(md, /\[ \] Reports — never started/);
+  });
+
   it("attaches url and path from hops after the step starts", () => {
     const root = mkdtempSync(join(tmpdir(), "cm-rep-ctx-"));
     const runDir = join(root, "runs", "20260818T000000Z-hop");

@@ -9,6 +9,8 @@ import {
   checkExploreLine,
   completeCurrentPlanItem,
   draftExplorePlan,
+  isNewProductFinding,
+  recordPlanStep,
   formatViewForBrain,
   isBrainMissFinding,
   isScreenshotLine,
@@ -30,7 +32,7 @@ import { appendFindingReport } from "../persist/finding.js";
 import { polishPageDescription } from "../surveyor/describe.js";
 import { writeLog } from "../persist/log.js";
 import type { Config } from "../schema/config.js";
-import type { UiExplorePlan } from "../schema/ui.js";
+import { formatExplorePlanItemLine, type UiExplorePlan } from "../schema/ui.js";
 import { severityForKind, type Finding, type FindingSeverity } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
 import type { View } from "../schema/view.js";
@@ -116,9 +118,7 @@ function writeSessionMd(opts: {
     listFindings(bySev.suggestion),
     "## Plan",
     opts.plan
-      ? [`${opts.plan.goal}`, ...opts.plan.items.map((it) => `- [${it.status}] ${it.title}${it.page ? ` (${it.page})` : ""}`)].join(
-          "\n",
-        )
+      ? [`${opts.plan.goal}`, ...opts.plan.items.map((it) => formatExplorePlanItemLine(it))].join("\n")
       : "(none)",
     "## Notes",
     notes,
@@ -238,6 +238,7 @@ export async function runExplore(opts: {
         fence: state.config.fence,
         intro: state.config.intro,
         skip: state.config.skip,
+        inIntro: Boolean(state.inIntro),
       });
 
     const polishHere = async (): Promise<void> => {
@@ -336,18 +337,31 @@ export async function runExplore(opts: {
       recentSteps.push(line);
       if (recentSteps.length > 12) recentSteps.shift();
       itemSteps += 1;
-      const itemFinished =
-        Boolean(decision.done) ||
-        Boolean(result.finding && !isBrainMissFinding(result.finding.kind)) ||
-        itemSteps >= 10;
+      const newProductFinding = isNewProductFinding({
+        finding: result.finding,
+        findingCreated: result.findingCreated,
+        currentFindingIds: plan?.items.find((i) => i.status === "now")?.findingIds,
+      });
+      if (plan) {
+        plan = recordPlanStep(
+          plan,
+          newProductFinding && result.finding ? { findingId: result.finding.id } : undefined,
+        );
+      }
+      const itemFinished = Boolean(decision.done) || newProductFinding || itemSteps >= 10;
       if (plan && itemFinished) {
-        plan = completeCurrentPlanItem(plan, decision.done || result.finding ? "done" : "skipped");
+        plan = completeCurrentPlanItem(plan, decision.done || newProductFinding ? "done" : "skipped");
         itemSteps = 0;
+      }
+      if (plan) {
+        const current = plan.items.find((i) => i.status === "now");
         setPresenceOutline(
           opts.outDir,
           exploreOutlineOf({
             charter,
-            now: plan.items.find((i) => i.status === "now")?.title || "plan complete",
+            now: itemFinished
+              ? current?.title || "plan complete"
+              : [current?.title, decision.note?.trim() || line].filter(Boolean).join(" — "),
             notes: notesOf(brain),
             plan,
           }),
@@ -355,10 +369,12 @@ export async function runExplore(opts: {
       }
       if (result.finding && isBrainMissFinding(result.finding.kind)) {
         refused.add(line);
-      } else if (result.finding) {
+      } else if (newProductFinding && result.finding) {
         findings.push(result.finding);
         const extra = await explainFinding(boundChat, result.finding, view, charter);
         if (extra) appendFindingReport(opts.outDir, result.finding.id, extra);
+        view = await resetToSeed(exec, state, seedPageId);
+      } else if (result.finding) {
         view = await resetToSeed(exec, state, seedPageId);
       } else if (result.bounced) {
         view = await resetToSeed(exec, state, seedPageId);

@@ -139,6 +139,17 @@ export function isBrainMissFinding(kind: string | undefined): boolean {
   return kind === "unknownId" || kind === "unresolvedId";
 }
 
+/** Persist minted a new product folder, not a dedup or a quiet brain miss. */
+export function isNewProductFinding(opts: {
+  finding?: { id: string; kind: string };
+  findingCreated?: boolean;
+  currentFindingIds?: readonly string[];
+}): boolean {
+  if (!opts.finding || !opts.findingCreated) return false;
+  if (isBrainMissFinding(opts.finding.kind)) return false;
+  return !opts.currentFindingIds?.includes(opts.finding.id);
+}
+
 /** True if `line` would continue a 2-step (A B A) or 3-step (A B C A) ping-pong. */
 export function wouldRepeatCycle(recent: readonly string[], line: string): boolean {
   const n = recent.length;
@@ -334,6 +345,16 @@ export function completeCurrentPlanItem(plan: UiExplorePlan, status: "done" | "s
   return { goal: plan.goal, items };
 }
 
+export function recordPlanStep(plan: UiExplorePlan, opts?: { findingId?: string }): UiExplorePlan {
+  const items = plan.items.map((it) => {
+    if (it.status !== "now") return { ...it };
+    const findingIds = [...(it.findingIds ?? [])];
+    if (opts?.findingId && !findingIds.includes(opts.findingId)) findingIds.push(opts.findingId);
+    return { ...it, stepCount: (it.stepCount ?? 0) + 1, findingIds };
+  });
+  return { goal: plan.goal, items };
+}
+
 export function parseExplorePlanReply(raw: string, legalPages: readonly string[]): UiExplorePlan | undefined {
   const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/u, "");
   const start = trimmed.indexOf("{");
@@ -349,6 +370,8 @@ export function parseExplorePlanReply(raw: string, legalPages: readonly string[]
         title: clipText(it.title, 120),
         ...(page && legal.has(page) ? { page } : {}),
         status: (idx === 0 ? "now" : "pending") as "now" | "pending",
+        stepCount: 0,
+        findingIds: [],
       };
     });
     if (items.length < 2) return undefined;

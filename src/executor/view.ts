@@ -18,7 +18,7 @@ import {
   isLiveWidget,
   isPresentWidget,
   pickActable,
-  widgetInNav,
+  widgetWalkContext,
 } from "./locators.js";
 
 /** Keep the snapshot inside a brain's context. Cut on a line boundary. */
@@ -105,6 +105,19 @@ export function clipContent(raw: string): string {
   return `${lastNl > 0 ? cut.slice(0, lastNl) : cut}\n…`;
 }
 
+/** After intro, hide chrome nav (outside main). In-page landmarks and dialog launchers stay legal. */
+export function includeWalkAction(opts: {
+  inNav: boolean;
+  inMain?: boolean;
+  opens?: boolean;
+  inIntro?: boolean;
+  hasIntro?: boolean;
+}): boolean {
+  if (!opts.inNav) return true;
+  if (!(opts.hasIntro && !opts.inIntro)) return true;
+  return Boolean(opts.opens || opts.inMain);
+}
+
 /** Unique and visible right now. Hidden chrome from an earlier inspect is not legal. */
 async function liveActable(
   page: Page,
@@ -177,10 +190,15 @@ export async function buildView(state: {
   fence?: Fence;
   intro?: readonly string[];
   skip?: readonly string[];
+  /** Intro steps are running. Nav chrome stays available for login. */
+  inIntro?: boolean;
+  hasIntro?: boolean;
 }): Promise<View> {
   const stack = state.surfaceStack.length > 0 ? [...state.surfaceStack] : [state.pageId];
   const surfaceId = stack[stack.length - 1] ?? state.pageId;
   const surface = currentSurface(state.model, state.pageId, surfaceId);
+  const hasIntro = state.hasIntro ?? Boolean(state.intro && state.intro.length > 0);
+  const walkOpts = { inIntro: state.inIntro, hasIntro };
 
   const shown: ShownField[] = [];
   const actions: ShownAction[] = [];
@@ -189,6 +207,9 @@ export async function buildView(state: {
     for (const field of surface.fields) {
       if (field.status !== "ok") continue;
       if (!(await liveActable(state.page, surface, field))) continue;
+      const loc = widgetLocator(state.page, surface, locatorOf(field));
+      const ctx = await widgetWalkContext(loc, state.page);
+      if (!includeWalkAction({ inNav: ctx.inNav, inMain: ctx.inMain, ...walkOpts })) continue;
       const value = await liveFieldValue(state.page, surface, field);
       const label = await liveLabel(state.page, surface, field);
       shown.push({
@@ -203,9 +224,13 @@ export async function buildView(state: {
       if (action.status !== "ok") continue;
       if (isLeaveAction(action) || matchesSkip(action, state.skip)) continue;
       if (!(await liveActable(state.page, surface, action))) continue;
-      const label = await liveLabel(state.page, surface, action);
       const loc = widgetLocator(state.page, surface, locatorOf(action));
-      const inNav = await widgetInNav(loc, state.page);
+      const ctx = await widgetWalkContext(loc, state.page);
+      if (!includeWalkAction({ inNav: ctx.inNav, inMain: ctx.inMain, opens: Boolean(action.opens), ...walkOpts })) {
+        continue;
+      }
+      const inNav = ctx.inNav;
+      const label = await liveLabel(state.page, surface, action);
       actions.push({
         id: action.id,
         ...(action.opens ? { opens: action.opens } : {}),

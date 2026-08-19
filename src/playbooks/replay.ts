@@ -6,7 +6,6 @@ import { bootRun, locatorsFromModel } from "../executor/boot.js";
 import { createExecutor } from "../executor/run.js";
 import { readyKey, widgetKey } from "../executor/steps.js";
 import { withRun } from "../executor/session.js";
-import { persistFinding } from "../persist/finding.js";
 import { readLog, writeLog } from "../persist/log.js";
 import { stopPresence } from "../persist/presence.js";
 import { replayableSteps } from "./compact.js";
@@ -69,7 +68,6 @@ export async function replayLog(opts: {
   const check = offlineIdsExist(model, keysFromSteps(steps));
   if (!check.ok) {
     const finding = unknownIdFinding(opts.logPath, check.missing);
-    persistFinding(opts.outDir, finding);
     return { ok: false, findings: [finding] };
   }
 

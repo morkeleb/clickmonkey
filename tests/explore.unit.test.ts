@@ -17,7 +17,10 @@ import {
   parseExplorePlanReply,
   completeCurrentPlanItem,
   formatExplorePlan,
+  recordPlanStep,
+  isNewProductFinding,
 } from "../src/brains/explore.js";
+import { formatExplorePlanItemLine } from "../src/schema/ui.js";
 import type { ChatMessage } from "../src/brains/chat.js";
 import { saveConfig } from "../src/persist/config.js";
 import { Config } from "../src/schema/config.js";
@@ -62,6 +65,77 @@ describe("explore plan", () => {
     assert.equal(next.items[0]?.status, "done");
     assert.equal(next.items[1]?.status, "now");
     assert.match(formatExplorePlan(next), /\[x\].*Empty invoice name/);
+  });
+
+  it("records stepCount and findingIds on the current item", () => {
+    const plan = parseExplorePlanReply(
+      JSON.stringify({
+        goal: "Walk invoicing",
+        items: [
+          { title: "Empty invoice name", page: "home" },
+          { title: "Runtime errors" },
+        ],
+      }),
+      ["home"],
+    );
+    assert.ok(plan);
+    const stepped = recordPlanStep(recordPlanStep(plan), { findingId: "fnd_2_uiIssue" });
+    assert.equal(stepped.items[0]?.stepCount, 2);
+    assert.deepEqual(stepped.items[0]?.findingIds, ["fnd_2_uiIssue"]);
+    assert.equal(stepped.items[1]?.stepCount, 0);
+    assert.deepEqual(stepped.items[1]?.findingIds, []);
+    const done = completeCurrentPlanItem(stepped, "done");
+    assert.equal(done.items[0]?.status, "done");
+    assert.equal(done.items[0]?.stepCount, 2);
+    assert.deepEqual(done.items[0]?.findingIds, ["fnd_2_uiIssue"]);
+    assert.equal(done.items[1]?.status, "now");
+    assert.equal(done.items[1]?.stepCount, 0);
+  });
+
+  it("treats only a newly persisted product finding as new", () => {
+    const finding = { id: "fnd_1_uiIssue", kind: "uiIssue" };
+    assert.equal(isNewProductFinding({ finding, findingCreated: true }), true);
+    assert.equal(isNewProductFinding({ finding, findingCreated: false }), false);
+    assert.equal(isNewProductFinding({ finding, findingCreated: true, currentFindingIds: ["fnd_1_uiIssue"] }), false);
+    assert.equal(isNewProductFinding({ finding: { id: "fnd_0_unknownId", kind: "unknownId" }, findingCreated: true }), false);
+  });
+
+  it("formats plan coverage the same way as the findings report", () => {
+    assert.equal(
+      formatExplorePlanItemLine({
+        id: "1",
+        title: "Empty name",
+        page: "invoices",
+        status: "done",
+        stepCount: 3,
+        findingIds: ["fnd_1_uiIssue"],
+      }),
+      "- [x] Empty name (invoices) — 3 steps, 1 finding: fnd_1_uiIssue",
+    );
+    assert.equal(
+      formatExplorePlanItemLine({
+        id: "2",
+        title: "Period close",
+        status: "skipped",
+        stepCount: 10,
+        findingIds: [],
+      }),
+      "- [-] Period close — skipped, 10 steps",
+    );
+    assert.equal(
+      formatExplorePlanItemLine({
+        id: "3",
+        title: "Credits",
+        status: "now",
+        stepCount: 2,
+        findingIds: [],
+      }),
+      "- [>] Credits — in progress, 2 steps",
+    );
+    assert.equal(
+      formatExplorePlanItemLine({ id: "4", title: "Reports", status: "pending", stepCount: 0, findingIds: [] }),
+      "- [ ] Reports — never started",
+    );
   });
 });
 

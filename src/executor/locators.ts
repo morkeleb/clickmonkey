@@ -197,9 +197,18 @@ export async function isLiveWidget(loc: PwLocator, page: Page): Promise<boolean>
   return false;
 }
 
-export async function widgetInNav(loc: PwLocator, page: Page): Promise<boolean> {
+export async function widgetWalkContext(
+  loc: PwLocator,
+  page: Page,
+): Promise<{ inNav: boolean; inMain: boolean }> {
   const el = (await pickActable(loc, page)) ?? loc.first();
   return el
-    .evaluate((node) => Boolean((node as { closest(s: string): unknown }).closest("nav, [role='navigation']")))
-    .catch(() => false);
+    .evaluate((node) => {
+      const n = node as { closest(s: string): unknown };
+      return {
+        inNav: Boolean(n.closest("nav, [role='navigation']")),
+        inMain: Boolean(n.closest("main, [role='main']")),
+      };
+    })
+    .catch(() => ({ inNav: false, inMain: false }));
 }

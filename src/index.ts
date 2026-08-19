@@ -108,6 +108,7 @@ export {
   isScreenshotLine,
   isVisualCharter,
   isBrainMissFinding,
+  isNewProductFinding,
   legalOpenIds,
   wouldRepeatCycle,
   probeExploreChat,
