@@ -49,5 +49,10 @@ describe("writeBundle", () => {
       frozen.runs.map((r) => r.live),
       [false, false],
     );
+    const withNotice = freezeSnapshot({
+      runs: [{ live: true, id: "a" }],
+      notice: { level: "warn" as const, title: "stale", message: "restart" },
+    });
+    assert.equal("notice" in withNotice, false);
   });
 });

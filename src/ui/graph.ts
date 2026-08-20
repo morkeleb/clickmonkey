@@ -1,6 +1,6 @@
 import { sameLedgerPage } from "../schema/testability.js";
 import type { PageModelDraft } from "../schema/page-model.js";
-import type { QualityReport } from "../schema/quality.js";
+import { qualityLedgerItems, type QualityReport } from "../schema/quality.js";
 import type { TestabilityReport } from "../schema/testability.js";
 import type { FindingCase } from "../persist/runs.js";
 import type { UiGraph, UiGraphEdge, UiGraphNode } from "../schema/ui.js";
@@ -40,7 +40,7 @@ export function badgeCounts(opts: {
   }
   const q = opts.quality?.pages.find((p) => sameLedgerPage(p, key));
   if (q) {
-    for (const i of [...q.html, ...q.a11y, ...q.visual, ...q.runtime]) {
+    for (const i of qualityLedgerItems(q)) {
       if (i.severity === "error") red += 1;
       else yellow += 1;
     }

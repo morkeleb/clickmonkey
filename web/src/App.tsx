@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ConfigPanel } from "@/components/config-panel";
+import { FaultPanel, NoticeBanner } from "@/components/fault-panel";
 import { MapCanvas } from "@/components/map-canvas";
 import { NodeSheet } from "@/components/node-sheet";
 import { ReportMarkdown } from "@/components/report-markdown";
@@ -10,7 +11,7 @@ import { useSnapshot } from "@/lib/api";
 import { readMainFromLocation, writeMainToLocation, type MainView } from "@/lib/view";
 
 export function App() {
-  const { snapshot, error } = useSnapshot();
+  const { snapshot, error, fault } = useSnapshot();
   const [view, setViewState] = useState<MainView>(() => readMainFromLocation());
   const [nodeId, setNodeId] = useState<string | null>(null);
 
@@ -36,6 +37,7 @@ export function App() {
   }, [view, reportId]);
 
   if (!snapshot) {
+    if (fault) return <FaultPanel fault={fault} />;
     return (
       <div className="flex h-svh items-center justify-center bg-background text-sm text-muted-foreground">
         {error ? `Waiting for CLI server… (${error})` : "Connecting…"}
@@ -45,7 +47,9 @@ export function App() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-svh overflow-hidden bg-background text-foreground print:h-auto print:overflow-visible">
+      <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground print:h-auto print:overflow-visible">
+        {snapshot.notice ? <NoticeBanner notice={snapshot.notice} /> : null}
+        <div className="flex min-h-0 flex-1 overflow-hidden print:overflow-visible">
         <Sidebar
           snapshot={snapshot}
           view={view.kind === "report" && !view.id && reportId ? { kind: "report", id: reportId } : view}
@@ -72,6 +76,7 @@ export function App() {
             if (!open) setNodeId(null);
           }}
         />
+        </div>
       </div>
     </TooltipProvider>
   );

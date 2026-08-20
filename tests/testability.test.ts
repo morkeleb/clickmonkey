@@ -51,6 +51,8 @@ describe("testability audit", () => {
           result.testability.issues.some((i) => i.code === "duplicateName" && i.severity === "warn"),
           JSON.stringify(result.testability.issues),
         );
+        const dup = result.testability.issues.find((i) => i.code === "duplicateName");
+        assert.match(dup?.where ?? "", /Settings/i);
         const pageSurf = result.model.pages[0]?.surfaces.find((s) => s.kind === "page");
         const settings = pageSurf?.actions.find((a) => a.name === "Settings" || a.id.includes("settings"));
         assert.ok(settings, "settings action minted");
@@ -84,6 +86,8 @@ describe("testability audit", () => {
           result.testability.issues.some((i) => i.code === "missingStableId" && i.severity === "warn"),
           JSON.stringify(result.testability.issues),
         );
+        const missing = result.testability.issues.find((i) => i.code === "missingStableId" && i.tag === "a");
+        assert.match(missing?.where ?? "", /Account/);
       });
     } finally {
       await close();

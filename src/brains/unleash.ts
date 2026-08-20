@@ -149,6 +149,78 @@ export function stayActions(view: View, pages?: readonly Page[]): ShownAction[] 
   );
 }
 
+const SORT_TOGGLE_ID = /sorted[_-]?(ascending|descending)/i;
+const PAGINATION_ID = /(^|_)(previous|next|prev)$/i;
+
+export function isComboboxAction(action: ShownAction): boolean {
+  if ((action.role ?? "").toLowerCase() === "combobox") return true;
+  return action.id.toLowerCase().startsWith("combobox_");
+}
+
+export function isSortToggleAction(action: ShownAction): boolean {
+  if (SORT_TOGGLE_ID.test(action.id)) return true;
+  const label = (action.label ?? "").toLowerCase();
+  return /\bsort(ed|ing)?\b/.test(label) && /\b(asc|desc|switch|toggle|order)\b/.test(label);
+}
+
+export function isPaginationAction(action: ShownAction): boolean {
+  return PAGINATION_ID.test(action.id);
+}
+
+/** Filters, sort, pagination — list chrome, not a commit form. */
+export function isListChrome(action: ShownAction): boolean {
+  return isComboboxAction(action) || isSortToggleAction(action) || isPaginationAction(action);
+}
+
+export function looksLikeSearchField(field: ShownField): boolean {
+  const id = field.id.toLowerCase();
+  if (/^(q|query|search)$/.test(id)) return true;
+  const blob = `${id} ${field.label ?? ""}`.toLowerCase();
+  return /\b(search|query|filter|find)\b/.test(blob);
+}
+
+/** In-page list chrome; landmark dropdowns and row links do not count. */
+function listSignalPool(view: View): ShownAction[] {
+  return view.actions.filter(
+    (a) => !a.nav && !looksLikeNavWidget(a) && !isLeaveAction(a) && !isDismissAction(a),
+  );
+}
+
+function hasComboKind(view: View, pool: readonly ShownAction[]): boolean {
+  if (pool.some(isComboboxAction)) return true;
+  return view.shown.some((f) => f.type === "select");
+}
+
+/** List kinds except pager — wizard Next must not count as a second signal. */
+export function nonPagerListKinds(view: View, pages?: readonly Page[]): number {
+  const pool = listSignalPool(view);
+  let n = 0;
+  if (hasComboKind(view, pool)) n += 1;
+  if (pool.some(isSortToggleAction)) n += 1;
+  if (view.shown.some(looksLikeSearchField)) n += 1;
+  if (listRowActions(view, pages).length > 0) n += 1;
+  return n;
+}
+
+/** Distinct in-page list-chrome kinds (combo, sort, search, row, pager). */
+export function listModeScore(view: View, pages?: readonly Page[]): number {
+  const n = nonPagerListKinds(view, pages);
+  return listSignalPool(view).some(isPaginationAction) ? n + 1 : n;
+}
+
+export function listChromeActions(actions: readonly ShownAction[]): ShownAction[] {
+  return actions.filter(isListChrome);
+}
+
+/** Record hops, including in-page links not yet stamped with `opens`. */
+export function listRowActions(view: View, pages?: readonly Page[]): ShownAction[] {
+  return legalUnleashActions(view, pages).filter((a) => {
+    if (isListChrome(a) || a.nav) return false;
+    if (isPageHop(a, pages, view.pages)) return true;
+    return looksLikeNavWidget(a);
+  });
+}
+
 export function hopPage(view: View, rng: () => number): BrainDecision {
   const pages = view.pages ?? [];
   const others = pages.filter((id) => id !== view.page);
@@ -195,6 +267,18 @@ export const FORM_DISMISS_RATE = 0.2;
 export const RECENT_CLICK_WINDOW = 8;
 /** Skip a widget after this many appearances in the window. */
 export const RECENT_CLICK_LIMIT = 2;
+/** List filters/sort/pager: one sample each, then a row. */
+export const LIST_CHROME_LIMIT = 1;
+
+/**
+ * Group widgets that are the same control with a swapped id (asc↔desc, prev↔next).
+ * Idempotent on already-canonical keys (`~sort`, `~page`).
+ */
+export function clickKey(id: string): string {
+  if (SORT_TOGGLE_ID.test(id)) return "~sort";
+  if (PAGINATION_ID.test(id)) return "~page";
+  return id;
+}
 
 export function rememberClick(recent: readonly string[], id: string, cap = RECENT_CLICK_WINDOW): string[] {
   const next = [...recent, id];
@@ -202,18 +286,34 @@ export function rememberClick(recent: readonly string[], id: string, cap = RECEN
 }
 
 export function clickCountInRecent(recent: readonly string[], id: string): number {
-  return recent.filter((x) => x === id).length;
+  const key = clickKey(id);
+  return recent.filter((x) => clickKey(x) === key).length;
 }
 
-/** Drop widgets already clicked twice in the recent window, and the immediately previous click. */
+/** Two (or one) keys filling the recent window — a ping-pong, not exploration. */
+export function loopingClickKeys(recent: readonly string[]): Set<string> {
+  if (recent.length < 4) return new Set();
+  const keys = recent.slice(-RECENT_CLICK_WINDOW).map(clickKey);
+  const unique = new Set(keys);
+  if (unique.size <= 2) return unique;
+  return new Set();
+}
+
+/** Drop the last click-key, two-key loops, and ids already at `limit` in the window. */
 export function freshClicks(
   actions: readonly ShownAction[],
   recent: readonly string[] | undefined,
   limit = RECENT_CLICK_LIMIT,
 ): ShownAction[] {
   if (!recent || recent.length === 0) return [...actions];
-  const last = recent[recent.length - 1];
-  return actions.filter((a) => a.id !== last && clickCountInRecent(recent, a.id) < limit);
+  const lastKey = clickKey(recent[recent.length - 1]!);
+  const looping = loopingClickKeys(recent);
+  return actions.filter((a) => {
+    const key = clickKey(a.id);
+    if (key === lastKey) return false;
+    if (looping.has(key)) return false;
+    return clickCountInRecent(recent, a.id) < limit;
+  });
 }
 
 /** `opens` that points at this surface is a mis-stamp, not a hop. */
@@ -221,14 +321,37 @@ export function isSelfOpen(action: { opens?: string }, surface?: string): boolea
   return Boolean(surface && action.opens === surface);
 }
 
+function hasPagerPair(actions: readonly ShownAction[]): boolean {
+  const pool = actions.filter((a) => !a.nav && !looksLikeNavWidget(a) && isPaginationAction(a));
+  const hasPrev = pool.some((a) => /(^|_)(previous|prev)$/i.test(a.id));
+  const hasNext = pool.some((a) => /(^|_)next$/i.test(a.id));
+  return hasPrev && hasNext;
+}
+
+/** Wizard Next stays submit; a Previous+Next pair with other list chrome is pagination. */
+function skipPaginationSubmit(actions: readonly ShownAction[], view?: View): boolean {
+  if (view) {
+    const n = nonPagerListKinds(view);
+    return n >= 2 || (n >= 1 && hasPagerPair(view.actions));
+  }
+  const pool = actions.filter((a) => !a.nav && !looksLikeNavWidget(a));
+  const comboOrSort = pool.some(isComboboxAction) || pool.some(isSortToggleAction);
+  if (pool.some(isComboboxAction) && pool.some(isSortToggleAction)) return true;
+  return comboOrSort && hasPagerPair(actions);
+}
+
 /** Submit/save/create/add on this surface — not a page hop and not a delete. */
 export function formSubmitAction(
   actions: readonly ShownAction[],
   surface?: string,
+  view?: View,
 ): ShownAction | undefined {
+  const listPager = skipPaginationSubmit(actions, view);
   return actions.find((a) => {
     if (a.opens && !isSelfOpen(a, surface)) return false;
     if (isDismissAction(a) || isLeaveAction(a)) return false;
+    if (isSortToggleAction(a)) return false;
+    if (isPaginationAction(a) && listPager) return false;
     const blob = `${a.id} ${a.label ?? ""}`;
     if (DESTRUCTIVE.test(blob)) return false;
     if (isWriteAction(a)) return true;
@@ -249,7 +372,7 @@ export function decideForm(
   fill: (type: ShownField["type"]) => string,
 ): BrainDecision | undefined {
   const fields = view.shown;
-  const submit = formSubmitAction(actions, view.surface);
+  const submit = formSubmitAction(actions, view.surface, view);
   if (fields.length === 0 || !submit) return undefined;
   const empty = fields.filter((f) => !f.value.trim() || f.value === "••••");
   const toFill = empty.slice(0, FORM_BURST_MAX);

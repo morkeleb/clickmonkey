@@ -38,7 +38,10 @@ function findPage(
 /** Replace html/a11y for this path+origin; keep existing runtime and visual. */
 export function persistQualitySnapshot(
   configPath: string,
-  page: Omit<QualityPage, "runtime" | "visual" | "visualHash"> & { runtime?: QualityRuntimeEvent[] },
+  page: Omit<QualityPage, "runtime" | "visual" | "visualHash" | "seo"> & {
+    runtime?: QualityRuntimeEvent[];
+    seo?: QualityIssue[];
+  },
 ): QualityReport {
   ensureWorkspace(configPath);
   const path = qualityPath(configPath);
@@ -50,6 +53,7 @@ export function persistQualitySnapshot(
       foundAt: page.foundAt,
       html: page.html,
       a11y: page.a11y,
+      seo: page.seo ?? [],
       visual: prev?.visual ?? [],
       runtime: page.runtime ?? prev?.runtime ?? [],
       ...(page.origin ? { origin: page.origin } : {}),
@@ -78,6 +82,7 @@ export function persistQualityRuntime(
       foundAt: prev?.foundAt ?? now,
       html: prev?.html ?? [],
       a11y: prev?.a11y ?? [],
+      seo: prev?.seo ?? [],
       visual: prev?.visual ?? [],
       runtime: mergeRuntimeEvents(prev?.runtime ?? [], [event]),
       ...(key.origin ? { origin: key.origin } : {}),
@@ -90,13 +95,20 @@ export function persistQualityRuntime(
   });
 }
 
+export function lastQualityPage(
+  configPath: string,
+  key: { path: string; origin?: string },
+): QualityPage | undefined {
+  const path = qualityPath(configPath);
+  if (!existsSync(path)) return undefined;
+  return findPage(loadQualityReport(path), key);
+}
+
 export function lastHtmlHash(
   configPath: string,
   key: { path: string; origin?: string },
 ): string | undefined {
-  const path = qualityPath(configPath);
-  if (!existsSync(path)) return undefined;
-  return findPage(loadQualityReport(path), key)?.htmlHash;
+  return lastQualityPage(configPath, key)?.htmlHash;
 }
 
 /** Replace visual for this path+origin; keep html, a11y, runtime, htmlHash. */
@@ -120,6 +132,7 @@ export function persistQualityVisual(
       foundAt: page.foundAt,
       html: prev?.html ?? [],
       a11y: prev?.a11y ?? [],
+      seo: prev?.seo ?? [],
       visual: mergeQualityIssues(page.visual),
       runtime: prev?.runtime ?? [],
       visualHash: page.visualHash,

@@ -222,6 +222,7 @@ export async function inspectAndSaveConfig(
   }
   await recordPageLedgers(configPath, page, result.testability, {
     appOrigin: originOfHref(config.url),
+    seo: config.seo,
   });
   const saved = persistSharedMap(configPath, result.model);
   return { ...result, model: saved.map };

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -24,6 +24,38 @@ describe("ui server", () => {
       assert.equal(missing.status, 404);
       const text = await missing.text();
       assert.doesNotMatch(text, /<!doctype/i);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("returns a copyable restart fault when the snapshot cannot be built", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-ui-fault-"));
+    const cfg = join(dir, "clickmonkey.json");
+    saveConfig(cfg, emptyConfig("http://127.0.0.1:4173/"));
+    mkdirSync(join(dir, "clickmonkey"), { recursive: true });
+    writeFileSync(
+      join(dir, "clickmonkey", "testability.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        pages: [
+          {
+            path: "/",
+            foundAt: "t",
+            insufficient: false,
+            issues: [{ code: "notARealCode", severity: "warn", tag: "div" }],
+          },
+        ],
+      })}\n`,
+    );
+    const server = await startUiServer({ configPath: cfg, port: 0, open: false });
+    try {
+      const res = await fetch(`${server.url}api/snapshot`);
+      assert.equal(res.status, 503);
+      const body = (await res.json()) as { error: boolean; copy: string; hint: string };
+      assert.equal(body.error, true);
+      assert.match(body.copy, /clickmonkey ui --port 4174/);
+      assert.match(body.hint, /Hard-refresh/);
     } finally {
       await server.close();
     }

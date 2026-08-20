@@ -82,7 +82,7 @@ export const View = z
       .strict()
       .optional(),
     last: ViewLast.optional(),
-    mode: z.enum(["form", "nav"]).optional(),
+    mode: z.enum(["form", "list", "nav"]).optional(),
   })
   .strict();
 export type View = z.infer<typeof View>;

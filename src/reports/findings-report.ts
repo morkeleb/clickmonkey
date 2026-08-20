@@ -12,7 +12,7 @@ import { formatExplorePlanItemLine, type UiExploreOutline } from "../schema/ui.j
 import { severityForKind, type FindingSeverity } from "../schema/finding.js";
 import { parseLog } from "../schema/dsl.js";
 import type { QualityReport, QualityPage, QualityIssue, QualityRuntimeEvent } from "../schema/quality.js";
-import { joinWheres, qualityPageCounts } from "../schema/quality.js";
+import { joinWheres, qualityLedgerItems, qualityPageCounts } from "../schema/quality.js";
 import { sameLedgerPage, type TestabilityReport, type TestabilityPage } from "../schema/testability.js";
 import { wrapClickmonkeyFence } from "./fences.js";
 
@@ -195,7 +195,7 @@ export function isNoisyQualityMessage(message: string): boolean {
 function pageHasQuality(testability?: TestabilityPage, quality?: QualityPage): boolean {
   if (testability && testability.issues.length > 0) return true;
   if (!quality) return false;
-  return quality.html.length + quality.a11y.length + quality.visual.length + quality.runtime.length > 0;
+  return qualityLedgerItems(quality).length > 0;
 }
 
 function qualityHeading(page: { path: string; origin?: string }): string {
@@ -214,14 +214,14 @@ export function renderQualitySection(
     if (p.issues.length > 0) add(p);
   }
   for (const p of quality?.pages ?? []) {
-    if (p.html.length + p.a11y.length + p.visual.length + p.runtime.length > 0) add(p);
+    if (qualityLedgerItems(p).length > 0) add(p);
   }
   if (keys.length === 0) return [];
 
   const lines = [
     "## Quality",
     "",
-    "Recorded while walking — HTML (html-validate), accessibility (axe-core), testability, and JavaScript always; visual layout extras when a vision model ran.",
+    "Recorded while walking — HTML (html-validate), accessibility (axe-core), testability, and JavaScript always; SEO (title/description/OG) on public paths; visual layout extras when a vision model ran.",
     "",
   ];
   keys.sort((a, b) => {
@@ -246,10 +246,11 @@ export function renderQualitySection(
       lines.push("**Testability**", "");
       for (const i of t.issues) {
         const extra = [i.role, i.inputType].filter(Boolean).join(" ");
+        const loc = i.where ? ` · ${i.where}` : "";
         lines.push(
           extra
-            ? `- \`${i.code}\` ${i.severity} · ${i.tag} ${extra}`
-            : `- \`${i.code}\` ${i.severity} · ${i.tag}`,
+            ? `- \`${i.code}\` ${i.severity} · ${i.tag} ${extra}${loc}`
+            : `- \`${i.code}\` ${i.severity} · ${i.tag}${loc}`,
         );
       }
       lines.push("");
@@ -262,6 +263,11 @@ export function renderQualitySection(
     if (q && q.a11y.length > 0) {
       lines.push("**Accessibility**", "");
       for (const i of q.a11y) lines.push(formatIssueLine(i));
+      lines.push("");
+    }
+    if (q && (q.seo ?? []).length > 0) {
+      lines.push("**SEO**", "");
+      for (const i of q.seo) lines.push(formatIssueLine(i));
       lines.push("");
     }
     if (q && q.visual.length > 0) {
@@ -335,6 +341,14 @@ const RULE_HINTS: Record<string, string> = {
   "link-name": "Link has no discernible text (empty or icon-only).",
   "aria-hidden-focus": "aria-hidden node is still focusable — leftover overlay, or svg with tabindex.",
   "document-title": "This route never sets document.title.",
+  "document-title-placeholder": "Title is still a framework default (Create Next App, Vite, …).",
+  "document-title-long": "Title is longer than ~60 characters and will truncate in search results.",
+  "meta-description": "Add a unique meta description for search snippets and social fallback.",
+  "og-title": "Open Graph title missing — shares will look untitled.",
+  "og-description": "Open Graph description missing — shares get no summary.",
+  "og-image": "Open Graph image missing — shares get no preview picture.",
+  "og-url": "Open Graph url missing.",
+  "canonical": "No rel=canonical — duplicates can split search ranking.",
   "element-required-content": "Required child missing (often head without title).",
   "attribute-allowed-values":
     "Invalid attribute value. React's default form action=javascript:... is framework, not copy.",
@@ -486,12 +500,13 @@ export function renderQualityDigest(
         severity: i.severity === "block" ? "error" : "warning",
         message: i.tag,
         count: 1,
+        ...(i.where ? { where: i.where } : {}),
       });
     }
   }
   for (const p of quality?.pages ?? []) {
     const pageKey = qualityHeading(p);
-    for (const i of [...p.html, ...p.a11y, ...p.visual, ...p.runtime]) {
+    for (const i of qualityLedgerItems(p)) {
       add(pageKey, {
         source: i.source,
         rule: i.rule,

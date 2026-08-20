@@ -222,11 +222,25 @@ describe("TestabilityReport schema", () => {
           path: "/",
           foundAt: "2026-08-14T00:00:00.000Z",
           insufficient: true,
-          issues: [{ code: "opaqueControl", severity: "block", tag: "button" }],
+          issues: [{ code: "opaqueControl", severity: "block", tag: "button", where: 'button "Save"' }],
         },
       ],
     });
     assert.equal(report.pages[0]?.issues[0]?.code, "opaqueControl");
+    assert.equal(report.pages[0]?.issues[0]?.where, 'button "Save"');
+    const extras = TestabilityReport.parse({
+      schemaVersion: 1,
+      pages: [
+        {
+          path: "/",
+          foundAt: "2026-08-14T00:00:00.000Z",
+          insufficient: false,
+          issues: [{ code: "opaqueControl", severity: "warn", tag: "button", futureField: true }],
+        },
+      ],
+    });
+    assert.equal(extras.pages[0]?.issues[0]?.code, "opaqueControl");
+    assert.equal("futureField" in (extras.pages[0]?.issues[0] ?? {}), false);
     assert.throws(() =>
       TestabilityReport.parse({
         schemaVersion: 1,
@@ -281,6 +295,15 @@ describe("View schema", () => {
       mode: "nav",
     });
     assert.equal(withMode.mode, "nav");
+    const withList = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [],
+      mode: "list",
+    });
+    assert.equal(withList.mode, "list");
     assert.throws(() =>
       View.parse({
         page: "home",
@@ -379,6 +402,13 @@ describe("config", () => {
     });
     assert.equal(cfg.brain?.model, "llama3.2");
     assert.equal(emptyConfig("http://127.0.0.1:4173/").brain, undefined);
+    assert.equal(emptyConfig("http://127.0.0.1:4173/").seo, undefined);
+    const seo = Config.parse({
+      url: "http://127.0.0.1:4173/",
+      map: { schemaVersion: 1, app: "fixture", pages: [] },
+      seo: { private: ["/app"] },
+    });
+    assert.deepEqual(seo.seo?.private, ["/app"]);
     assert.throws(() =>
       Config.parse({
         url: "http://127.0.0.1:4173/",

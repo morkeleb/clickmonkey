@@ -215,6 +215,30 @@ export const UiReport = z
   .strict();
 export type UiReport = z.infer<typeof UiReport>;
 
+/** Shown on the live UI when the snapshot is stale or failed. Not a finding. */
+export const UiNotice = z
+  .object({
+    level: z.enum(["warn", "error"]),
+    title: z.string().min(1),
+    message: z.string().min(1),
+    hint: z.string().min(1).optional(),
+    detail: z.string().min(1).optional(),
+  })
+  .strict();
+export type UiNotice = z.infer<typeof UiNotice>;
+
+export const UiFault = z
+  .object({
+    error: z.literal(true),
+    title: z.string().min(1),
+    message: z.string().min(1),
+    hint: z.string().min(1),
+    detail: z.string().min(1).optional(),
+    copy: z.string().min(1),
+  })
+  .strict();
+export type UiFault = z.infer<typeof UiFault>;
+
 export const UiSnapshot = z
   .object({
     schemaVersion: z.literal(1),
@@ -225,6 +249,7 @@ export const UiSnapshot = z
     quality: QualityReport,
     runs: z.array(UiRun),
     reports: z.array(UiReport).default([]),
+    notice: UiNotice.optional(),
   })
   .strict();
 export type UiSnapshot = z.infer<typeof UiSnapshot>;

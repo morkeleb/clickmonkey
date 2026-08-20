@@ -8,6 +8,19 @@ import {
   persistTestabilityPage,
   testabilityReportPath,
 } from "../src/persist/testability.js";
+import { dedupeIssues } from "../src/schema/testability.js";
+
+describe("dedupeIssues", () => {
+  it("joins distinct where examples on the same code", () => {
+    const issues = dedupeIssues([
+      { code: "missingStableId", severity: "warn", tag: "button", role: "button", where: 'button "Settings"' },
+      { code: "missingStableId", severity: "warn", tag: "button", role: "button", where: 'button "New"' },
+      { code: "missingStableId", severity: "warn", tag: "button", role: "button", where: 'button "Settings"' },
+    ]);
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0]?.where, 'button "Settings" · button "New"');
+  });
+});
 
 describe("testability report", () => {
   it("replaces the entry for a path and stays out of the map", () => {

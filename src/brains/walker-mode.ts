@@ -9,11 +9,16 @@ import {
   freshClicks,
   hopPage,
   legalUnleashActions,
+  isListChrome,
+  LIST_CHROME_LIMIT,
+  listChromeActions,
+  listModeScore,
+  listRowActions,
   pickAction,
   stayActions,
 } from "./unleash.js";
 
-export type WalkerModeName = "form" | "nav";
+export type WalkerModeName = "form" | "list" | "nav";
 
 export interface WalkerMode {
   name: WalkerModeName;
@@ -34,7 +39,7 @@ function hasSurfaceSubmit(ctx: BrainContext): boolean {
   const { view } = ctx;
   const legal = legalUnleashActions(view, ctx.pages);
   return Boolean(
-    formSubmitAction(legal, view.surface) ?? formSubmitAction(view.actions, view.surface),
+    formSubmitAction(legal, view.surface, view) ?? formSubmitAction(view.actions, view.surface, view),
   );
 }
 
@@ -102,10 +107,56 @@ function decideFormMode(
   return fillEmptyBurst(view, fill) ?? decideNav(ctx, rng, fill);
 }
 
+function decideList(
+  ctx: BrainContext,
+  rng: () => number,
+  fill: (type: ShownField["type"]) => string,
+): BrainDecision {
+  const { view } = ctx;
+  const leftover = fillEmptyBurst(view, fill);
+  if (leftover) return { ...leftover, note: "list" };
+
+  const recent = ctx.recentClicks ?? [];
+  const stay = stayActions(view, ctx.pages);
+  const chrome = freshClicks(listChromeActions(stay), recent, LIST_CHROME_LIMIT);
+  if (chrome.length > 0) {
+    return { line: formatClick(view.surface, pick(chrome, rng)), note: "list chrome" };
+  }
+
+  const rows = freshClicks(listRowActions(view, ctx.pages), recent);
+  if (rows.length > 0) {
+    return { line: formatClick(view.surface, pick(rows, rng)), note: "list row" };
+  }
+
+  const other = freshClicks(
+    stay.filter((a) => !isListChrome(a)),
+    recent,
+  );
+  if (other.length > 0) {
+    return { line: formatClick(view.surface, pick(other, rng)), note: "list stay" };
+  }
+
+  const legal = freshClicks(
+    legalUnleashActions(view, ctx.pages).filter((a) => !isListChrome(a)),
+    recent,
+  );
+  if (legal.length > 0) {
+    return { line: formatClick(view.surface, pick(legal, rng)), note: "list stay" };
+  }
+
+  return hopOrChromeFallback(view, rng);
+}
+
 const formMode: WalkerMode = {
   name: "form",
   detect: (ctx) => ctx.view.shown.length > 0 && hasSurfaceSubmit(ctx),
   decide: decideFormMode,
+};
+
+const listMode: WalkerMode = {
+  name: "list",
+  detect: (ctx) => !hasSurfaceSubmit(ctx) && listModeScore(ctx.view, ctx.pages) >= 2,
+  decide: decideList,
 };
 
 const navMode: WalkerMode = {
@@ -115,7 +166,7 @@ const navMode: WalkerMode = {
 };
 
 /** Ordered detectors: first match owns legal moves. Not a Markov chain. */
-export const UNLEASH_MODES: WalkerMode[] = [formMode, navMode];
+export const UNLEASH_MODES: WalkerMode[] = [formMode, listMode, navMode];
 
 export function detectWalkerMode(ctx: BrainContext): WalkerMode {
   return UNLEASH_MODES.find((m) => m.detect(ctx)) ?? navMode;

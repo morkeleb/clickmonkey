@@ -471,6 +471,7 @@ describe("default explore pack", () => {
     assert.match(skills, /Sight is context/);
     assert.match(skills, /Never invent widget ids from Sight/);
     assert.match(skills, /Prefer in-page buttons/);
+    assert.match(skills, /In list, sample each filter/);
     assert.match(DEFAULT_EXPLORE_CHARTER, /Explore .+ with .+ to discover/);
   });
 });
@@ -1041,8 +1042,35 @@ describe("createExploreBrain", () => {
     const decision = await brain.decide({ view: viewOf(), stepsUsed: 1 });
     assert.match(prompt, /Mode: nav/);
     assert.doesNotMatch(prompt, /Mode: form/);
+    assert.doesNotMatch(prompt, /Mode: list/);
     assert.doesNotMatch(prompt, /finish the form or local button/);
     assert.equal(decision.mode, "nav");
+  });
+
+  it("stamps Mode: list for a filter bar", async () => {
+    let prompt = "";
+    const brain = createExploreBrain({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n");
+        return JSON.stringify({ line: "click page.combobox_status" });
+      },
+      charter: "walk the list",
+      skills: "one step",
+      startedAt: Date.now(),
+    });
+    const view = viewOf({
+      shown: [{ id: "schema_key", value: "x", type: "text" }],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "combobox_readiness", role: "combobox" },
+        { id: "button_sorted_descending__switch_to_ascending" },
+      ],
+    });
+    const decision = await brain.decide({ view, stepsUsed: 1 });
+    assert.match(prompt, /Mode: list/);
+    assert.match(prompt, /Sample each filter, sort, and page control once/);
+    assert.doesNotMatch(prompt, /finish the form or local button/);
+    assert.equal(decision.mode, "list");
   });
 });
 

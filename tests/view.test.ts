@@ -136,6 +136,24 @@ describe("formatView", () => {
     assert.match(text, /covered: go ← blocker/);
   });
 
+  it("prints testability where next to the code", () => {
+    const view = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [],
+      testability: {
+        insufficient: false,
+        issues: [
+          { code: "missingStableId", severity: "warn", tag: "button", role: "button", where: 'button "Settings"' },
+        ],
+      },
+    });
+    const text = formatView(view);
+    assert.match(text, /missingStableId  button  button  button "Settings"/);
+  });
+
   it("prints walker mode after page when set", () => {
     const form = View.parse({
       page: "home",
@@ -156,6 +174,15 @@ describe("formatView", () => {
       mode: "nav",
     });
     assert.match(formatView(nav), /^mode: nav$/m);
+    const list = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [{ id: "combobox_status" }],
+      mode: "list",
+    });
+    assert.match(formatView(list), /^mode: list$/m);
     const unset = View.parse({
       page: "home",
       surface: "page",

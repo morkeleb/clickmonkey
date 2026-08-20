@@ -49,6 +49,8 @@ export {
 export type { ParsedVisualReply, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
 export { validateHtml } from "./surveyor/html.js";
 export { scanA11y } from "./surveyor/a11y.js";
+export { scanSeo, seoIsPrivate, issuesFromMeta } from "./surveyor/seo.js";
+export type { PageMeta } from "./surveyor/seo.js";
 export { auditVisible, formatTestabilityLine } from "./surveyor/audit.js";
 export type { InspectResult, SurveyorContext } from "./surveyor/inspect.js";
 export { captureStepShot } from "./executor/steps.js";
@@ -148,11 +150,15 @@ export {
   formatClick,
   rememberClick,
   freshClicks,
+  clickKey,
+  isListChrome,
+  listModeScore,
   LANDMARK_BIAS,
   FORM_BURST_MAX,
   FORM_DISMISS_RATE,
   RECENT_CLICK_WINDOW,
   RECENT_CLICK_LIMIT,
+  LIST_CHROME_LIMIT,
 } from "./brains/unleash.js";
 export { detectWalkerMode, UNLEASH_MODES } from "./brains/walker-mode.js";
 export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";

@@ -53,6 +53,7 @@ export function attachInspectAfterStep(state: RunState): void {
       if (!s.replay) {
         await recordPageLedgers(s.configPath, s.page, r.testability, {
           appOrigin: originOfHref(s.config.url),
+          seo: s.config.seo,
         });
       }
     } else {
@@ -134,6 +135,7 @@ export async function bootRun(
     if (!state.replay) {
       await recordPageLedgers(state.configPath, handle.page, inspected.testability, {
         appOrigin: originOfHref(state.config.url),
+        seo: state.config.seo,
       });
     }
   } else if (state.configPath) {

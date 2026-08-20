@@ -57,6 +57,9 @@ function IssueList({ issues }: { issues: TestabilityIssue[] }) {
             {issue.role ? ` · ${issue.role}` : ""}
             {issue.inputType ? ` · ${issue.inputType}` : ""}
           </div>
+          {issue.where ? (
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Where: {issue.where}</p>
+          ) : null}
         </li>
       ))}
     </ul>
@@ -200,14 +203,19 @@ export function NodeSheet({
                   <div>
                     <QualityGroup title="HTML" items={ledger.quality.html} />
                     <QualityGroup title="Accessibility" items={ledger.quality.a11y} />
+                    <QualityGroup title="SEO" items={ledger.quality.seo ?? []} />
                     {ledger.quality.visual.length > 0 ? (
                       <QualityGroup title="Visual" items={ledger.quality.visual} />
                     ) : ledger.quality.visualHash ? (
                       <p className="mb-3 text-sm text-muted-foreground">Visual: scanned, no extras.</p>
                     ) : null}
                     <QualityGroup title="Runtime" items={ledger.quality.runtime} />
-                    {ledger.quality.html.length + ledger.quality.a11y.length + ledger.quality.visual.length + ledger.quality.runtime.length === 0 &&
-                    !ledger.quality.visualHash ? (
+                    {ledger.quality.html.length +
+                      ledger.quality.a11y.length +
+                      (ledger.quality.seo ?? []).length +
+                      ledger.quality.visual.length +
+                      ledger.quality.runtime.length ===
+                      0 && !ledger.quality.visualHash ? (
                       <p className="text-sm text-muted-foreground">No quality issues.</p>
                     ) : null}
                   </div>

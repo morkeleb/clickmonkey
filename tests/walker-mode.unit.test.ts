@@ -23,10 +23,10 @@ function burstText(ctx: BrainContext, rng: () => number): string {
 }
 
 describe("walker modes", () => {
-  it("lists form then nav", () => {
+  it("lists form then list then nav", () => {
     assert.deepEqual(
       UNLEASH_MODES.map((m) => m.name),
-      ["form", "nav"],
+      ["form", "list", "nav"],
     );
   });
 
@@ -142,6 +142,158 @@ describe("walker modes", () => {
     assert.doesNotMatch(dismissText, /link_|open |create|button_stay/);
   });
 
+  it("detects list on a filter bar with comboboxes, sort, and pager", () => {
+    const view = viewOf({
+      page: "payloads",
+      pages: ["home", "payloads", "payload_row_1"],
+      shown: [{ id: "schema_key", value: "x", type: "text" }],
+      actions: [
+        { id: "combobox_status", role: "combobox", label: "Status" },
+        { id: "combobox_readiness", role: "combobox", label: "Readiness" },
+        { id: "button_sorted_descending__switch_to_ascending", label: "Sorted descending, switch to ascending" },
+        { id: "button_next", label: "Next" },
+        { id: "link_overview", role: "link", nav: true, opens: "home" },
+        { id: "link_row_1", role: "link", opens: "payload_row_1" },
+      ],
+    });
+    const ctx = { view, stepsUsed: 0 };
+    assert.equal(detectWalkerMode(ctx).name, "list");
+    const d = decideUnleash(ctx, () => 0);
+    assert.equal(d.mode, "list");
+    assert.match(d.line, /^click page\.combobox_/);
+  });
+
+  it("detects list on a filter plus Previous/Next without treating Next as submit", () => {
+    const view = viewOf({
+      page: "runs",
+      pages: ["home", "runs"],
+      shown: [],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "button_previous", label: "Previous" },
+        { id: "button_next", label: "Next" },
+      ],
+    });
+    assert.equal(detectWalkerMode({ view, stepsUsed: 0 }).name, "list");
+    assert.doesNotMatch(decideUnleash({ view, stepsUsed: 0 }, () => 0).line, /button_next/);
+  });
+
+  it("keeps a wizard with dropdowns and Next as form", () => {
+    const view = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [
+        { id: "combobox_country", role: "combobox" },
+        { id: "combobox_state", role: "combobox" },
+        { id: "button_next", label: "Next" },
+      ],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow" };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    assert.match(burstText(ctx, () => 0.5), /click page\.button_next/);
+  });
+
+  it("keeps two settings comboboxes as nav", () => {
+    const view = viewOf({
+      actions: [
+        { id: "combobox_theme", role: "combobox" },
+        { id: "combobox_language", role: "combobox" },
+      ],
+    });
+    assert.equal(detectWalkerMode({ view, stepsUsed: 0 }).name, "nav");
+  });
+
+  it("keeps a single combobox as nav", () => {
+    const view = viewOf({
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "button_expand" },
+      ],
+    });
+    assert.equal(detectWalkerMode({ view, stepsUsed: 0 }).name, "nav");
+  });
+
+  it("keeps form when fields, filters, and a real submit share a surface", () => {
+    const view = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "combobox_readiness", role: "combobox" },
+        { id: "submit" },
+      ],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow" };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.5);
+    assert.match(text, /click page\.submit/);
+  });
+
+  it("samples list chrome once then opens a row instead of flipping sort", () => {
+    const view = viewOf({
+      page: "payloads",
+      pages: ["home", "payloads", "payload_row_1"],
+      shown: [{ id: "schema_key", value: "x", type: "text" }],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "combobox_readiness", role: "combobox" },
+        { id: "combobox_has_unresolved_refs", role: "combobox" },
+        { id: "combobox_sort_by", role: "combobox" },
+        { id: "button_sorted_descending__switch_to_ascending" },
+        { id: "button_sorted_ascending__switch_to_descending" },
+        { id: "button_previous", label: "Previous" },
+        { id: "button_next", label: "Next" },
+        { id: "link_overview", role: "link", nav: true, opens: "home" },
+        { id: "link_row_1", role: "link", opens: "payload_row_1" },
+      ],
+    });
+    const recent: string[] = [];
+    const lines: string[] = [];
+    const notes: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const d = decideUnleash({ view, stepsUsed: i, recentClicks: recent }, () => 0);
+      assert.equal(d.mode, "list");
+      const line = d.line;
+      lines.push(line);
+      notes.push(d.note ?? "");
+      const id = line.match(/^click page\.(.+)$/)?.[1];
+      if (id) recent.push(id);
+    }
+    const chrome = lines.filter((l) => /combobox_|sorted_|button_previous|button_next/.test(l));
+    const rows = lines.filter((l) => l.includes("link_row_1"));
+    const hops = lines.filter((l) => l.startsWith("open "));
+    assert.ok(chrome.length <= 6, `chrome ${chrome.join(", ")}`);
+    assert.equal(new Set(chrome.filter((l) => l.includes("sorted_"))).size, 1);
+    assert.ok(rows.length >= 1, `lines ${lines.join(" | ")}`);
+    assert.ok(hops.length >= 1, `never hopped: ${lines.join(" | ")}`);
+    assert.ok(notes.includes("list chrome"));
+    assert.ok(notes.includes("list row"));
+  });
+
+  it("opens an in-page row link that has no mapped opens after sampling chrome", () => {
+    const view = viewOf({
+      page: "payloads",
+      pages: ["home", "payloads"],
+      shown: [{ id: "schema_key", value: "x", type: "text" }],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "button_sorted_descending__switch_to_ascending" },
+        { id: "link_row_1", role: "link" },
+      ],
+    });
+    const recent: string[] = [];
+    const lines: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const d = decideUnleash({ view, stepsUsed: i, recentClicks: recent }, () => 0);
+      assert.equal(d.mode, "list");
+      lines.push(d.line);
+      const id = d.line.match(/^click page\.(.+)$/)?.[1];
+      if (id) recent.push(id);
+    }
+    assert.ok(
+      lines.some((l) => l.includes("link_row_1")),
+      `never opened row: ${lines.join(" | ")}`,
+    );
+  });
+
   it("never emits a form-style submit burst in nav mode", () => {
     const view = viewOf({
       shown: [{ id: "q", value: "", type: "text" }],
@@ -213,5 +365,16 @@ describe("formatExploreVisit", () => {
     assert.equal(nav.mode, "nav");
     assert.match(nav.formatted, /^mode: nav$/m);
     assert.deepEqual(nav.legalOpen, []);
+
+    const list = formatExploreVisit({
+      view: viewOf({
+        actions: [
+          { id: "combobox_status", role: "combobox" },
+          { id: "button_sorted_descending__switch_to_ascending" },
+        ],
+      }),
+    });
+    assert.equal(list.mode, "list");
+    assert.match(list.formatted, /^mode: list$/m);
   });
 });

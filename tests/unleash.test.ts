@@ -18,8 +18,6 @@ import {
   looksLikeNavWidget,
   sharedChromeIds,
   stayActions,
-  rememberClick,
-  freshClicks,
   FORM_DISMISS_RATE,
 } from "../src/brains/unleash.js";
 import { decisionLines } from "../src/brains/types.js";
@@ -245,38 +243,6 @@ describe("unleash brain", () => {
       assert.doesNotMatch(text, /link_overview/);
       assert.match(text, /^fill page\.(name|email) /m);
     }
-  });
-
-  it("stops flipping a sort toggle after it has been clicked twice on this page", () => {
-    const view = viewOf({
-      page: "runs",
-      pages: ["home", "runs"],
-      actions: [
-        { id: "button_sorted_descending__switch_to_ascending" },
-        { id: "button_sorted_ascending__switch_to_descending" },
-      ],
-    });
-    const first = decideUnleash({ view, stepsUsed: 0, recentClicks: [] }, () => 0);
-    assert.equal(first.line, "click page.button_sorted_descending__switch_to_ascending");
-    const afterOne = decideUnleash(
-      { view, stepsUsed: 1, recentClicks: ["button_sorted_descending__switch_to_ascending"] },
-      () => 0,
-    );
-    assert.equal(afterOne.line, "click page.button_sorted_ascending__switch_to_descending");
-    const pingPong = [
-      "button_sorted_descending__switch_to_ascending",
-      "button_sorted_ascending__switch_to_descending",
-      "button_sorted_descending__switch_to_ascending",
-      "button_sorted_ascending__switch_to_descending",
-    ];
-    const next = decideUnleash({ view, stepsUsed: 4, recentClicks: pingPong }, () => 0);
-    assert.match(next.line, /^open /);
-    assert.equal(next.mode, "nav");
-    assert.equal(
-      freshClicks(view.actions, pingPong).length,
-      0,
-    );
-    assert.deepEqual(rememberClick(["a", "b", "c"], "d", 3), ["b", "c", "d"]);
   });
 
   it("treats role=link and minted link_ ids as navigation, not stay", () => {

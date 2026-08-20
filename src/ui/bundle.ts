@@ -10,9 +10,12 @@ import { buildUiSnapshot } from "./snapshot.js";
 const SKIP_DIR = new Set(["verbose", "node_modules", ".git"]);
 const COPY_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 
-export function freezeSnapshot<T extends { runs: Array<{ live: boolean }> }>(snapshot: T): T {
+export function freezeSnapshot<T extends { runs: Array<{ live: boolean }>; notice?: unknown }>(
+  snapshot: T,
+): T {
+  const { notice: _notice, ...rest } = snapshot;
   return {
-    ...snapshot,
+    ...(rest as T),
     runs: snapshot.runs.map((run) => ({ ...run, live: false })),
   };
 }

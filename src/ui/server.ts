@@ -12,8 +12,10 @@ import { fileURLToPath } from "node:url";
 import { runsDir, workspaceDir, WORKSPACE_DIR } from "../persist/workspace.js";
 import type { UiEvent, UiEventType } from "../schema/ui.js";
 import { isSafeReportId, readReport } from "../persist/reports.js";
+import { formatUiFault, snapshotFailNotice, sourceNewerThanStarted, staleUiNotice } from "./fault.js";
 import { buildRunDetail, isSafeRunId } from "./run-detail.js";
 import { buildUiSnapshot } from "./snapshot.js";
+import { UiSnapshot, type UiSnapshot as UiSnapshotT } from "../schema/ui.js";
 
 export const UI_DEFAULT_PORT = 4174;
 const HEARTBEAT_MS = 15_000;
@@ -131,9 +133,24 @@ function serveFile(res: ServerResponse, filePath: string): void {
   }
 }
 
+function decorateSnapshot(snapshot: UiSnapshotT, startedAtMs: number, fail?: unknown): UiSnapshotT {
+  const notice = fail
+    ? snapshotFailNotice(fail)
+    : sourceNewerThanStarted(startedAtMs)
+      ? staleUiNotice()
+      : undefined;
+  if (!notice) {
+    if (!snapshot.notice) return snapshot;
+    const { notice: _drop, ...rest } = snapshot;
+    return UiSnapshot.parse(rest);
+  }
+  return UiSnapshot.parse({ ...snapshot, notice });
+}
+
 export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
   const configPath = resolve(opts.configPath);
   const port = opts.port ?? UI_DEFAULT_PORT;
+  const startedAtMs = Date.now();
   const clients = new Set<ServerResponse>();
   const watchers: FSWatcher[] = [];
   let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -150,14 +167,17 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
     return lastSnapshot;
   };
 
-  const broadcast = (type: UiEventType): void => {
-    let snapshot = lastSnapshot;
+  const liveSnapshot = (): { snapshot?: UiSnapshotT; fail?: unknown } => {
     try {
-      snapshot = snapshotNow();
-    } catch {
-      if (!lastSnapshot) return;
-      snapshot = lastSnapshot;
+      return { snapshot: decorateSnapshot(snapshotNow(), startedAtMs) };
+    } catch (err) {
+      if (!lastSnapshot) return { fail: err };
+      return { snapshot: decorateSnapshot(lastSnapshot, startedAtMs, err), fail: err };
     }
+  };
+
+  const broadcast = (type: UiEventType): void => {
+    const { snapshot } = liveSnapshot();
     if (!snapshot) return;
     const event: UiEvent = { type, snapshot };
     for (const client of clients) writeSse(client, event);
@@ -272,17 +292,13 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
     }
 
     if (pathname === "/api/snapshot") {
-      try {
-        const snapshot = snapshotNow();
+      const { snapshot, fail } = liveSnapshot();
+      if (snapshot) {
         send(res, 200, `${JSON.stringify(snapshot)}\n`, "application/json; charset=utf-8");
-      } catch (err) {
-        send(
-          res,
-          500,
-          err instanceof Error ? err.message : String(err),
-          "text/plain; charset=utf-8",
-        );
+        return;
       }
+      const fault = formatUiFault(fail);
+      send(res, 503, `${JSON.stringify(fault)}\n`, "application/json; charset=utf-8");
       return;
     }
 
@@ -294,13 +310,8 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
         "X-Accel-Buffering": "no",
       });
       res.write(":\n\n");
-      let snapshot = lastSnapshot;
-      try {
-        snapshot = snapshotNow();
-      } catch {
-        // keep last good snapshot
-      }
-      writeSse(res, { type: "hello", snapshot });
+      const { snapshot } = liveSnapshot();
+      writeSse(res, snapshot ? { type: "hello", snapshot } : { type: "hello" });
       clients.add(res);
       const heartbeat = setInterval(() => {
         res.write(":\n\n");

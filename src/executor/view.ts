@@ -267,7 +267,12 @@ export async function buildView(state: {
 
   const issues = [...audit.issues];
   if (look.covered.length > 0) {
-    issues.push({ code: "occludedWidget", severity: "warn", tag: "widget" });
+    issues.push({
+      code: "occludedWidget",
+      severity: "warn",
+      tag: "widget",
+      where: look.covered.map((c) => `${c.id} ← ${c.by}`).slice(0, 3).join(" · "),
+    });
   }
   const testabilityIssues = dedupeIssues(issues);
 
@@ -365,7 +370,10 @@ export function formatView(view: View): string {
     const shownIssues = view.testability.issues.slice(0, 20);
     for (const issue of shownIssues) {
       const extra = [issue.role, issue.inputType].filter(Boolean).join(" ");
-      lines.push(extra ? `  ${issue.code}  ${issue.tag}  ${extra}` : `  ${issue.code}  ${issue.tag}`);
+      const loc = issue.where ? `  ${issue.where}` : "";
+      lines.push(
+        extra ? `  ${issue.code}  ${issue.tag}  ${extra}${loc}` : `  ${issue.code}  ${issue.tag}${loc}`,
+      );
     }
     if (view.testability.issues.length > shownIssues.length) {
       lines.push(`  … ${view.testability.issues.length - shownIssues.length} more`);

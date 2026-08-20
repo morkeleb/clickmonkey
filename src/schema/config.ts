@@ -12,6 +12,14 @@ export type Fence = z.infer<typeof Fence>;
 export const WritePolicy = z.enum(["validationOnly", "allow"]);
 export type WritePolicy = z.infer<typeof WritePolicy>;
 
+/** Pathname prefixes that skip title/description/OG checks. `"/"` matches every page. */
+export const SeoConfig = z
+  .object({
+    private: z.array(z.string().min(1)).default([]),
+  })
+  .strict();
+export type SeoConfig = z.infer<typeof SeoConfig>;
+
 export const BrainConfig = z
   .object({
     baseUrl: z.string().url(),
@@ -104,6 +112,7 @@ export const LeashFile = z
     map: PageModelDraft.optional(),
     brain: BrainConfig.optional(),
     vision: VisionConfig.optional(),
+    seo: SeoConfig.optional(),
   })
   .strict();
 export type LeashFile = z.infer<typeof LeashFile>;
@@ -121,6 +130,7 @@ export const Config = z
     map: PageModelDraft,
     brain: BrainConfig.optional(),
     vision: VisionConfig.optional(),
+    seo: SeoConfig.optional(),
   })
   .strict();
 export type Config = z.infer<typeof Config>;

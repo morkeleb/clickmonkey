@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import type { UiEvent, UiSnapshot } from "@schema/ui";
-import { fetchFirstJson, publicUrl } from "@/lib/paths";
+import type { UiEvent, UiFault, UiSnapshot } from "@schema/ui";
+import { faultFromHttpError } from "@/lib/fault";
+import { fetchFirstJson, publicUrl, UiHttpError } from "@/lib/paths";
 
 const EVENT_TYPES = ["hello", "map", "quality", "testability", "run", "nav"] as const;
 
@@ -13,9 +14,11 @@ function readSnapshot(raw: unknown): UiSnapshot | undefined {
 export function useSnapshot(): {
   snapshot: UiSnapshot | null;
   error: string | null;
+  fault: UiFault | null;
 } {
   const [snapshot, setSnapshot] = useState<UiSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fault, setFault] = useState<UiFault | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,11 +32,17 @@ export function useSnapshot(): {
         if (!cancelled) {
           setSnapshot(data);
           setError(null);
+          setFault(null);
         }
         return true;
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "snapshot failed");
+          const next =
+            err instanceof UiHttpError
+              ? faultFromHttpError(err.status, err.body)
+              : faultFromHttpError(0, err instanceof Error ? err.message : "snapshot failed");
+          setFault(next);
+          setError(next.copy);
         }
         return false;
       }
@@ -46,6 +55,7 @@ export function useSnapshot(): {
         if (next && !cancelled) {
           setSnapshot(next);
           setError(null);
+          setFault(null);
         }
       } catch {
         /* ignore malformed SSE payloads */
@@ -85,6 +95,7 @@ export function useSnapshot(): {
         staticMode = true;
         setSnapshot(frozen);
         setError(null);
+        setFault(null);
       } catch {
         const ok = await loadSnapshot();
         if (ok && !cancelled) connect();
@@ -105,5 +116,5 @@ export function useSnapshot(): {
     };
   }, []);
 
-  return { snapshot, error };
+  return { snapshot, error, fault };
 }

@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import type { Page } from "playwright";
-import { lastHtmlHash, persistQualitySnapshot } from "../persist/quality.js";
+import { lastQualityPage, persistQualitySnapshot } from "../persist/quality.js";
 import { persistTestabilityPage } from "../persist/testability.js";
+import type { SeoConfig } from "../schema/config.js";
+import { qualityIssuesEqual, type QualityIssue } from "../schema/quality.js";
 import type { TestabilityIssue } from "../schema/testability.js";
 import { scanA11y } from "./a11y.js";
 import { validateHtml } from "./html.js";
 import { ledgerOrigin, pathnameOf } from "./ready.js";
+import { scanSeo, seoIsPrivate } from "./seo.js";
 
 export function pathOfPage(page: Page): string {
   try {
@@ -24,7 +27,7 @@ export async function recordPageLedgers(
   configPath: string,
   page: Page,
   testability: { insufficient: boolean; issues: TestabilityIssue[] },
-  opts?: { appOrigin?: string },
+  opts?: { appOrigin?: string; seo?: SeoConfig },
 ): Promise<void> {
   const path = pathOfPage(page);
   const origin = ledgerOrigin(page.url(), opts?.appOrigin);
@@ -43,8 +46,30 @@ export async function recordPageLedgers(
     return;
   }
   const htmlHash = hashHtml(html);
-  if (lastHtmlHash(configPath, { path, ...(origin ? { origin } : {}) }) === htmlHash) return;
+  const key = { path, ...(origin ? { origin } : {}) };
+  const scanPublicMeta = !seoIsPrivate(path, opts?.seo);
+  const prev = lastQualityPage(configPath, key);
+  if (prev?.htmlHash === htmlHash) {
+    try {
+      const seo = await seoForHashHit(page, scanPublicMeta, prev.seo);
+      if (seo === undefined) return;
+      persistQualitySnapshot(configPath, {
+        path,
+        foundAt,
+        htmlHash,
+        html: prev.html,
+        a11y: prev.a11y,
+        seo,
+        ...(origin ? { origin } : {}),
+      });
+    } catch {
+      // scanners must not stall a walk
+    }
+    return;
+  }
   try {
+    const scanned = scanPublicMeta ? await scanSeo(page) : [];
+    const seoIssues = scanned === undefined ? (prev?.seo ?? []) : scanned;
     const [htmlIssues, a11yIssues] = await Promise.all([validateHtml(html), scanA11y(page)]);
     persistQualitySnapshot(configPath, {
       path,
@@ -52,9 +77,23 @@ export async function recordPageLedgers(
       htmlHash,
       html: htmlIssues,
       a11y: a11yIssues,
+      seo: seoIssues,
       ...(origin ? { origin } : {}),
     });
   } catch {
     // scanners must not stall a walk
   }
+}
+
+/** `undefined` = keep disk as-is (failed scan or unchanged). */
+async function seoForHashHit(
+  page: Page,
+  scanPublicMeta: boolean,
+  prevSeo: QualityIssue[] | undefined,
+): Promise<QualityIssue[] | undefined> {
+  if (!scanPublicMeta) return (prevSeo ?? []).length > 0 ? [] : undefined;
+  const scanned = await scanSeo(page);
+  if (scanned === undefined) return undefined;
+  if (qualityIssuesEqual(prevSeo, scanned)) return undefined;
+  return scanned;
 }

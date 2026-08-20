@@ -337,6 +337,7 @@ describe("quality ledger", () => {
     assert.match(md, /^## Quality/m);
     assert.match(md, /html-validate/);
     assert.match(md, /axe-core/);
+    assert.match(md, /SEO \(title\/description\/OG\) on public paths/);
     assert.match(md, /visual layout extras when a vision model ran/);
     assert.doesNotMatch(md, /No LLM/);
     assert.match(md, /`opaqueControl` block/);
@@ -345,6 +346,41 @@ describe("quality ledger", () => {
     assert.match(md, /\*\*Visual\*\*/);
     assert.match(md, /`overlap` warning — cards overlap the footer/);
     assert.match(md, /`console.error` error — cm-quality-error/);
+    const seoOnly = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "2026-08-18T00:00:00.000Z",
+        runIds: ["sess"],
+        qualityFull: true,
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/about",
+              foundAt: "t",
+              html: [],
+              a11y: [],
+              seo: [
+                {
+                  source: "seo",
+                  rule: "meta-description",
+                  severity: "warning",
+                  message: "Missing meta description",
+                  count: 1,
+                },
+              ],
+              visual: [],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(seoOnly, /`\/about`/);
+    assert.match(seoOnly, /\*\*SEO\*\*/);
+    assert.match(seoOnly, /`meta-description` warning/);
     const digest = renderFindingsReport(
       [],
       {

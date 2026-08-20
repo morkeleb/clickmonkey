@@ -1,6 +1,7 @@
-import { Printer } from "lucide-react";
+import { Check, Copy, Printer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { copyReportToClipboard } from "@/lib/report-clipboard";
 import { renderReportHtml } from "@/lib/markdown";
 import { fetchFirstJson } from "@/lib/paths";
 
@@ -16,11 +17,13 @@ type ReportPayload = {
 export function ReportMarkdown({ reportId }: { reportId: string }) {
   const [report, setReport] = useState<ReportPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "failed">("idle");
 
   useEffect(() => {
     let cancelled = false;
     setReport(null);
     setError(null);
+    setCopyState("idle");
     void (async () => {
       try {
         const enc = encodeURIComponent(reportId);
@@ -57,6 +60,28 @@ export function ReportMarkdown({ reportId }: { reportId: string }) {
             {report.runIds.length > 0 ? report.runIds.join(", ") : "runs unknown"}
           </div>
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={copyState === "copying"}
+          title="Copy report text and screenshots (paste into Grok)"
+          onClick={() => {
+            setCopyState("copying");
+            void copyReportToClipboard(report.markdown)
+              .then(() => {
+                setCopyState("copied");
+                window.setTimeout(() => setCopyState("idle"), 2000);
+              })
+              .catch(() => {
+                setCopyState("failed");
+                window.setTimeout(() => setCopyState("idle"), 2500);
+              });
+          }}
+        >
+          {copyState === "copied" ? <Check /> : <Copy />}
+          {copyState === "copying" ? "Copying…" : copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy failed" : "Copy"}
+        </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
           <Printer />
           Print

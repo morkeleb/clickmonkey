@@ -20,6 +20,9 @@ function generatedId(id: string): boolean {
   return false;
 }
 
+/** Shared with the in-page audit so testability and quality `where` match. */
+export const NAMED_WHERE_ATTRS = ["aria-label", "alt", "title", "name", "placeholder"] as const;
+
 export function compactSelector(sel: string): string {
   const parts = sel
     .split(/\s*>\s*/)
@@ -30,13 +33,17 @@ export function compactSelector(sel: string): string {
 
 export function describeFromHtml(html: string): string | undefined {
   const tag = html.match(/^<\s*([a-zA-Z][a-zA-Z0-9:-]*)/)?.[1]?.toLowerCase();
-  const testid = attr(html, "data-testid") ?? attr(html, "data-test-id") ?? attr(html, "data-test") ?? attr(html, "data-cy");
-  if (testid) return `${tag ?? "el"}[data-testid="${clip(testid, 40)}"]`;
+  const hooks = ["data-testid", "data-test-id", "data-test", "data-cy"] as const;
+  for (const name of hooks) {
+    const hook = attr(html, name);
+    if (hook) return `${tag ?? "el"}[${name}="${clip(hook, 40)}"]`;
+  }
   const id = attr(html, "id");
   if (id && !generatedId(id)) return `#${clip(id, 40)}`;
-  const named =
-    attr(html, "aria-label") ?? attr(html, "alt") ?? attr(html, "title") ?? attr(html, "name") ?? attr(html, "placeholder");
-  if (named && tag) return `${tag} "${clip(named, 40)}"`;
+  for (const name of NAMED_WHERE_ATTRS) {
+    const named = attr(html, name);
+    if (named && tag) return `${tag} "${clip(named, 40)}"`;
+  }
   const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   if (text && tag) return `${tag} "${clip(text, 40)}"`;
   const href = attr(html, "href");

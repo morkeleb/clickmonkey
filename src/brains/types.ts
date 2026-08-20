@@ -28,7 +28,7 @@ export interface BrainContext {
   notes?: string[];
   /** Last executed walk lines (oldest → newest). Used to refuse hop/close cycles. */
   recent?: string[];
-  /** Last clicks on this page (oldest → newest). Unleash skips an id after two appearances. */
+  /** Last clicks on this page (oldest → newest). Unleash skips a click key after two appearances. */
   recentClicks?: readonly string[];
   plan?: UiExplorePlan;
   pages?: readonly Page[];

@@ -108,6 +108,34 @@ function hasStableId(node) {
   }
   return false;
 }
+function generatedId(id) {
+  if (!id) return true;
+  if (id.charAt(0) === ":") return true;
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)) return true;
+  return false;
+}
+function clip(s, n) {
+  var one = String(s).replace(/\\s+/g, " ").trim();
+  return one.length <= n ? one : one.slice(0, n - 1) + "…";
+}
+function describeWhere(node) {
+  var tag = node.tagName.toLowerCase();
+  var hooks = ["data-testid", "data-test-id", "data-test", "data-cy"];
+  var h;
+  for (h = 0; h < hooks.length; h++) {
+    var hook = node.getAttribute(hooks[h]);
+    if (hook && hook.trim()) return tag + "[" + hooks[h] + '="' + clip(hook.trim(), 40) + '"]';
+  }
+  var id = node.id && String(node.id).trim();
+  if (id && !generatedId(id)) return "#" + clip(id, 40);
+  var named = node.getAttribute("aria-label") || node.getAttribute("alt") || node.getAttribute("title") || node.getAttribute("name") || node.getAttribute("placeholder");
+  if (named && named.trim()) return tag + ' "' + clip(named.trim(), 40) + '"';
+  var text = (accName(node) || labelText(node) || "").replace(/\\s+/g, " ").trim();
+  if (text) return tag + ' "' + clip(text, 40) + '"';
+  var href = node.getAttribute("href");
+  if (href && href.trim()) return tag + '[href="' + clip(href.trim(), 48) + '"]';
+  return tag;
+}
 function push(code, severity, node) {
   var tag = node.tagName.toLowerCase();
   var role = implicitRole(node);
@@ -115,6 +143,8 @@ function push(code, severity, node) {
   var item = { code: code, severity: severity, tag: tag };
   if (role) item.role = role;
   if (inputType) item.inputType = inputType;
+  var where = describeWhere(node);
+  if (where) item.where = where;
   issues.push(item);
 }
 
@@ -151,7 +181,10 @@ for (i = 0; i < els.length; i++) {
 var dupKeys = Object.keys(nameCounts);
 for (i = 0; i < dupKeys.length; i++) {
   if (nameCounts[dupKeys[i]] < 2) continue;
-  issues.push({ code: "duplicateName", severity: "warn", tag: "widget", role: dupKeys[i].split("\\0")[0] });
+  var bits = dupKeys[i].split("\\0");
+  var dupItem = { code: "duplicateName", severity: "warn", tag: "widget", role: bits[0] };
+  if (bits[1]) dupItem.where = bits[0] + ' "' + clip(bits[1], 40) + '"';
+  issues.push(dupItem);
 }
 
 els = root.querySelectorAll(EXTRA_SEL);

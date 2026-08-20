@@ -3,7 +3,7 @@ import { sameLedgerPage } from "./testability.js";
 
 export { sameLedgerPage };
 
-export const QualitySource = z.enum(["html", "a11y", "console", "pageError", "visual"]);
+export const QualitySource = z.enum(["html", "a11y", "seo", "console", "pageError", "visual"]);
 export type QualitySource = z.infer<typeof QualitySource>;
 
 export const QualitySeverity = z.enum(["error", "warning"]);
@@ -24,8 +24,7 @@ export const QualityIssue = z
     confidence: QualityConfidence.optional(),
     /** Short locator (testid / id / name / compacted CSS). Visual and scanners. */
     where: z.string().min(1).optional(),
-  })
-  .strict();
+  });
 export type QualityIssue = z.infer<typeof QualityIssue>;
 
 export const QualityRuntimeEvent = z
@@ -52,6 +51,7 @@ export const QualityPage = z
     visualHash: z.string().min(1).optional(),
     html: z.array(QualityIssue).default([]),
     a11y: z.array(QualityIssue).default([]),
+    seo: z.array(QualityIssue).default([]),
     visual: z.array(QualityIssue).default([]),
     runtime: z.array(QualityRuntimeEvent).default([]),
   })
@@ -96,6 +96,15 @@ export function normalizeQualityMessage(message: string): string {
 
 export function qualityIssueKey(i: Pick<QualityIssue, "source" | "rule" | "message">): string {
   return `${i.source}\0${i.rule}\0${i.message}`;
+}
+
+export function qualityIssuesEqual(
+  a: readonly QualityIssue[] | undefined,
+  b: readonly QualityIssue[] | undefined,
+): boolean {
+  const ka = [...(a ?? [])].map(qualityIssueKey).sort();
+  const kb = [...(b ?? [])].map(qualityIssueKey).sort();
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i]);
 }
 
 const CONFIDENCE_RANK: Record<QualityConfidence, number> = { low: 0, medium: 1, high: 2 };
@@ -153,10 +162,16 @@ export function upsertQualityPage(report: QualityReport, page: QualityPage): Qua
   return { schemaVersion: 1, pages };
 }
 
+export function qualityLedgerItems(
+  page: QualityPage,
+): Array<QualityIssue | QualityRuntimeEvent> {
+  return [...page.html, ...page.a11y, ...(page.seo ?? []), ...page.visual, ...page.runtime];
+}
+
 export function qualityPageCounts(page: QualityPage): { errors: number; warnings: number } {
   let errors = 0;
   let warnings = 0;
-  for (const i of [...page.html, ...page.a11y, ...page.visual, ...page.runtime]) {
+  for (const i of qualityLedgerItems(page)) {
     if (i.severity === "error") errors += 1;
     else warnings += 1;
   }

@@ -6,8 +6,11 @@ import { compactSelector, describeFromHtml, describeQualityWhere } from "../src/
 describe("quality where locators", () => {
   it("prefers data-testid and stable id over CSS soup", () => {
     assert.equal(describeFromHtml('<button data-testid="go" class="css-ab">Go</button>'), 'button[data-testid="go"]');
+    assert.equal(describeFromHtml('<button data-cy="save">Save</button>'), 'button[data-cy="save"]');
+    assert.equal(describeFromHtml('<input data-test="q" />'), 'input[data-test="q"]');
     assert.equal(describeFromHtml('<span id="dup">also</span>'), "#dup");
     assert.equal(describeFromHtml('<img alt="hero" src="x.png">'), 'img "hero"');
+    assert.equal(describeFromHtml('<img alt="hero" name="pic" title="t">'), 'img "hero"');
     assert.equal(describeFromHtml('<a href="/customers">Customers</a>'), 'a "Customers"');
   });
 

@@ -7,7 +7,7 @@ import { View } from "./view.js";
 
 export const ExploreVisit = z
   .object({
-    mode: z.enum(["form", "nav"]),
+    mode: z.enum(["form", "list", "nav"]),
     formatted: z.string().min(1),
     ready: Locator.optional(),
     legalOpen: z.array(z.string()).default([]),

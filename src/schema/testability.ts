@@ -23,8 +23,9 @@ export const TestabilityIssue = z
     tag: z.string().min(1),
     role: z.string().min(1).optional(),
     inputType: z.string().min(1).optional(),
-  })
-  .strict();
+    /** Short locator (name / testid / id / href). Same idea as quality `where`. */
+    where: z.string().min(1).optional(),
+  });
 export type TestabilityIssue = z.infer<typeof TestabilityIssue>;
 
 export const TestabilityPage = z
@@ -56,16 +57,35 @@ export function issueKey(i: TestabilityIssue): string {
   return `${i.code}\0${i.tag}\0${i.role ?? ""}\0${i.inputType ?? ""}`;
 }
 
+const WHERE_EXAMPLES = 3;
+const WHERE_MAX = 160;
+
+function joinIssueWheres(existing: string | undefined, incoming: string | undefined): string | undefined {
+  const parts = [
+    ...new Set(
+      [...(existing ? existing.split(" · ") : []), ...(incoming ? incoming.split(" · ") : [])]
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, WHERE_EXAMPLES);
+  if (parts.length === 0) return undefined;
+  const joined = parts.join(" · ");
+  return joined.length <= WHERE_MAX ? joined : `${joined.slice(0, WHERE_MAX - 1)}…`;
+}
+
 export function dedupeIssues(issues: TestabilityIssue[]): TestabilityIssue[] {
-  const seen = new Set<string>();
-  const out: TestabilityIssue[] = [];
+  const byKey = new Map<string, TestabilityIssue>();
   for (const i of issues) {
     const k = issueKey(i);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(i);
+    const prev = byKey.get(k);
+    if (!prev) {
+      byKey.set(k, { ...i });
+      continue;
+    }
+    const where = joinIssueWheres(prev.where, i.where);
+    if (where) prev.where = where;
   }
-  return out.sort((a, b) => issueKey(a).localeCompare(issueKey(b)));
+  return [...byKey.values()].sort((a, b) => issueKey(a).localeCompare(issueKey(b)));
 }
 
 export function isInsufficient(issues: TestabilityIssue[]): boolean {

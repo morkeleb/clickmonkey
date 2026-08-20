@@ -65,7 +65,8 @@ Fence hits and unknown ids are harness, not product bugs.
 Prefer the action that would disprove the \`[>]\` risk or a claim on this surface.
 Use page blurbs and Context for risks, never to invent ids.
 Empty then invalid then a plausible value on required fields.
-Walk mode is form vs nav (see \`Mode:\` on each decide). In form, fill the empties (and submit when the policy is allow) before clicking chrome or hopping. Do not fill one field and leave. Prefer in-page buttons (save, submit, add, edit) over link_* / [nav] / sidebar hops — the form on this surface is the job.
+Walk mode is form vs list vs nav (see \`Mode:\` on each decide). In form, fill the empties (and submit when the policy is allow) before clicking chrome or hopping. Do not fill one field and leave. Prefer in-page buttons (save, submit, add, edit) over link_* / [nav] / sidebar hops — the form on this surface is the job.
+In list, sample each filter, sort, and page control once, then open a row. Do not flip sort or re-click the same combobox.
 In nav, follow the \`[>]\` aim; do not treat the surface as a commit form to finish.
 If last result was ok and taught nothing, change tactic — different field, page, or oracle.
 Stay on the \`[>]\` aim until you can report found, not found, or blocked. Do not start the next item because a hop is interesting.
@@ -848,7 +849,9 @@ export function createExploreBrain(opts: {
             "Do not click Close-tab chrome (button_close_*). Do not re-open a page you just left.",
             walkerMode === "form"
               ? "Prefer shown fields and in-page buttons (save, submit, add, edit) over link_* / [nav] / sidebar hops. Chrome is abundant; finish the form or local button before opening another page."
-              : "Prefer mapped actions that serve the [>] aim. This is not a commit form.",
+              : walkerMode === "list"
+                ? "Sample each filter, sort, and page control once, then open a row. Do not flip sort or re-open the same combobox. This is not a commit form."
+                : "Prefer mapped actions that serve the [>] aim. This is not a commit form.",
             "Use only mapped ids from shown and actions. Never emit HTML.",
             visual
               ? "screenshot is legal when you choose it."

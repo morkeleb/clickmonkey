@@ -76,11 +76,11 @@ take a screenshot when the last step was already a screenshot.
 ## Files
 
 ```
-clickmonkey.json                 # leash: url, fence, intro, writePolicy, screenshots, brain, vision
+clickmonkey.json                 # leash: url, fence, intro, writePolicy, screenshots, brain, vision, seo
 clickmonkey/
   map.json                       # living sitemap — parallel monkeys merge here
   testability.json               # locatability (opaque controls, unlabeled, …)
-  quality.json                   # HTML, a11y (axe), JS, visual extras when vision ran
+  quality.json                   # HTML, a11y (axe), JS, SEO/meta when enabled, visual extras when vision ran
   broken.json
   runs/<id>/                     # tape, shots, findings, nav.jsonl for one walk
   runs/<id>/verbose/             # --verbose only: per-step HTML + view.txt (safe to delete)
@@ -100,9 +100,12 @@ clickmonkey/
     "fill login.password $CLICKMONKEY_PASSWORD",
     "click login.submit"
   ],
-  "writePolicy": "validationOnly"
+  "writePolicy": "validationOnly",
+  "seo": { "private": ["/app"] }
 }
 ```
+
+The `seo` block is optional. Leave it off for an app-only site. Use `private` prefixes for a site that is half marketing, half signed-in app.
 
 - **url** — where the run starts.
 - **fence** — pathname prefix plus blacklist substrings. Crossing it bounces the walker back to seed; it is not a website finding.
@@ -111,6 +114,7 @@ clickmonkey/
 - **writePolicy** — `validationOnly` (default) refuses a submit when required fields are filled, so the monkey does not create/update data. `allow` fills empty fields then clicks submit in one burst (it does not click away mid-form). Use `allow` only on a disposable test instance.
 - **skip** — extra widget id/label substrings the walker will not click. Sign out, log out, and close panel are skipped by default.
 - **screenshots** — per-step screenshots, default on. `"screenshots": false` turns auto shots off.
+- **seo** — optional. Scan the live `<head>` for title, meta description, Open Graph, and canonical problems. Off when omitted. See [SEO / meta](#seo--meta).
 - **vision** — optional. Same connection shape as `brain` (`baseUrl`, `model`, `apiKeyEnv`). Mix models (qwen text + qwen-vl on another host). `model` is required and is never copied from `brain`. `baseUrl` inherits when omitted. `apiKeyEnv` inherits only when `vision.baseUrl` is also omitted; `"apiKeyEnv": false` means no key. Per-step screenshots must stay on. `issues` (default true) writes extras into `quality.json` (overlap, overflow, clip, covered controls, alignment, scanline/list edges, unreadable contrast, broken images). Each visual extra has `high`/`medium` confidence so a human can decide whether to act; `low` guesses are dropped. `assist` (default true) adds explore sight notes. Vision is not findings; decide stays text-only.
 
 v1 used `fence.blacklist` only for **URLs** (e.g. `#/login` after the monkey logged itself out). That is still the fence. `skip` is the widget denylist.
@@ -119,7 +123,7 @@ Duplicate accessible names (two **Settings** buttons) are a `duplicateName` **wa
 
 `clickmonkey/map.json` is the page model `inspect` / `map` grow. Each page gets a one-line `description` (path, heading, fields, dialogs). With `vision` configured, a page-level screenshot upgrades that to what is actually on screen (dashboard, list, form, details) — not a modal shot. Explore may still polish with the text brain. Extra widgets never fail a replay. Several processes may share that file: each step takes a short lock, unions the trees, and writes back. That is cheap next to Playwright and the LLM.
 
-As the monkey walks, each inspect updates `testability.json` (can we locate the controls?) and `quality.json` (html-validate for HTML, axe-core for WCAG, plus JS `console` / `pageerror` with merge counts). HTML and axe issues keep a short `where` (testid, id, name, or compacted CSS — not XPath). Per-step screenshots are on by default (`shots/step-NNN.png`). With `vision` configured, a second model may add visual extras to that ledger and a short Sight note for explore; those are not findings. `clickmonkey report` prints Quality (HTML / a11y / JS always; visual when vision ran). Console warnings are ledger-only; the first uncaught `pageerror` per message is still a finding.
+As the monkey walks, each inspect updates `testability.json` (can we locate the controls?) and `quality.json` (html-validate for HTML, axe-core for WCAG, plus JS `console` / `pageerror` with merge counts). Testability, HTML, and axe issues keep a short `where` (accessible name, testid, id, or compacted CSS — not XPath). Per-step screenshots are on by default (`shots/step-NNN.png`). With `vision` configured, a second model may add visual extras to that ledger and a short Sight note for explore; those are not findings. `clickmonkey report` prints Quality (HTML / a11y / JS always; SEO when `seo` is on; visual when vision ran). Console warnings are ledger-only; the first uncaught `pageerror` per message is still a finding.
 
 A page that lives on another host than the leash `url` (SSO, IdP) gets an `origin`. Pages seen during intro (login, callback) are marked `entry`. Walkers only hop to leash-origin pages that have widgets, are not `entry`, and would not cross the fence. `open` uses the page origin so a path like `/u/login` is not rewritten onto the app host. Intro waits until the browser has left the start URL and landed on a real app page before the walk starts.
 
@@ -168,7 +172,7 @@ clickmonkey bundle [--config] [--out]
 clickmonkey ui
 ```
 
-`clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists.
+`clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists. A report page has **Copy** (markdown + inlined screenshots for pasting into a model) next to **Print**.
 
 `clickmonkey bundle` writes a static copy of that dashboard (default `clickmonkey/bundle/`). It does not need the CLI to view: serve the folder (`python3 -m http.server 4174`) or upload it to GitLab Pages. Do not open `index.html` as `file://` — fetch is blocked. A GitLab job example is `examples/gitlab-ci.yml`.
 
@@ -201,7 +205,7 @@ cwd must be the folder with `clickmonkey.json`. The browser starts on `explore_s
 
 1. `explore_start` with a charter (and architecture/skills if you have `clickmonkey/explore-context.md`)
 2. `explore_set_plan` from the sitemap cards
-3. `explore_step` / `nasty_fill` while reading `mode` (form vs nav)
+3. `explore_step` / `nasty_fill` while reading `mode` (form vs list vs nav)
 4. `explore_shot` when you need pixels
 5. `explore_finish` writes `session.md` and a findings report
 
@@ -224,7 +228,7 @@ Explore exit `1` means findings, not a crash — mark the job `allow_failure`. E
 
 `--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 
-`clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox, none pre-selected). `--runs id,id` is explicit; `--all` takes every run that has findings. Findings come first (severity, page, url, screenshot, compacted tape), then a Quality digest: **Start here**, **Chrome** (shared shell — fix once), issues on several pages (same component), then unique pages. Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. `--quality-full` dumps per-page HTML/a11y/JS. With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF).
+`clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox, none pre-selected). `--runs id,id` is explicit; `--all` takes every run that has findings. Findings come first (severity, page, url, screenshot, compacted tape), then a Quality digest: **Start here**, **Chrome** (shared shell — fix once), issues on several pages (same component), then unique pages. Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. `--quality-full` dumps per-page HTML/a11y/SEO/JS. With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF) and Copy (text + screenshots).
 
 Each run writes `nav.jsonl` (and echoes timestamped lines on stderr): every DSL step (`step` / `ok` / `fail`) plus main-frame redirects, document loads, and in-page URL changes. Gaps between `step` and `ok` are waits. That is not the replay tape — `log.txt` stays click/fill/`open` only.
 
@@ -239,6 +243,27 @@ Defaults: config `clickmonkey.json`, out `clickmonkey/runs/<id>/`.
 Exit codes: `0` success no findings, `1` run completed with findings, `2` usage /
 schema / unknown command / legacy config, `3` live-validate of `ready` failed
 before start.
+
+## SEO / meta
+
+Off until you add `seo` to the leash. Then each inspect reads the live `<head>` (what a renderer sees, not `view-source`) and writes a **SEO** group into `quality.json`. Not findings — same ledger as HTML/a11y.
+
+```json
+"seo": { "private": ["/app", "/login"] }
+```
+
+`private` is pathname prefixes with a segment boundary (`/app` matches `/app/x`, not `/application`). Pages under those prefixes skip the scan. `"/"` matches every path, so `"private": ["/"]` turns the scan off. Omit `seo` for the same effect. `"private": []` scans every path.
+
+A page with `meta name="robots"` / `googlebot` `noindex` is skipped even when it is not in `private`.
+
+Checks (public pages only):
+
+- title missing, empty, a framework placeholder (`Create Next App`, `Vite App`, …), or longer than ~60 characters
+- meta description missing, a copy of the title, or outside ~20–160 characters
+- Open Graph: missing `og:title`, `og:description`, `og:image`, `og:url`; `og:image` / `og:url` not an absolute `http(s)` URL
+- `rel=canonical` missing, not absolute, or a different origin than the live page
+
+App shells should stay in `private`. Marketing `/` and `/docs` stay out of it.
 
 ## Fence
 
