@@ -37,7 +37,15 @@ import type { ChatMessage } from "../src/brains/chat.js";
 import { saveConfig } from "../src/persist/config.js";
 import { Config } from "../src/schema/config.js";
 import type { View } from "../src/schema/view.js";
+import type { RunState } from "../src/executor/run.js";
+import { createExecutor } from "../src/executor/run.js";
 import { runExplore } from "../src/playbooks/explore.js";
+import {
+  applyExploreStep,
+  exploreVisitOf,
+  writeSessionMd,
+  type ExploreWalkCtx,
+} from "../src/playbooks/explore-session.js";
 
 const homeMap = JSON.parse(
   readFileSync(fileURLToPath(new URL("../fixtures/models/valid-home.json", import.meta.url)), "utf8"),
@@ -1103,3 +1111,163 @@ describe("runExplore preflight", () => {
     }
   });
 });
+
+function walkCtx(view: View, execRun?: () => Promise<void>): ExploreWalkCtx {
+  const config = Config.parse({
+    url: "http://127.0.0.1/",
+    map: homeMap,
+  });
+  const state = {
+    pageId: "home",
+    model: config.map,
+    config,
+    outDir: "/tmp/out",
+    surfaceStack: ["page"],
+    log: { schemaVersion: 1, comments: [], steps: [], usedLocators: {} },
+    usedLocators: {},
+    pendingFindings: [],
+  } as unknown as RunState;
+  return {
+    state,
+    exec: {
+      runLine: async () => {
+        await execRun?.();
+        throw new Error("exec.runLine should not run");
+      },
+      runStep: async () => {
+        throw new Error("exec.runStep should not run");
+      },
+      runIntro: async () => undefined,
+    } as ReturnType<typeof createExecutor>,
+    charter: "walk",
+    seedPageId: "home",
+    view,
+    stepsUsed: 0,
+    refused: new Set(),
+    recent: [],
+    findings: [],
+    notes: [],
+    goods: [],
+    outDir: "/tmp/out",
+    config,
+    startedAt: Date.now(),
+    logPath: "/tmp/out/log.txt",
+    sessionPath: "/tmp/out/session.md",
+  };
+}
+
+describe("applyExploreStep", () => {
+  it("returns a checkExploreLine refusal without executing", async () => {
+    let ran = 0;
+    const ctx = walkCtx(viewOf(), async () => {
+      ran += 1;
+      throw new Error("should not run");
+    });
+    const result = await applyExploreStep(ctx, "click button_invoicing");
+    assert.equal(result.ok, false);
+    assert.equal(ran, 0);
+    assert.equal(ctx.stepsUsed, 0);
+    if (!result.ok) {
+      assert.match(result.error, /expected surface\.id, got click button_invoicing/);
+      assert.equal(result.visit.view.last?.ok, false);
+      assert.equal(result.visit.view.last?.step, "click button_invoicing");
+    }
+  });
+
+  it("does not execute an invented open", async () => {
+    let ran = 0;
+    const ctx = walkCtx(viewOf({ pages: ["home"] }), async () => {
+      ran += 1;
+      throw new Error("should not run");
+    });
+    const result = await applyExploreStep(ctx, "open accounts_receivable_invoicing");
+    assert.equal(result.ok, false);
+    assert.equal(ran, 0);
+    if (!result.ok) {
+      assert.match(result.error, /not in pages:/);
+      assert.equal(result.ban, undefined);
+    }
+    assert.equal(ctx.refused.has("open accounts_receivable_invoicing"), true);
+  });
+
+  it("does not ban a hop/close cycle forever", async () => {
+    let ran = 0;
+    const ctx = walkCtx(viewOf({ pages: ["home", "accounts_receivable_period_close"] }), async () => {
+      ran += 1;
+      throw new Error("should not run");
+    });
+    ctx.recent = ["open accounts_receivable_period_close", "click page.button_close_period_close"];
+    ctx.stepsUsed = 2;
+    const result = await applyExploreStep(ctx, "open accounts_receivable_period_close");
+    assert.equal(result.ok, false);
+    assert.equal(ran, 0);
+    if (!result.ok) {
+      assert.match(result.error, /cycle/);
+      assert.equal(result.ban, false);
+    }
+    assert.equal(ctx.refused.has("open accounts_receivable_period_close"), false);
+  });
+});
+
+describe("exploreVisitOf", () => {
+  it("fills ready, legalOpen, writePolicy, and planLine", () => {
+    const config = Config.parse({ url: "http://127.0.0.1/", map: homeMap });
+    const state = {
+      pageId: "home",
+      model: config.map,
+      config,
+      outDir: "/tmp/out",
+      lastScreenshotPath: "/tmp/out/shots/home.png",
+      lastSight: "create dialog",
+    } as unknown as RunState;
+    const visit = exploreVisitOf(
+      state,
+      viewOf({ pages: ["home"], mode: "nav" }),
+      {
+        goal: "Walk home",
+        items: [
+          {
+            id: "1",
+            title: "Empty name",
+            status: "now",
+            stepCount: 0,
+            findingIds: [],
+          },
+        ],
+      },
+    );
+    assert.equal(visit.mode, "nav");
+    assert.deepEqual(visit.ready, { by: "testId", value: "home" });
+    assert.deepEqual(visit.legalOpen, ["home"]);
+    assert.equal(visit.shot, "shots/home.png");
+    assert.equal(visit.sight, "create dialog");
+    assert.equal(visit.writePolicy, "validationOnly");
+    assert.match(visit.planLine ?? "", /\[>\] Empty name/);
+  });
+});
+
+describe("writeSessionMd", () => {
+  it("prints empty model and baseUrl when config.brain is missing", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "cm-explore-session-md-"));
+    const path = join(tmp, "session.md");
+    try {
+      writeSessionMd({
+        path,
+        startedAt: Date.parse("2026-01-02T03:04:05.000Z"),
+        charter: "walk the form",
+        config: Config.parse({ url: "http://127.0.0.1/", map: homeMap }),
+        findings: [],
+        notes: [],
+        goods: [],
+      });
+      const body = readFileSync(path, "utf8");
+      assert.match(body, /^- model: $/m);
+      assert.match(body, /^- baseUrl: $/m);
+      assert.match(body, /url: http:\/\/127\.0\.0\.1\//);
+      assert.match(body, /walk the form/);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+

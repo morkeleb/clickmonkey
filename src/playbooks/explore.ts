@@ -1,18 +1,11 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { chat, type ChatClient, type ChatMessage } from "../brains/chat.js";
 import {
   createExploreBrain,
   defaultExploreSkills,
   DEFAULT_EXPLORE_CHARTER,
   ExploreError,
-  checkExploreLine,
-  completeCurrentPlanItem,
   draftExplorePlan,
-  isNewProductFinding,
-  recordPlanStep,
   formatViewForBrain,
-  isBrainMissFinding,
   isScreenshotLine,
   isVisualCharter,
   probeExploreChat,
@@ -20,38 +13,40 @@ import {
 } from "../brains/explore.js";
 import type { Brain } from "../brains/types.js";
 import { bootRun } from "../executor/boot.js";
-import { formatLiveLine, logBrainDecide } from "../executor/nav-log.js";
+import { formatLiveLine } from "../executor/nav-log.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
-import { buildView } from "../executor/view.js";
 import { persistSharedMap } from "../persist/config.js";
 import { appendEvent } from "../persist/events.js";
 import { exploreOutlineOf, setPresenceOutline, stopPresence } from "../persist/presence.js";
-import { pickSeedPageId, resetToSeed } from "./seed.js";
+import { pickSeedPageId } from "./seed.js";
 import { appendFindingReport } from "../persist/finding.js";
 import { polishPageDescription } from "../surveyor/describe.js";
-import { writeLog } from "../persist/log.js";
 import { requireVisionShots, resolveVision, type Config } from "../schema/config.js";
-import { formatExplorePlanItemLine, type UiExplorePlan } from "../schema/ui.js";
-import { probeVisionChat } from "../surveyor/vision.js";
-import { severityForKind, type Finding, type FindingSeverity } from "../schema/finding.js";
-import type { Log } from "../schema/log.js";
+import type { Finding } from "../schema/finding.js";
 import type { View } from "../schema/view.js";
+import { probeVisionChat } from "../surveyor/vision.js";
+import {
+  ExploreSession,
+  type ExploreResult,
+} from "./explore-session.js";
 
 export const EXPLORE_DEFAULT_STEPS = 30;
 export const EXPLORE_DEFAULT_MINUTES = 20;
 export { DEFAULT_EXPLORE_CHARTER, ExploreError };
-
-export interface ExploreResult {
-  ok: boolean;
-  findings: Finding[];
-  log: Log;
-  logPath: string;
-  sessionPath: string;
-  stepsUsed: number;
-}
-
-const RUNTIME_KINDS = new Set(["pageError", "httpError", "notFound"]);
+export type { ExploreResult };
+export {
+  ExploreSession,
+  applyExploreStep,
+  createExploreWalk,
+  exploreVisitOf,
+  snapshotView,
+  writeSessionMd,
+  type ExploreStepResult,
+  type ExploreStepOpts,
+  type ExploreWalkCtx,
+  type ExploreWalkOpts,
+} from "./explore-session.js";
 
 function resolveApiKey(apiKeyEnv: string | undefined): string | undefined {
   if (!apiKeyEnv) return undefined;
@@ -70,66 +65,6 @@ function requireBrain(config: Config): { baseUrl: string; model: string; apiKeyE
     throw new ExploreError("explore requires config.brain.baseUrl and config.brain.model");
   }
   return brain;
-}
-
-function listFindings(items: Finding[]): string {
-  if (items.length === 0) return "(none)";
-  return items.map((f) => `- ${f.id}: ${f.message}`).join("\n");
-}
-
-function writeSessionMd(opts: {
-  path: string;
-  startedAt: number;
-  charter: string;
-  config: Config;
-  findings: Finding[];
-  notes: string[];
-  goods: string[];
-  plan?: UiExplorePlan;
-}): void {
-  const bySev: Record<FindingSeverity, Finding[]> = {
-    critical: [],
-    major: [],
-    minor: [],
-    suggestion: [],
-  };
-  const runtime: Finding[] = [];
-  for (const f of opts.findings) {
-    const sev = f.severity ?? severityForKind(f.kind);
-    bySev[sev].push(f);
-    if (RUNTIME_KINDS.has(f.kind)) runtime.push(f);
-  }
-  const brain = opts.config.brain;
-  const notes = opts.notes.length ? opts.notes.map((n) => `- ${n}`).join("\n") : "(none)";
-  const goods = opts.goods.length ? opts.goods.map((n) => `- ${n}`).join("\n") : "(none)";
-  const body = [
-    `# Explore session — ${new Date(opts.startedAt).toISOString()} — ${opts.charter}`,
-    "## Configuration",
-    `- url: ${opts.config.url}`,
-    `- model: ${brain?.model ?? ""}`,
-    `- baseUrl: ${brain?.baseUrl ?? ""}`,
-    "## Runtime errors",
-    listFindings(runtime),
-    "## Critical / Major / Minor / Suggestion",
-    "### Critical",
-    listFindings(bySev.critical),
-    "### Major",
-    listFindings(bySev.major),
-    "### Minor",
-    listFindings(bySev.minor),
-    "### Suggestion",
-    listFindings(bySev.suggestion),
-    "## Plan",
-    opts.plan
-      ? [`${opts.plan.goal}`, ...opts.plan.items.map((it) => formatExplorePlanItemLine(it))].join("\n")
-      : "(none)",
-    "## Notes",
-    notes,
-    "## Positive observations",
-    goods,
-    "",
-  ].join("\n");
-  writeFileSync(opts.path, body, "utf8");
 }
 
 async function explainFinding(
@@ -201,8 +136,6 @@ export async function runExplore(opts: {
   const architecture = opts.skills?.trim() ?? "";
   const startedAt = Date.now();
   const deadline = startedAt + minutes * 60_000;
-  const logPath = join(opts.outDir, "log.txt");
-  const sessionPath = join(opts.outDir, "session.md");
   const invokeChat = opts.chat ?? chat;
   const boundChat = (input: { messages: ChatMessage[] }) =>
     invokeChat({
@@ -265,21 +198,7 @@ export async function runExplore(opts: {
     if (state.config.intro.length > 0) await exec.runIntro();
 
     const seedPageId = pickSeedPageId(state, state.pageId) ?? state.pageId;
-    const findings: Finding[] = [];
     const polished = new Set<string>();
-
-    const snapshot = async (): Promise<View> =>
-      buildView({
-        page: state.page,
-        pageId: state.pageId,
-        surfaceStack: state.surfaceStack.length > 0 ? state.surfaceStack : [state.pageId],
-        model: state.model,
-        appUrl: state.config.url,
-        fence: state.config.fence,
-        intro: state.config.intro,
-        skip: state.config.skip,
-        inIntro: Boolean(state.inIntro),
-      });
 
     const polishHere = async (): Promise<void> => {
       const page = state.model.pages.find((p) => p.id === state.pageId);
@@ -296,179 +215,99 @@ export async function runExplore(opts: {
       }
     };
 
-    await polishHere();
-    let view = await snapshot();
+    const session = ExploreSession.attach({
+      state,
+      exec,
+      charter,
+      startedAt,
+      seedPageId,
+      config: opts.config,
+      configPath: opts.configPath,
+      outDir: opts.outDir,
+      polish: polishHere,
+      onAfterStep: async ({ result, view, newProductFinding }) => {
+        if (newProductFinding && result.finding) {
+          const extra = await explainFinding(boundChat, result.finding, view, charter);
+          if (extra) appendFindingReport(opts.outDir, result.finding.id, extra);
+        }
+      },
+    });
 
-    let plan: UiExplorePlan | undefined;
+    await polishHere();
+    let view = await session.snapshot();
+
     if (!opts.brain) {
-      plan = await draftExplorePlan({
-        chat: boundChat,
-        charter,
-        skills: architecture,
-        oracles,
-        view,
-        pages: state.model.pages,
-        skip: state.config.skip,
-        logRetry,
-      });
-      setPresenceOutline(opts.outDir, exploreOutlineOf({ charter, plan, now: plan.items.find((i) => i.status === "now")?.title }));
+      session.setPlan(
+        await draftExplorePlan({
+          chat: boundChat,
+          charter,
+          skills: architecture,
+          oracles,
+          view,
+          pages: state.model.pages,
+          skip: state.config.skip,
+          logRetry,
+        }),
+      );
     }
 
-    const refused = new Set<string>();
-    const recentSteps: string[] = [];
     let consecutiveRefusals = 0;
     let itemSteps = 0;
-    let stepsUsed = 0;
-    while (stepsUsed < steps && Date.now() < deadline) {
+    while (session.stepsUsed < steps && Date.now() < deadline) {
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
         : undefined;
       const decision = await brain.decide({
         view,
-        stepsUsed,
+        stepsUsed: session.stepsUsed,
         last,
         charter,
         notes: notesOf(brain),
-        recent: recentSteps,
+        recent: session.recent,
         pages: state.model.pages,
         sight: state.lastSight,
-        ...(plan ? { plan } : {}),
+        ...(session.plan ? { plan: session.plan } : {}),
       });
       const line = decision.line.trim();
-      const check = checkExploreLine(line, view, {
-        stepsUsed,
-        charter,
-        rejected: [...refused],
-        recent: recentSteps,
-        pages: state.model.pages,
+      const lastStep = view.last?.step ?? "";
+      const stepped = await session.step(line, {
+        note: decision.note,
+        good: decision.good,
+        done: decision.done,
       });
-      if (!check.ok) {
+      if (!stepped.ok) {
         consecutiveRefusals += 1;
-        if (check.ban !== false) refused.add(line);
-        logRetry(`explore refused: ${check.error}`);
-        view = {
-          ...view,
-          last: { step: line, ok: false, ...(check.ban !== false ? { finding: "unknownId" } : {}) },
-        };
+        logRetry(`explore refused: ${stepped.error}`);
+        view = stepped.visit.view;
         if (consecutiveRefusals >= 3) {
           throw new ExploreError(
-            `explore refused ${JSON.stringify(line)} three times in a row (${check.error})`,
+            `explore refused ${JSON.stringify(line)} three times in a row (${stepped.error})`,
           );
         }
         continue;
       }
       consecutiveRefusals = 0;
-      const currentItem = plan?.items.find((i) => i.status === "now");
-      setPresenceOutline(
-        opts.outDir,
-        exploreOutlineOf({
-          charter,
-          now: [currentItem?.title, decision.note?.trim() || line].filter(Boolean).join(" — "),
-          notes: notesOf(brain),
-          plan,
-        }),
-      );
       if (
         isScreenshotLine(line) &&
-        isScreenshotLine(view.last?.step ?? "") &&
+        isScreenshotLine(lastStep) &&
         !isVisualCharter(charter)
       ) {
         throw new ExploreError(
-          `explore will not take a screenshot when the last step was already a screenshot (${view.last?.step})`,
+          `explore will not take a screenshot when the last step was already a screenshot (${lastStep})`,
         );
       }
-      if (state.navMeta) {
-        if (decision.mode) state.navMeta.mode = decision.mode;
-        else delete state.navMeta.mode;
-      }
-      if (state.navLogPath) {
-        logBrainDecide(state.navLogPath, {
-          line,
-          note: decision.note,
-          good: decision.good,
-        });
-      }
-      const result = await exec.runLine(line);
-      view = result.view;
-      stepsUsed += 1;
-      recentSteps.push(line);
-      if (recentSteps.length > 12) recentSteps.shift();
+      view = stepped.visit.view;
       itemSteps += 1;
-      const newProductFinding = isNewProductFinding({
-        finding: result.finding,
-        findingCreated: result.findingCreated,
-        currentFindingIds: plan?.items.find((i) => i.status === "now")?.findingIds,
-      });
-      if (plan) {
-        plan = recordPlanStep(
-          plan,
-          newProductFinding && result.finding ? { findingId: result.finding.id } : undefined,
-        );
-      }
-      const itemFinished = Boolean(decision.done) || newProductFinding || itemSteps >= 10;
-      if (plan && itemFinished) {
-        plan = completeCurrentPlanItem(plan, decision.done || newProductFinding ? "done" : "skipped");
+      const itemFinished = Boolean(decision.done) || stepped.newProductFinding || itemSteps >= 10;
+      if (session.plan && itemFinished) {
+        if (!decision.done) {
+          session.advancePlan(stepped.newProductFinding ? "done" : "skipped");
+        }
         itemSteps = 0;
-      }
-      if (plan) {
-        const current = plan.items.find((i) => i.status === "now");
-        setPresenceOutline(
-          opts.outDir,
-          exploreOutlineOf({
-            charter,
-            now: itemFinished
-              ? current?.title || "plan complete"
-              : [current?.title, decision.note?.trim() || line].filter(Boolean).join(" — "),
-            notes: notesOf(brain),
-            plan,
-          }),
-        );
-      }
-      if (result.finding && isBrainMissFinding(result.finding.kind)) {
-        refused.add(line);
-      } else if (newProductFinding && result.finding) {
-        findings.push(result.finding);
-        const extra = await explainFinding(boundChat, result.finding, view, charter);
-        if (extra) appendFindingReport(opts.outDir, result.finding.id, extra);
-        view = await resetToSeed(exec, state, seedPageId);
-      } else if (result.finding) {
-        view = await resetToSeed(exec, state, seedPageId);
-      } else if (result.bounced) {
-        view = await resetToSeed(exec, state, seedPageId);
-      } else {
-        await polishHere();
-        view = await snapshot();
-        if (view.last === undefined && result.view.last) view = { ...view, last: result.view.last };
       }
     }
 
-    const log: Log = {
-      schemaVersion: 1,
-      comments: [],
-      steps: state.log.steps,
-      usedLocators: { ...state.usedLocators },
-      result: findings.length > 0 ? "failed" : "passed",
-    };
-    writeLog(logPath, log);
-    writeSessionMd({
-      path: sessionPath,
-      startedAt,
-      charter,
-      config: opts.config,
-      findings,
-      notes: notesOf(brain),
-      goods: goodsOf(brain),
-      plan,
-    });
-
-    return {
-      ok: findings.length === 0,
-      findings,
-      log,
-      logPath,
-      sessionPath,
-      stepsUsed,
-    };
+    return session.finish({ notes: notesOf(brain), goods: goodsOf(brain) });
     });
   } finally {
     stopPresence(opts.outDir);

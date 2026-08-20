@@ -76,6 +76,12 @@ export {
   runEmptyRequired,
   runUnleash,
   runExplore,
+  ExploreSession,
+  applyExploreStep,
+  createExploreWalk,
+  exploreVisitOf,
+  snapshotView,
+  writeSessionMd,
   replayLog,
   replayReport,
   ReplayLiveValidateError,
@@ -84,7 +90,16 @@ export {
   replayableSteps,
   keysFromSteps,
 } from "./playbooks/index.js";
-export type { EmptyRequiredResult, UnleashResult, ExploreResult, ReplayReportResult } from "./playbooks/index.js";
+export type {
+  EmptyRequiredResult,
+  UnleashResult,
+  ExploreResult,
+  ExploreStepResult,
+  ExploreStepOpts,
+  ExploreWalkCtx,
+  ExploreWalkOpts,
+  ReplayReportResult,
+} from "./playbooks/index.js";
 export { extractClickmonkeyFences, isFindingsReport } from "./reports/fences.js";
 export { renderFindingsReport, renderQualitySection, enrichWithBrain } from "./reports/findings-report.js";
 export { identityFromRunId, pickDistinctHue, HUE_SLOTS } from "./ui/identity.js";
