@@ -59,6 +59,48 @@ export function loadPayloads(dir?: string): Record<string, string[]> {
   return catalog;
 }
 
+export interface NastyCatalogInfo {
+  id: string;
+  count: number;
+  description: string;
+}
+
+const CATALOG_DESCRIPTIONS: Record<string, string> = {
+  xss: "cross-site script fragments",
+  sqli: "SQL injection fragments",
+  format: "emails, numbers, dates, junk formats",
+  overlong: "huge strings",
+  "control-chars": "NUL / CR / LF / TAB tokens",
+};
+
+const SAMPLE_MAX_CHARS = 120;
+const SAMPLE_DEFAULT_LIMIT = 6;
+
+export function listCatalogs(dir?: string): NastyCatalogInfo[] {
+  const catalog = loadPayloads(dir);
+  return Object.keys(catalog)
+    .sort()
+    .map((id) => ({
+      id,
+      count: catalog[id]!.length,
+      description: CATALOG_DESCRIPTIONS[id] ?? "payload catalog",
+    }));
+}
+
+export function samplePayloads(id: string, opts?: { limit?: number; dir?: string }): string[] {
+  const catalog = loadPayloads(opts?.dir);
+  const lines = catalog[id];
+  if (!lines) return [];
+  const limit = opts?.limit ?? SAMPLE_DEFAULT_LIMIT;
+  const out: string[] = [];
+  for (const line of lines) {
+    if (line.length > SAMPLE_MAX_CHARS) continue;
+    out.push(line);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 function pick<T>(items: readonly T[], rng: () => number): T {
   return items[Math.floor(rng() * items.length)]!;
 }

@@ -135,7 +135,8 @@ export {
 export { detectWalkerMode, UNLEASH_MODES } from "./brains/walker-mode.js";
 export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";
 export { decisionLines } from "./brains/types.js";
-export { pickNasty, decideUnleashNasty } from "./brains/nasty.js";
+export { pickNasty, decideUnleashNasty, listCatalogs, samplePayloads } from "./brains/nasty.js";
+export type { NastyCatalogInfo } from "./brains/nasty.js";
 export {
   createExploreBrain,
   ExploreError,

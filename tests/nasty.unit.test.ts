@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decideUnleashNasty, loadPayloads, pickNasty } from "../src/brains/nasty.js";
+import { decideUnleashNasty, listCatalogs, loadPayloads, pickNasty, samplePayloads } from "../src/brains/nasty.js";
 import { parseLine } from "../src/schema/dsl.js";
 import type { View } from "../src/schema/view.js";
 
@@ -80,5 +80,26 @@ describe("nasty payloads", () => {
     const d = decideUnleashNasty({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
     assert.equal(d.lines?.at(-1), "click page.submit");
     assert.match(d.lines?.[0] ?? "", /^fill page\.name /);
+  });
+
+  it("listCatalogs includes xss and sqli with count and description", () => {
+    const catalogs = listCatalogs();
+    const ids = catalogs.map((c) => c.id);
+    assert.deepEqual(ids, [...ids].sort());
+    const xss = catalogs.find((c) => c.id === "xss");
+    const sqli = catalogs.find((c) => c.id === "sqli");
+    assert.ok(xss && xss.count > 0 && xss.description);
+    assert.ok(sqli && sqli.count > 0 && sqli.description);
+  });
+
+  it("samplePayloads returns a short list of raw xss lines", () => {
+    const samples = samplePayloads("xss");
+    assert.ok(samples.length > 0);
+    assert.ok(samples.length <= 6);
+    for (const s of samples) assert.ok(s.length <= 120);
+  });
+
+  it("samplePayloads returns empty for unknown id", () => {
+    assert.deepEqual(samplePayloads("nope"), []);
   });
 });
