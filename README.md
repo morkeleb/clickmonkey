@@ -62,6 +62,7 @@ The map is fog of war. Three walkers lift or poke it:
 clickmonkey map --steps 80          # navigate only — grow pages/surfaces
 clickmonkey unleash --steps 200     # click + fill + submit
 clickmonkey explore --charter "…"   # LLM, needs brain in clickmonkey.json
+clickmonkey mcp                     # host LLM walks via stdio (no config.brain)
 ```
 
 `map` never fills and never clicks submit/save/delete. It follows links and
@@ -159,6 +160,7 @@ clickmonkey playbook empty-required [--config] [--url] [--out]
 clickmonkey map [--config] [--url] [--out] [--steps] [--verbose]
 clickmonkey unleash [--config] [--url] [--out] [--steps] [--nasty]
 clickmonkey explore [--config] [--url] [--out] [--steps] [--minutes] [--charter] [--skills]
+clickmonkey mcp [--config]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
 clickmonkey replay <log|report.md> [--config] [--url] [--out]
 clickmonkey compact <log> [--out <file>]
@@ -169,6 +171,43 @@ clickmonkey ui
 `clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists.
 
 `clickmonkey bundle` writes a static copy of that dashboard (default `clickmonkey/bundle/`). It does not need the CLI to view: serve the folder (`python3 -m http.server 4174`) or upload it to GitLab Pages. Do not open `index.html` as `file://` — fetch is blocked. A GitLab job example is `examples/gitlab-ci.yml`.
+
+## Exploratory testing via MCP
+
+**Benefits**
+
+- The host LLM (Grok/Claude/Cursor) decides, with the repo and other tools available
+- No page HTML in the transcript — compact visit (pagemap, form-vs-nav mode, look/testability, shot path)
+- The walk is a real explore run (`clickmonkey/runs/<id>/`) so the dashboard and `clickmonkey report` see it
+- Same fence, map, oracles, and DSL as `clickmonkey explore`
+
+**Setup**
+
+1. In the app under test: `clickmonkey init --url http://…` (creates `clickmonkey.json` + `clickmonkey/`). Or call `explore_init` from the MCP.
+2. Optionally `clickmonkey inspect` / `clickmonkey map` so the map is not empty.
+3. Wire stdio:
+
+```toml
+[mcp_servers.clickmonkey]
+command = "clickmonkey"
+args = ["mcp"]
+```
+
+Claude/Cursor: `{"command":"clickmonkey","args":["mcp"]}`.
+
+cwd must be the folder with `clickmonkey.json`. The browser starts on `explore_start`, not at MCP connect. `config.brain` is not required.
+
+**Loop**
+
+1. `explore_start` with a charter (and architecture/skills if you have `clickmonkey/explore-context.md`)
+2. `explore_set_plan` from the sitemap cards
+3. `explore_step` / `nasty_fill` while reading `mode` (form vs nav)
+4. `explore_shot` when you need pixels
+5. `explore_finish` writes `session.md` and a findings report
+
+Unattended CI still uses `clickmonkey explore` and needs `config.brain`.
+
+`--nasty` / `nasty_*` is for a site you own.
 
 ## CI
 

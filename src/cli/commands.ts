@@ -7,20 +7,12 @@ import { buildView, formatView } from "../executor/view.js";
 import { saveConfig } from "../persist/config.js";
 import { writeLog, readLog } from "../persist/log.js";
 import { stopPresence } from "../persist/presence.js";
-import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
-import { plannedReportPath, writeReportFolder } from "../persist/reports.js";
-import { collectFindingCases, listRuns, resolveRunDirs } from "../persist/runs.js";
-import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
+import { listRuns, resolveRunDirs } from "../persist/runs.js";
 import { newRunId } from "../persist/run-id.js";
 import { replaysDir, workspaceDir } from "../persist/workspace.js";
 import { writeBundle } from "../ui/bundle.js";
 import { isFindingsReport } from "../reports/fences.js";
-import {
-  collapseFindingCases,
-  enrichWithBrain,
-  outlinesFromRunDirs,
-  renderFindingsReport,
-} from "../reports/findings-report.js";
+import { renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
 import { emptyConfig, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
@@ -43,6 +35,7 @@ import {
   UNLEASH_CLI_STEPS,
 } from "../playbooks/index.js";
 import { startUiServer } from "../ui/server.js";
+import { runMcp } from "../mcp/server.js";
 import {
   BRAIN_HELP,
   VISION_HELP,
@@ -445,52 +438,27 @@ export async function cmdReport(opts: {
   } catch (err) {
     fail(EXIT_USAGE, errMessage(err));
   }
-  const cases = collectFindingCases(runDirs);
-  const runIds = runDirs.map((d) => d.split(/[/\\]/).pop() ?? d);
-  const generatedAt = new Date().toISOString();
-  const reportId = newRunId();
-  const mdPath = plannedReportPath(configPath, reportId);
-  let summary: string | undefined;
-  let extras: Map<string, { title?: string; expected?: string; actual?: string; why?: string }> | undefined;
-  if (config.brain) {
-    try {
-      const enriched = await enrichWithBrain(cases, config);
-      summary = enriched.summary || undefined;
-      extras = enriched.extras;
-    } catch (err) {
-      process.stderr.write(`brain skipped: ${errMessage(err)}\n`);
-    }
-  }
-  const outlines = outlinesFromRunDirs(runDirs);
-  const meta = {
-    url: config.url,
-    generatedAt,
-    runIds,
-    ...(config.brain?.model ? { brain: config.brain.model } : {}),
-    testability: loadTestabilityReport(testabilityReportPath(configPath)),
-    quality: loadQualityReport(qualityReportPath(configPath)),
-    ...(opts.qualityFull ? { qualityFull: true } : {}),
-    ...(outlines.length > 0 ? { outlines } : {}),
-  };
-  const markdown = renderFindingsReport(cases, meta, mdPath, extras, summary);
-  const written = writeReportFolder(configPath, {
-    url: config.url,
-    generatedAt,
-    runIds,
-    findingCount: collapseFindingCases(cases).length,
-    markdown,
-    id: reportId,
+  const written = await writeRunsReport({
+    configPath,
+    config,
+    runDirs,
+    qualityFull: opts.qualityFull,
+    onBrainError: (message) => process.stderr.write(`brain skipped: ${message}\n`),
   });
   if (opts.out) {
     const extra = resolve(process.cwd(), opts.out);
     mkdirSync(dirname(extra), { recursive: true });
-    writeFileSync(extra, renderFindingsReport(cases, meta, extra, extras, summary), "utf8");
+    writeFileSync(
+      extra,
+      renderFindingsReport(written.cases, written.meta, extra, written.extras, written.summary),
+      "utf8",
+    );
     process.stdout.write(`${extra}\n`);
     process.stderr.write(`also wrote ${written.mdPath}\n`);
   } else {
     process.stdout.write(`${written.mdPath}\n`);
   }
-  return cases.length > 0 ? EXIT_FINDINGS : EXIT_OK;
+  return written.caseCount > 0 ? EXIT_FINDINGS : EXIT_OK;
 }
 
 export async function cmdReplay(
@@ -567,6 +535,11 @@ export async function cmdBundle(opts: { config?: string; out?: string }): Promis
   } catch (err) {
     fail(EXIT_USAGE, errMessage(err));
   }
+}
+
+export async function cmdMcp(opts: { config?: string }): Promise<number> {
+  await runMcp({ config: opts.config });
+  return EXIT_OK;
 }
 
 export async function cmdUi(opts: {

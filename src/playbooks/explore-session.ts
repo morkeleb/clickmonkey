@@ -96,6 +96,10 @@ function listFindings(items: Finding[]): string {
   return items.map((f) => `- ${f.id}: ${f.message}`).join("\n");
 }
 
+/** Host instruction after a walk: digest visits/notes/goods/shots, do not invent bugs. */
+export const EXPLORE_REPORT_PROMPT =
+  "Write a short digest of this explore session from the visits, notes, goods, and shot paths. Lead with product findings a user would notice. Runtime errors first. Do not invent ids or bugs that were not observed. session.md and the findings report are already on disk after explore_finish.";
+
 export function writeSessionMd(opts: {
   path: string;
   startedAt: number;
@@ -166,6 +170,7 @@ export type ExploreWalkCtx = {
   goods: string[];
   outDir: string;
   config: Config;
+  configPath?: string;
   startedAt: number;
   logPath: string;
   sessionPath: string;
@@ -337,6 +342,38 @@ export class ExploreSession {
     return this.ctx?.view;
   }
 
+  get started(): boolean {
+    return Boolean(this.ctx);
+  }
+
+  get outDir(): string | undefined {
+    return this.ctx?.outDir;
+  }
+
+  get configPath(): string | undefined {
+    return this.ctx?.configPath;
+  }
+
+  get config(): Config | undefined {
+    return this.ctx?.config;
+  }
+
+  get lastScreenshotPath(): string | undefined {
+    return this.ctx?.state.lastScreenshotPath;
+  }
+
+  get pages() {
+    return this.ctx?.state.model.pages ?? [];
+  }
+
+  get livePageUrl(): string | undefined {
+    try {
+      return this.ctx?.state.page.url();
+    } catch {
+      return undefined;
+    }
+  }
+
   async start(opts: {
     config: Config;
     configPath: string;
@@ -490,6 +527,7 @@ export class ExploreSession {
       goods: [],
       outDir: opts.outDir,
       config: opts.config,
+      ...(opts.configPath ? { configPath: opts.configPath } : {}),
       startedAt: opts.startedAt,
       logPath: join(opts.outDir, "log.txt"),
       sessionPath: join(opts.outDir, "session.md"),

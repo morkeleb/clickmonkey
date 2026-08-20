@@ -82,6 +82,7 @@ export {
   exploreVisitOf,
   snapshotView,
   writeSessionMd,
+  EXPLORE_REPORT_PROMPT,
   replayLog,
   replayReport,
   ReplayLiveValidateError,
@@ -101,7 +102,12 @@ export type {
   ReplayReportResult,
 } from "./playbooks/index.js";
 export { extractClickmonkeyFences, isFindingsReport } from "./reports/fences.js";
-export { renderFindingsReport, renderQualitySection, enrichWithBrain } from "./reports/findings-report.js";
+export {
+  renderFindingsReport,
+  renderQualitySection,
+  enrichWithBrain,
+  writeRunsReport,
+} from "./reports/findings-report.js";
 export { identityFromRunId, pickDistinctHue, HUE_SLOTS } from "./ui/identity.js";
 export { buildUiGraph, badgeCounts, hopsFromNavLog } from "./ui/graph.js";
 export { buildUiSnapshot } from "./ui/snapshot.js";
@@ -173,6 +179,8 @@ export {
   formatExplorePlan,
   parseExplorePlanReply,
   completeCurrentPlanItem,
+  EXPLORE_PLAN_PROMPT,
+  EXPLORE_PLAN_SYSTEM,
 } from "./brains/explore.js";
 export { chat } from "./brains/chat.js";
 export type {

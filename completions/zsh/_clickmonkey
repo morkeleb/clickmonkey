@@ -11,6 +11,7 @@ _clickmonkey() {
     'map:Navigate-only random walk'
     'unleash:Random-walk legal map ids [--nasty]'
     'explore:Charter-driven LLM walk'
+    'mcp:Exploratory testing over MCP (stdio)'
     'report:Markdown findings report from selected runs'
     'replay:Replay a log or a findings-report markdown file'
     'compact:Shorten a log to the last open'

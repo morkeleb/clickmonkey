@@ -1,8 +1,12 @@
 import { dirname, relative } from "node:path";
 import { z } from "zod";
 import { chat, type ChatClient } from "../brains/chat.js";
-import type { FindingCase } from "../persist/runs.js";
+import { collectFindingCases, type FindingCase } from "../persist/runs.js";
 import { loadPresence, presencePath } from "../persist/presence.js";
+import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
+import { plannedReportPath, writeReportFolder } from "../persist/reports.js";
+import { newRunId } from "../persist/run-id.js";
+import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
 import type { Config } from "../schema/config.js";
 import { formatExplorePlanItemLine, type UiExploreOutline } from "../schema/ui.js";
 import { severityForKind, type FindingSeverity } from "../schema/finding.js";
@@ -651,6 +655,76 @@ export function renderFindingsReport(
   }
   lines.push("## Appendix", "", "Source finding folders live under each run's `findings/` directory.", "");
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+export type WrittenRunsReport = {
+  id: string;
+  dir: string;
+  mdPath: string;
+  findingCount: number;
+  caseCount: number;
+  cases: FindingCase[];
+  meta: ReportMeta;
+  extras?: Map<string, { title?: string; expected?: string; actual?: string; why?: string }>;
+  summary?: string;
+};
+
+/** Shared by `clickmonkey report` and MCP `explore_finish`. Skips the LLM unless `config.brain` is set. */
+export async function writeRunsReport(opts: {
+  configPath: string;
+  config: Config;
+  runDirs: string[];
+  qualityFull?: boolean;
+  onBrainError?: (message: string) => void;
+}): Promise<WrittenRunsReport> {
+  const cases = collectFindingCases(opts.runDirs);
+  const runIds = opts.runDirs.map((d) => d.split(/[/\\]/).pop() ?? d);
+  const generatedAt = new Date().toISOString();
+  const reportId = newRunId();
+  const mdPath = plannedReportPath(opts.configPath, reportId);
+  let summary: string | undefined;
+  let extras: Map<string, { title?: string; expected?: string; actual?: string; why?: string }> | undefined;
+  if (opts.config.brain) {
+    try {
+      const enriched = await enrichWithBrain(cases, opts.config);
+      summary = enriched.summary || undefined;
+      extras = enriched.extras;
+    } catch (err) {
+      opts.onBrainError?.(err instanceof Error ? err.message : String(err));
+    }
+  }
+  const outlines = outlinesFromRunDirs(opts.runDirs);
+  const meta: ReportMeta = {
+    url: opts.config.url,
+    generatedAt,
+    runIds,
+    ...(opts.config.brain?.model ? { brain: opts.config.brain.model } : {}),
+    testability: loadTestabilityReport(testabilityReportPath(opts.configPath)),
+    quality: loadQualityReport(qualityReportPath(opts.configPath)),
+    ...(opts.qualityFull ? { qualityFull: true } : {}),
+    ...(outlines.length > 0 ? { outlines } : {}),
+  };
+  const markdown = renderFindingsReport(cases, meta, mdPath, extras, summary);
+  const findingCount = collapseFindingCases(cases).length;
+  const written = writeReportFolder(opts.configPath, {
+    url: opts.config.url,
+    generatedAt,
+    runIds,
+    findingCount,
+    markdown,
+    id: reportId,
+  });
+  return {
+    id: written.id,
+    dir: written.dir,
+    mdPath: written.mdPath,
+    findingCount,
+    caseCount: cases.length,
+    cases,
+    meta,
+    ...(extras ? { extras } : {}),
+    ...(summary ? { summary } : {}),
+  };
 }
 
 export async function enrichWithBrain(

@@ -462,6 +462,20 @@ export function parseExploreReply(raw: string): { line: string; note?: string; g
 
 export const EXPLORE_PLAN_PROMPT = "ClickMonkey explore plan. Reply with JSON only.";
 
+/** System half of `draftExplorePlan` (includes `EXPLORE_PLAN_PROMPT`). */
+export const EXPLORE_PLAN_SYSTEM = [
+  EXPLORE_PLAN_PROMPT,
+  "You are planning a time-boxed explore session, not walking yet.",
+  "The charter is the mission. Do not invent a second one.",
+  'JSON: { "goal": "Explore X with Y to discover Z", "items": [ { "title": "<oracle> on <aim>: <what would be wrong>", "page": "optional exact sitemap id" } ] }',
+  "2 to 6 items. Title shape: `Empty: required name on create dialog`. Not DSL, not a page name.",
+  "Order: writes and required fields, empty/error, claims vs UI, interruption.",
+  "Look for is oracles. An item is a risk that an oracle might fail. good behaviour is not an item.",
+  "Sitemap cards are every hoppable page. reach is the DAG: open / click / from / dialog. Follow via; do not open nested ids.",
+  "page on an item may be any sitemap id (the aim). During the walk, only Legal open ids may be used with open.",
+  "Never invent ids.",
+].join("\n");
+
 /** Keep the sitemap inside a planner's context. Cut on a card boundary. */
 export const PLAN_SITEMAP_MAX = 8000;
 /** Architecture context on the plan call. Oracles are not counted against this. */
@@ -720,18 +734,7 @@ export async function draftExplorePlan(opts: {
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: [
-        EXPLORE_PLAN_PROMPT,
-        "You are planning a time-boxed explore session, not walking yet.",
-        "The charter is the mission. Do not invent a second one.",
-        'JSON: { "goal": "Explore X with Y to discover Z", "items": [ { "title": "<oracle> on <aim>: <what would be wrong>", "page": "optional exact sitemap id" } ] }',
-        "2 to 6 items. Title shape: `Empty: required name on create dialog`. Not DSL, not a page name.",
-        "Order: writes and required fields, empty/error, claims vs UI, interruption.",
-        "Look for is oracles. An item is a risk that an oracle might fail. good behaviour is not an item.",
-        "Sitemap cards are every hoppable page. reach is the DAG: open / click / from / dialog. Follow via; do not open nested ids.",
-        "page on an item may be any sitemap id (the aim). During the walk, only Legal open ids may be used with open.",
-        "Never invent ids.",
-      ].join("\n"),
+      content: EXPLORE_PLAN_SYSTEM,
     },
     {
       role: "user",

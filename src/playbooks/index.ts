@@ -28,6 +28,7 @@ export {
   exploreVisitOf,
   snapshotView,
   writeSessionMd,
+  EXPLORE_REPORT_PROMPT,
   type ExploreResult,
   type ExploreStepResult,
   type ExploreStepOpts,

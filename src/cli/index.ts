@@ -8,6 +8,7 @@ import {
   cmdInit,
   cmdInspect,
   cmdMap,
+  cmdMcp,
   cmdPlaybook,
   cmdReport,
   cmdReplay,
@@ -93,6 +94,8 @@ try {
         return cmdUnleash(flags);
       case "explore":
         return cmdExplore(flags);
+      case "mcp":
+        return cmdMcp(flags);
       case "report":
         return cmdReport(flags);
       case "replay":
