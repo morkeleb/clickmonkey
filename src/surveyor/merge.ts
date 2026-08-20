@@ -77,9 +77,16 @@ function previousLabelOf(w: { by: string; value: string; name?: string }): strin
   return w.by === "label" ? w.value : (w.name ?? w.value);
 }
 
+function stripSelfOpens(surface: Surface): void {
+  for (const a of surface.actions) {
+    if (a.opens === surface.id) delete a.opens;
+  }
+}
+
 function applyLastOpensHint(model: PageModel, input: MergeInput): void {
   const hint = input.lastOpensHint;
   if (!hint) return;
+  if (hint.opens === hint.actionSurfaceId) return;
   for (const page of model.pages) {
     if (hint.fromPage && page.id !== hint.fromPage) continue;
     const surface = page.surfaces.find((s) => s.id === hint.actionSurfaceId);
@@ -198,6 +205,7 @@ function mergeSurface(keep: Surface, other: Surface): { surface: Surface; added:
 
   for (const f of other.fields) take(f, "field");
   for (const a of other.actions) take(a, "action");
+  stripSelfOpens(surface);
   return { surface, added };
 }
 
@@ -377,6 +385,7 @@ export function mergePageModel(model: PageModel, input: MergeInput): MergeResult
     if (candidateKeys.has(key)) continue;
     applyLeftover(w, key, input.leftoverResolves);
   }
+  stripSelfOpens(surface);
 
   // Status-only edits must not bump generation — logs pin ids to a generation.
   if (createdSurface || appended.length > 0) {

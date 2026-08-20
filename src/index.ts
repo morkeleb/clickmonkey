@@ -121,15 +121,19 @@ export {
   looksLikeNavWidget,
   sharedChromeIds,
   formSubmitAction,
+  formDismissAction,
   decideForm,
   formatClick,
   rememberClick,
   freshClicks,
   LANDMARK_BIAS,
   FORM_BURST_MAX,
+  FORM_DISMISS_RATE,
   RECENT_CLICK_WINDOW,
   RECENT_CLICK_LIMIT,
 } from "./brains/unleash.js";
+export { detectWalkerMode, UNLEASH_MODES } from "./brains/walker-mode.js";
+export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";
 export { decisionLines } from "./brains/types.js";
 export { pickNasty, decideUnleashNasty } from "./brains/nasty.js";
 export {

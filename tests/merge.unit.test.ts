@@ -253,6 +253,29 @@ describe("mergePageModel", () => {
     const stamped = surface(result.model, "page").actions.find((a) => a.id === "openCreate");
     assert.equal(stamped?.opens, "projects");
   });
+
+  it("does not stamp opens onto an action that lives on the opened dialog", () => {
+    const result = mergePageModel(loadHome(), {
+      ...dialogInput(),
+      lastOpensHint: {
+        actionId: "submit",
+        actionSurfaceId: "createDialog",
+        opens: "createDialog",
+      },
+    });
+    const submit = surface(result.model, "createDialog").actions.find((a) => a.id === "submit");
+    assert.equal(submit?.opens, undefined);
+  });
+
+  it("strips self-opens already on the dialog", () => {
+    const model = loadHome();
+    const submit = surface(model, "createDialog").actions.find((a) => a.id === "submit");
+    assert.ok(submit);
+    submit.opens = "createDialog";
+    const result = mergePageModel(model, dialogInput());
+    const healed = surface(result.model, "createDialog").actions.find((a) => a.id === "submit");
+    assert.equal(healed?.opens, undefined);
+  });
 });
 
 describe("mergeTrees", () => {

@@ -1,6 +1,7 @@
 import type { Page } from "../schema/page-model.js";
 import type { UiExplorePlan } from "../schema/ui.js";
 import type { View } from "../schema/view.js";
+import type { WalkerModeName } from "./walker-mode.js";
 
 export interface BrainDecision {
   line: string;
@@ -10,6 +11,7 @@ export interface BrainDecision {
   /** Observed good behaviour — not a finding. */
   good?: string;
   done?: boolean;
+  mode?: WalkerModeName;
 }
 
 export function decisionLines(d: BrainDecision): string[] {

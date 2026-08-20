@@ -31,7 +31,7 @@ import {
 } from "./steps.js";
 import { ledgerOrigin, originOfHref, pathnameOf } from "../surveyor/ready.js";
 import { hoppablePages, hopContextOf } from "./hop.js";
-import { logLand, logSight, logStepDone, logStepStart } from "./nav-log.js";
+import { logLand, logSight, logStepDone, logStepStart, type NavMeta } from "./nav-log.js";
 import { dumpVerboseState } from "./verbose.js";
 import { buildView } from "./view.js";
 
@@ -60,7 +60,7 @@ export interface RunState {
   blurbTriedHashByPage?: Record<string, string>;
   /** Intro is how we enter the leash; fence applies after it. */
   inIntro?: boolean;
-  navMeta?: { step?: string; pageId?: string; phase?: string };
+  navMeta?: NavMeta;
   navLogPath?: string;
   /** Per-step HTML + view dumps under outDir/verbose/. */
   verbose?: boolean;
@@ -478,11 +478,13 @@ export function createExecutor(state: RunState): {
       state.navMeta.pageId = state.pageId;
       state.navMeta.phase = phase;
     }
+    const mode = state.navMeta?.mode;
     const started = state.navLogPath
       ? logStepStart(state.navLogPath, {
           line,
           pageId: state.pageId,
           phase,
+          ...(mode ? { mode } : {}),
           echo: process.stderr,
         })
       : Date.now();
@@ -503,6 +505,7 @@ export function createExecutor(state: RunState): {
         ok: result.ok,
         started,
         pageId: state.pageId,
+        ...(mode ? { mode } : {}),
         ...(result.finding
           ? { finding: result.finding.kind }
           : result.bounced || result.view.last?.finding === "fenceViolation"

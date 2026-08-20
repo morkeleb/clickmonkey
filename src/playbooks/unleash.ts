@@ -113,6 +113,10 @@ export async function runUnleash(opts: {
         writePolicy: state.config.writePolicy,
         recentClicks: clicksByPage.get(onPage) ?? [],
       });
+      if (state.navMeta) {
+        if (decision.mode) state.navMeta.mode = decision.mode;
+        else delete state.navMeta.mode;
+      }
       for (const line of decisionLines(decision)) {
         if (stepsUsed >= steps) break;
         const result = await exec.runLine(line);

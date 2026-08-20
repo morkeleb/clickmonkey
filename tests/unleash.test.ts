@@ -9,6 +9,7 @@ import {
   decideMap,
   decideUnleash,
   formSubmitAction,
+  formDismissAction,
   inPageActions,
   isDismissAction,
   isLeaveAction,
@@ -19,6 +20,7 @@ import {
   stayActions,
   rememberClick,
   freshClicks,
+  FORM_DISMISS_RATE,
 } from "../src/brains/unleash.js";
 import { decisionLines } from "../src/brains/types.js";
 import type { Page } from "../src/schema/page-model.js";
@@ -76,6 +78,7 @@ describe("isDismissAction", () => {
     assert.equal(isDismissAction({ id: "button_close" }), true);
     assert.equal(isDismissAction({ id: "button_close", label: "Close" }), true);
     assert.equal(isDismissAction({ id: "cancel", label: "Cancel" }), true);
+    assert.equal(isDismissAction({ id: "button_cancel", opens: "add_customer" }), true);
     assert.equal(isDismissAction({ id: "create", label: "Create" }), false);
     assert.equal(
       formSubmitAction([
@@ -84,6 +87,7 @@ describe("isDismissAction", () => {
       ])?.id,
       "create",
     );
+    assert.equal(FORM_DISMISS_RATE, 0.2);
   });
 });
 
@@ -121,6 +125,7 @@ describe("unleash brain", () => {
     for (let i = 0; i < 20; i++) {
       const decision = decideUnleash({ view, stepsUsed: i });
       assert.match(decision.line, /^click page\.open_create$/);
+      assert.equal(decision.mode, "nav");
     }
   });
 
@@ -129,7 +134,9 @@ describe("unleash brain", () => {
       page: "settings",
       pages: ["home", "settings"],
     });
-    assert.equal(decideUnleash({ view, stepsUsed: 0 }).line, "open home");
+    const hop = decideUnleash({ view, stepsUsed: 0 });
+    assert.equal(hop.line, "open home");
+    assert.equal(hop.mode, "nav");
     const afterHop = viewOf({
       page: "settings",
       pages: ["home", "settings"],
@@ -197,6 +204,7 @@ describe("unleash brain", () => {
     });
     const hop = decideUnleash({ view: chromeOnly, stepsUsed: 0, pages });
     assert.match(hop.line, /^open /);
+    assert.equal(hop.mode, "nav");
   });
 
   it("clicks an in-page button instead of a pile of unique record links", () => {
@@ -232,6 +240,7 @@ describe("unleash brain", () => {
     });
     for (let i = 0; i < 20; i++) {
       const d = decideUnleash({ view, stepsUsed: i });
+      assert.equal(d.mode, "form");
       const text = (d.lines ?? [d.line]).join("\n");
       assert.doesNotMatch(text, /link_overview/);
       assert.match(text, /^fill page\.(name|email) /m);
@@ -262,6 +271,7 @@ describe("unleash brain", () => {
     ];
     const next = decideUnleash({ view, stepsUsed: 4, recentClicks: pingPong }, () => 0);
     assert.match(next.line, /^open /);
+    assert.equal(next.mode, "nav");
     assert.equal(
       freshClicks(view.actions, pingPong).length,
       0,
@@ -287,6 +297,7 @@ describe("unleash brain", () => {
       actions: [{ id: "submit" }, { id: "open_create" }],
     });
     const first = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
+    assert.equal(first.mode, "form");
     assert.deepEqual(first.lines, [
       "fill page.name x",
       "fill page.email user@example.com",
@@ -317,6 +328,13 @@ describe("unleash brain", () => {
     assert.equal(formSubmitAction([{ id: "button_add_customer" }])?.id, "button_add_customer");
     assert.equal(formSubmitAction([{ id: "create", label: "Create pipeline" }])?.id, "create");
     assert.equal(formSubmitAction([{ id: "open_create", opens: "create" }]), undefined);
+    assert.equal(
+      formSubmitAction([{ id: "button_create", label: "Create", opens: "add_customer" }], "add_customer")
+        ?.id,
+      "button_create",
+    );
+    assert.equal(formSubmitAction([{ id: "button_create", opens: "add_customer" }]), undefined);
+    assert.equal(formDismissAction([{ id: "button_cancel", opens: "add_customer" }])?.id, "button_cancel");
     assert.equal(isWriteAction({ id: "button_add_customer" }), false);
   });
 
@@ -336,12 +354,41 @@ describe("unleash brain", () => {
       ],
     });
     for (let i = 0; i < 20; i++) {
-      const d = decideUnleash({ view, stepsUsed: i, writePolicy: "allow" }, () => 0.1);
+      const d = decideUnleash({ view, stepsUsed: i, writePolicy: "allow" }, () => 0.5);
+      assert.equal(d.mode, "form");
       const text = (d.lines ?? [d.line]).join("\n");
       assert.doesNotMatch(text, /button_close|cancel/);
       assert.match(text, /fill add_customer\.(name|notes) /);
       assert.match(text, /click add_customer\.create/);
     }
+  });
+
+  it("submits a dialog even when Create/Cancel were stamped with self-opens", () => {
+    const view = viewOf({
+      page: "customers",
+      surface: "add_customer",
+      stack: ["page", "add_customer"],
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "notes", value: "", type: "text" },
+      ],
+      actions: [
+        { id: "button_cancel", label: "Cancel", opens: "add_customer" },
+        { id: "button_create", label: "Create", opens: "add_customer" },
+        { id: "button_close", label: "Close", opens: "add_customer" },
+      ],
+    });
+    const submit = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    assert.equal(submit.mode, "form");
+    const submitText = (submit.lines ?? [submit.line]).join("\n");
+    assert.match(submitText, /fill add_customer\.name /);
+    assert.match(submitText, /click add_customer\.button_create/);
+    assert.doesNotMatch(submitText, /button_cancel|button_close/);
+    const dismiss = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
+    assert.equal(dismiss.mode, "form");
+    const dismissText = (dismiss.lines ?? [dismiss.line]).join("\n");
+    assert.match(dismissText, /fill add_customer\.name /);
+    assert.match(dismissText, /click add_customer\.button_cancel/);
   });
 
   it("stamps nav on a landmark click", () => {

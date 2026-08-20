@@ -377,6 +377,10 @@ export async function runExplore(opts: {
           `explore will not take a screenshot when the last step was already a screenshot (${view.last?.step})`,
         );
       }
+      if (state.navMeta) {
+        if (decision.mode) state.navMeta.mode = decision.mode;
+        else delete state.navMeta.mode;
+      }
       if (state.navLogPath) {
         logBrainDecide(state.navLogPath, {
           line,

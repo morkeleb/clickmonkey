@@ -10,6 +10,7 @@ import {
   ExploreError,
   EXPLORE_DECIDE_RETRIES,
   EXPLORE_PROBE,
+  exampleExploreLine,
   isScreenshotLine,
   legalOpenIds,
   probeExploreChat,
@@ -989,6 +990,48 @@ describe("createExploreBrain", () => {
     assert.match(prompt, /invoices -open_row-> invoice_detail/);
     assert.equal(decision.good, "invoice list rendered");
     assert.deepEqual(brain.getGoods(), ["invoice list rendered"]);
+  });
+
+  it("stamps Mode: form for a dialog with fields and submit", async () => {
+    let prompt = "";
+    const brain = createExploreBrain({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n");
+        return JSON.stringify({ line: 'fill createDialog.name ""' });
+      },
+      charter: "walk the form",
+      skills: "one step",
+      startedAt: Date.now(),
+    });
+    const view = viewOf({
+      surface: "createDialog",
+      stack: ["page", "createDialog"],
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [{ id: "submit" }, { id: "cancel", label: "Cancel" }],
+    });
+    const decision = await brain.decide({ view, stepsUsed: 0 });
+    assert.match(prompt, /Mode: form/);
+    assert.match(prompt, /finish the form or local button/);
+    assert.equal(decision.mode, "form");
+    assert.match(exampleExploreLine(view), /^fill createDialog\.name /);
+  });
+
+  it("stamps Mode: nav for a chrome-only view", async () => {
+    let prompt = "";
+    const brain = createExploreBrain({
+      chat: async ({ messages }) => {
+        prompt = messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n");
+        return JSON.stringify({ line: "click page.openCreate" });
+      },
+      charter: "walk the form",
+      skills: "one step",
+      startedAt: Date.now(),
+    });
+    const decision = await brain.decide({ view: viewOf(), stepsUsed: 1 });
+    assert.match(prompt, /Mode: nav/);
+    assert.doesNotMatch(prompt, /Mode: form/);
+    assert.doesNotMatch(prompt, /finish the form or local button/);
+    assert.equal(decision.mode, "nav");
   });
 });
 

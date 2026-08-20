@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
-import { formatClock, formatLiveLine, formatNavLine } from "../src/executor/nav-log.js";
+import { formatClock, formatLiveLine, formatNavLine, logStepDone, logStepStart } from "../src/executor/nav-log.js";
 
 describe("formatClock", () => {
   it("prints UTC time from an ISO instant", () => {
@@ -60,5 +63,35 @@ describe("formatNavLine", () => {
       }),
       "nav ~ http://app.example/ → http://app.example/projects",
     );
+  });
+});
+
+describe("logStepStart", () => {
+  it("omits mode when absent and records it when set", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-nav-mode-"));
+    const path = join(dir, "nav.jsonl");
+    try {
+      logStepStart(path, { line: "click page.go", pageId: "home", phase: "walk" });
+      logStepStart(path, { line: 'fill page.name ""', pageId: "home", phase: "walk", mode: "form" });
+      const started = Date.now();
+      logStepDone(path, { line: "click page.go", ok: true, started, pageId: "home" });
+      logStepDone(path, { line: 'fill page.name ""', ok: true, started, pageId: "home", mode: "form" });
+      const events = readFileSync(path, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { type: string; mode?: string; line: string; pageId?: string });
+      assert.equal("mode" in events[0]!, false);
+      assert.equal(events[0]?.mode, undefined);
+      assert.equal(events[1]?.mode, "form");
+      assert.equal("mode" in events[2]!, false);
+      assert.equal(events[3]?.mode, "form");
+      const old = JSON.parse(
+        '{"ts":"2026-01-01T00:00:00.000Z","type":"step","line":"click page.go","pageId":"home","phase":"walk"}',
+      ) as { mode?: string; type: string };
+      assert.equal(old.mode, undefined);
+      assert.equal(old.type, "step");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

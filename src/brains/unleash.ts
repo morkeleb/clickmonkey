@@ -2,6 +2,7 @@ import { formatStep } from "../schema/dsl.js";
 import type { Page } from "../schema/page-model.js";
 import type { ShownAction, ShownField, View } from "../schema/view.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
+import { detectWalkerMode } from "./walker-mode.js";
 
 function pick<T>(items: readonly T[], rng: () => number): T {
   return items[Math.floor(rng() * items.length)]!;
@@ -60,9 +61,8 @@ export function isLeaveAction(action: { id: string; label?: string; opens?: stri
   return false;
 }
 
-/** Dialog X / Cancel — stay in the view so we can leave an empty modal, but never as submit. */
+/** Dialog X / Cancel — leave an empty modal, but never treat as submit. */
 export function isDismissAction(action: { id: string; label?: string; opens?: string }): boolean {
-  if (action.opens) return false;
   const id = action.id.toLowerCase();
   const label = (action.label ?? "").toLowerCase().trim();
   if (/(^|_)(cancel|dismiss)(_|$)/.test(id)) return true;
@@ -189,6 +189,8 @@ const SUBMIT_LABEL =
   /\b(submit|save|create|apply|publish|send|update|confirm|run|next|continue|done|finish|add)\b|^ok$/i;
 
 export const FORM_BURST_MAX = 12;
+/** After filling, click Cancel/Close this often; otherwise submit. Cancel rarely finds bugs. */
+export const FORM_DISMISS_RATE = 0.2;
 /** Last N clicks on this page. Oldest drop off; not cache LRU (least-recently-used). */
 export const RECENT_CLICK_WINDOW = 8;
 /** Skip a widget after this many appearances in the window. */
@@ -214,10 +216,18 @@ export function freshClicks(
   return actions.filter((a) => a.id !== last && clickCountInRecent(recent, a.id) < limit);
 }
 
+/** `opens` that points at this surface is a mis-stamp, not a hop. */
+export function isSelfOpen(action: { opens?: string }, surface?: string): boolean {
+  return Boolean(surface && action.opens === surface);
+}
+
 /** Submit/save/create/add on this surface — not a page hop and not a delete. */
-export function formSubmitAction(actions: readonly ShownAction[]): ShownAction | undefined {
+export function formSubmitAction(
+  actions: readonly ShownAction[],
+  surface?: string,
+): ShownAction | undefined {
   return actions.find((a) => {
-    if (a.opens) return false;
+    if (a.opens && !isSelfOpen(a, surface)) return false;
     if (isDismissAction(a) || isLeaveAction(a)) return false;
     const blob = `${a.id} ${a.label ?? ""}`;
     if (DESTRUCTIVE.test(blob)) return false;
@@ -228,6 +238,10 @@ export function formSubmitAction(actions: readonly ShownAction[]): ShownAction |
   });
 }
 
+export function formDismissAction(actions: readonly ShownAction[]): ShownAction | undefined {
+  return actions.find((a) => isDismissAction(a) && !isLeaveAction(a));
+}
+
 export function decideForm(
   view: View,
   actions: ShownAction[],
@@ -235,7 +249,7 @@ export function decideForm(
   fill: (type: ShownField["type"]) => string,
 ): BrainDecision | undefined {
   const fields = view.shown;
-  const submit = formSubmitAction(actions);
+  const submit = formSubmitAction(actions, view.surface);
   if (fields.length === 0 || !submit) return undefined;
   const empty = fields.filter((f) => !f.value.trim() || f.value === "••••");
   const toFill = empty.slice(0, FORM_BURST_MAX);
@@ -247,65 +261,29 @@ export function decideForm(
       value: fill(field.type),
     }),
   );
-  lines.push(formatClick(view.surface, submit));
-  return { line: lines[0]!, lines, note: toFill.length > 0 ? "form" : "form submit" };
+  const dismiss = formDismissAction(view.actions);
+  const finish = dismiss && rng() < FORM_DISMISS_RATE ? dismiss : submit;
+  lines.push(formatClick(view.surface, finish));
+  return {
+    line: lines[0]!,
+    lines,
+    note: finish === dismiss ? "form dismiss" : toFill.length > 0 ? "form" : "form submit",
+  };
 }
 
 function inDialog(view: View): boolean {
   return view.stack.length > 1;
 }
 
-function hopOrChromeFallback(view: View, rng: () => number): BrainDecision {
-  const hop = hopPage(view, rng);
-  if (!hop.line.startsWith("screenshot") || view.actions.length === 0) return hop;
-  return { line: formatClick(view.surface, pickAction(view.actions, rng, "nav")) };
-}
-
-/**
- * Form and in-page buttons first. Unique hops (record links, leftover chrome)
- * only when this surface has no empty fields and no stay-on-page button.
- */
+/** Pick a page mode from the view, then that mode's legal moves. */
 export function decideUnleashWork(
   ctx: BrainContext,
   rng: () => number,
   fill: (type: ShownField["type"]) => string,
 ): BrainDecision {
-  const { view } = ctx;
-  const legal = legalUnleashActions(view, ctx.pages);
-  const stay = stayActions(view, ctx.pages);
-  const fields = view.shown;
-  const surface = view.surface;
-  const empty = fields.filter((f) => !f.value.trim() || f.value === "••••");
-
-  if (legal.length === 0 && fields.length === 0) return hopOrChromeFallback(view, rng);
-
-  const commitForm = ctx.writePolicy === "allow" || inDialog(view);
-  if (commitForm) {
-    const form = decideForm(view, legal, rng, fill);
-    if (form) return form;
-  }
-
-  if (empty.length > 0) {
-    const toFill = empty.slice(0, FORM_BURST_MAX);
-    const lines = toFill.map((field) =>
-      formatStep({
-        kind: "fill",
-        surface,
-        id: field.id,
-        value: fill(field.type),
-      }),
-    );
-    return { line: lines[0]!, lines, note: "form" };
-  }
-
-  const recent = ctx.recentClicks ?? [];
-  const stayFresh = freshClicks(stay, recent);
-  const legalFresh = freshClicks(legal, recent);
-  const pool = stayFresh.length > 0 ? stayFresh : legalFresh;
-  if (pool.length > 0) {
-    return { line: formatClick(surface, pick(pool, rng)) };
-  }
-  return hopOrChromeFallback(view, rng);
+  const mode = detectWalkerMode(ctx);
+  const decision = mode.decide(ctx, rng, fill);
+  return { ...decision, mode: mode.name };
 }
 
 export function decideUnleash(ctx: BrainContext, rng: () => number = Math.random): BrainDecision {

@@ -7,6 +7,7 @@ export type NavMeta = {
   step?: string;
   pageId?: string;
   phase?: string;
+  mode?: string;
 };
 
 export type NavEvent = {
@@ -98,7 +99,13 @@ export function logSight(path: string, info: { line: string; sight: string }): v
 
 export function logStepStart(
   path: string,
-  info: { line: string; pageId: string; phase: string; echo?: { write(chunk: string): unknown } },
+  info: {
+    line: string;
+    pageId: string;
+    phase: string;
+    mode?: string;
+    echo?: { write(chunk: string): unknown };
+  },
 ): number {
   const started = Date.now();
   appendEvent(path, {
@@ -107,6 +114,7 @@ export function logStepStart(
     line: info.line,
     pageId: info.pageId,
     phase: info.phase,
+    ...(info.mode ? { mode: info.mode } : {}),
   });
   info.echo?.write(`${formatLiveLine(`step  ${info.line}  [${info.phase} ${info.pageId}]`)}\n`);
   return started;
@@ -121,6 +129,7 @@ export function logStepDone(
     finding?: string;
     /** Page the walker was on after the step (where the screenshot was taken). */
     pageId?: string;
+    mode?: string;
     echo?: { write(chunk: string): unknown };
   },
 ): void {
@@ -133,6 +142,7 @@ export function logStepDone(
     ms,
     ...(info.finding ? { finding: info.finding } : {}),
     ...(info.pageId ? { pageId: info.pageId } : {}),
+    ...(info.mode ? { mode: info.mode } : {}),
   });
   const outcome = info.ok ? "ok" : (info.finding ?? "fail");
   info.echo?.write(`${formatLiveLine(`${outcome.padEnd(4)} ${info.line}  ${ms}ms`)}\n`);

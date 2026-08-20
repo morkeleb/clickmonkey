@@ -11,6 +11,7 @@ import type { View } from "../schema/view.js";
 import type { ChatMessage } from "./chat.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
 import { isLeaveAction, matchesSkip, stayActions } from "./unleash.js";
+import { detectWalkerMode } from "./walker-mode.js";
 
 export const DEFAULT_EXPLORE_CHARTER =
   "Explore the mapped product with empty/invalid input, claims vs behavior, and interruption to discover runtime errors, data loss, and silent failures.";
@@ -64,8 +65,8 @@ Fence hits and unknown ids are harness, not product bugs.
 Prefer the action that would disprove the \`[>]\` risk or a claim on this surface.
 Use page blurbs and Context for risks, never to invent ids.
 Empty then invalid then a plausible value on required fields.
-When this surface has fields, fill the empties (and submit when the policy is allow) before clicking chrome or hopping. Do not fill one field and leave.
-Prefer in-page buttons (save, submit, add, edit) over link_* / [nav] / sidebar hops. Navigation is abundant; the form on this surface is the job.
+Walk mode is form vs nav (see \`Mode:\` on each decide). In form, fill the empties (and submit when the policy is allow) before clicking chrome or hopping. Do not fill one field and leave. Prefer in-page buttons (save, submit, add, edit) over link_* / [nav] / sidebar hops — the form on this surface is the job.
+In nav, follow the \`[>]\` aim; do not treat the surface as a commit form to finish.
 If last result was ok and taught nothing, change tactic — different field, page, or oracle.
 Stay on the \`[>]\` aim until you can report found, not found, or blocked. Do not start the next item because a hop is interesting.
 \`screenshot\` when the surface looks wrong; \`screenshot ui "brief"\` to file it. Not the first walk step, never twice in a row unless the charter is visual.
@@ -824,12 +825,14 @@ export function createExploreBrain(opts: {
       const example = exampleExploreLine(ctx.view, pages);
       const opens = legalDirectOpenIds(ctx.view, pages);
       const rejectedLines = [...rejected];
+      const walkerMode = detectWalkerMode(ctx).name;
       const messages: ChatMessage[] = [
         {
           role: "system",
           content: [
             "You are an exploratory tester. Reply with JSON only.",
             "The charter is the mission. Do not invent a second one.",
+            `Mode: ${walkerMode}`,
             'Shape: { "line": "<one DSL line>", "note": "<oracle>: <saw> → <next>", "done": false }',
             "Follow the plan item marked [>]. Stay on that aim until you can report found, not found, or blocked. Do not hop away because another page looks interesting.",
             "Set done: true only when you can report on [>]. One click is not enough.",
@@ -840,7 +843,9 @@ export function createExploreBrain(opts: {
             "open <id> only if that exact id is listed under Legal open ids (direct hops). Nested pages: follow via. Never invent a page id from the charter or skills.",
             "If pages: is empty, do not emit open — click a mapped action.",
             "Do not click Close-tab chrome (button_close_*). Do not re-open a page you just left.",
-            "Prefer shown fields and in-page buttons (save, submit, add, edit) over link_* / [nav] / sidebar hops. Chrome is abundant; finish the form or local button before opening another page.",
+            walkerMode === "form"
+              ? "Prefer shown fields and in-page buttons (save, submit, add, edit) over link_* / [nav] / sidebar hops. Chrome is abundant; finish the form or local button before opening another page."
+              : "Prefer mapped actions that serve the [>] aim. This is not a commit form.",
             "Use only mapped ids from shown and actions. Never emit HTML.",
             visual
               ? "screenshot is legal when you choose it."
@@ -934,6 +939,7 @@ export function createExploreBrain(opts: {
         if (good) goods.push(good);
         return {
           line: parsed.line,
+          mode: walkerMode,
           ...(note ? { note } : {}),
           ...(good ? { good } : {}),
           ...(parsed.done ? { done: true } : {}),

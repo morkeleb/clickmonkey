@@ -149,6 +149,7 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
     const lastOpensHint = (() => {
       if (!ctx.lastAction) return undefined;
       if (isCurrentDialog) {
+        if (ctx.lastAction.surface === entry.surfaceId) return undefined;
         return {
           actionId: ctx.lastAction.id,
           actionSurfaceId: ctx.lastAction.surface,
