@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ledgerPath } from "../surveyor/path-template.js";
 
 export const TestabilityCode = z.enum([
   "opaqueControl",
@@ -40,7 +41,7 @@ export const TestabilityPage = z
   .strict();
 export type TestabilityPage = z.infer<typeof TestabilityPage>;
 
-/** clickmonkey/testability.json — not the page map. */
+/** Per-run `testability.json` — not the page map. */
 export const TestabilityReport = z
   .object({
     schemaVersion: z.literal(1),
@@ -96,15 +97,60 @@ export function sameLedgerPage(
   a: { path: string; origin?: string },
   b: { path: string; origin?: string },
 ): boolean {
-  return a.path === b.path && (a.origin ?? "") === (b.origin ?? "");
+  return ledgerPath(a.path) === ledgerPath(b.path) && (a.origin ?? "") === (b.origin ?? "");
+}
+
+function ledgerGroupKey(page: { path: string; origin?: string }): string {
+  return `${page.origin ?? ""}\0${ledgerPath(page.path)}`;
+}
+
+export function foldTestabilityPages(pages: TestabilityPage[]): TestabilityPage[] {
+  const groups = new Map<string, TestabilityPage[]>();
+  for (const p of pages) {
+    const key = ledgerGroupKey(p);
+    const g = groups.get(key) ?? [];
+    g.push(p);
+    groups.set(key, g);
+  }
+  const out: TestabilityPage[] = [];
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((a, b) => a.foundAt.localeCompare(b.foundAt));
+    const last = sorted[sorted.length - 1]!;
+    const next: TestabilityPage = {
+      path: ledgerPath(last.path),
+      foundAt: sorted[0]!.foundAt,
+      insufficient: last.insufficient,
+      issues: dedupeIssues(group.flatMap((p) => p.issues)),
+    };
+    if (last.origin) next.origin = last.origin;
+    out.push(next);
+  }
+  out.sort((a, b) => {
+    const o = (a.origin ?? "").localeCompare(b.origin ?? "");
+    return o !== 0 ? o : a.path.localeCompare(b.path);
+  });
+  return out;
+}
+
+export function foldTestabilityReport(report: TestabilityReport): TestabilityReport {
+  return { schemaVersion: 1, pages: foldTestabilityPages(report.pages) };
+}
+
+/** Union several run ledgers onto templated paths. */
+export function combineTestabilityReports(reports: TestabilityReport[]): TestabilityReport {
+  return foldTestabilityReport({
+    schemaVersion: 1,
+    pages: reports.flatMap((r) => r.pages),
+  });
 }
 
 export function upsertTestabilityPage(
   report: TestabilityReport,
   page: TestabilityPage,
 ): TestabilityReport {
-  const pages = report.pages.filter((p) => !sameLedgerPage(p, page));
-  pages.push(page);
+  const folded: TestabilityPage = { ...page, path: ledgerPath(page.path) };
+  const pages = foldTestabilityPages(report.pages).filter((p) => !sameLedgerPage(p, folded));
+  pages.push(folded);
   pages.sort((a, b) => {
     const o = (a.origin ?? "").localeCompare(b.origin ?? "");
     return o !== 0 ? o : a.path.localeCompare(b.path);

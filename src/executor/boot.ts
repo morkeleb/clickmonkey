@@ -34,7 +34,7 @@ export function locatorsFromModel(model: PageModel | PageModelDraft): Record<str
 export function attachInspectAfterStep(state: RunState): void {
   state.afterStep = async (s) => {
     if (await isNotFoundPage(s.page)) {
-      if (s.configPath) reportDocumentNotFound(s.configPath, s.page);
+      if (s.configPath) reportDocumentNotFound(s.configPath, s.page, s.outDir);
       return;
     }
     const r = await inspect(s.page, {
@@ -54,6 +54,8 @@ export function attachInspectAfterStep(state: RunState): void {
         await recordPageLedgers(s.configPath, s.page, r.testability, {
           appOrigin: originOfHref(s.config.url),
           seo: s.config.seo,
+          path: s.model.pages.find((p) => p.id === s.pageId)?.path,
+          outDir: s.outDir,
         });
       }
     } else {
@@ -90,6 +92,7 @@ export async function bootRun(
     configPath: opts?.configPath,
     replay: opts?.replay,
     appOrigin: originOfHref(config.url),
+    outDir,
   });
   await attachNavLog(handle.page, {
     path: navLogPath,
@@ -136,10 +139,12 @@ export async function bootRun(
       await recordPageLedgers(state.configPath, handle.page, inspected.testability, {
         appOrigin: originOfHref(state.config.url),
         seo: state.config.seo,
+        path: inspected.model.pages.find((p) => p.id === inspected.pageId)?.path,
+        outDir: state.outDir,
       });
     }
   } else if (state.configPath) {
-    reportDocumentNotFound(state.configPath, handle.page);
+    reportDocumentNotFound(state.configPath, handle.page, state.outDir);
   }
   if (state.verbose) {
     const bootView = await buildView({

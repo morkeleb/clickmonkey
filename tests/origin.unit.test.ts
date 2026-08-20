@@ -107,6 +107,14 @@ describe("hoppablePages", () => {
     assert.deepEqual(ids, ["home"]);
   });
 
+  it("drops parameterized templates so open does not goto :id1", () => {
+    const ids = hoppablePages(
+      [mapped("customers_id1_migrations", "/customers/:id1/migrations", { params: ["id1"] }), homePage],
+      { appUrl: app, currentHref: "https://app.example.com/" },
+    ).map((p) => p.id);
+    assert.deepEqual(ids, ["home"]);
+  });
+
   it("drops pages marked entry", () => {
     const ids = hoppablePages(
       [mapped("login", "/login", { entry: true }), homePage],

@@ -26,6 +26,7 @@ export { liveValidate } from "./executor/live-validate.js";
 export type { LiveFailure } from "./executor/live-validate.js";
 export { resolveCount } from "./surveyor/resolve.js";
 export { inspect, inspectAndSaveConfig } from "./surveyor/inspect.js";
+export { templatizePath, looksParametric, pathHasParams, ledgerPath } from "./surveyor/path-template.js";
 export {
   applyPageDescription,
   applyMissingPageDescriptions,
@@ -38,6 +39,8 @@ export {
 } from "./surveyor/describe.js";
 export { recordPageLedgers } from "./surveyor/record.js";
 export {
+  dropExpectedOverlayVisual,
+  dropPayloadContentVisual,
   examineScreenshot,
   hashPngFile,
   parseVisualReply,
@@ -45,11 +48,12 @@ export {
   VISION_PROBE,
   VISUAL_RULES,
   VISUAL_BLURB_PROMPT,
+  VISUAL_PROMPT,
 } from "./surveyor/vision.js";
 export type { ParsedVisualReply, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
 export { validateHtml } from "./surveyor/html.js";
 export { scanA11y } from "./surveyor/a11y.js";
-export { scanSeo, seoIsPrivate, issuesFromMeta } from "./surveyor/seo.js";
+export { scanSeo, seoIsPrivate, issuesFromMeta, applyDuplicateTitles } from "./surveyor/seo.js";
 export type { PageMeta } from "./surveyor/seo.js";
 export { auditVisible, formatTestabilityLine } from "./surveyor/audit.js";
 export type { InspectResult, SurveyorContext } from "./surveyor/inspect.js";
@@ -163,7 +167,7 @@ export {
 export { detectWalkerMode, UNLEASH_MODES } from "./brains/walker-mode.js";
 export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";
 export { decisionLines } from "./brains/types.js";
-export { pickNasty, decideUnleashNasty, listCatalogs, samplePayloads } from "./brains/nasty.js";
+export { pickNasty, decideUnleashNasty, listCatalogs, samplePayloads, textContainsNastyPayload } from "./brains/nasty.js";
 export type { NastyCatalogInfo } from "./brains/nasty.js";
 export {
   createExploreBrain,

@@ -2,10 +2,11 @@ import type { Page } from "playwright";
 import type { Locator } from "../schema/locator.js";
 import type { Page as ModelPage } from "../schema/page-model.js";
 import { slug, uniqueMint } from "./ids.js";
+import { splitPath, templatizePath } from "./path-template.js";
 import { resolveCount } from "./resolve.js";
 
 export function pageIdFromPath(pathname: string): string {
-  const trimmed = pathname.replace(/^\/+|\/+$/g, "");
+  const trimmed = pathname.replace(/^\/+|\/+$/g, "").replace(/:/g, "");
   if (trimmed === "") return "home";
   return slug(trimmed);
 }
@@ -95,11 +96,7 @@ export function pathMatches(template: string, pathname: string): boolean {
   return true;
 }
 
-function splitPath(path: string): string[] {
-  const trimmed = path.replace(/\/+$/, "");
-  if (trimmed === "" || trimmed === "/") return [""];
-  return trimmed.split("/");
-}
+
 
 async function unique(page: Page, loc: Locator): Promise<Locator | undefined> {
   return (await resolveCount(page, loc)).count === 1 ? loc : undefined;
@@ -177,7 +174,8 @@ export async function createPageFromUrl(
   appOrigin?: string,
   opts?: { entry?: boolean },
 ): Promise<ModelPage> {
-  const path = pathnameOf(page);
+  const raw = pathnameOf(page);
+  const { path, params } = templatizePath(raw);
   const id = uniqueMint(pageIdFromPath(path), usedIds);
   const ready = await determineReady(page);
   const liveOrigin = originOfHref(page.url());
@@ -188,7 +186,7 @@ export async function createPageFromUrl(
     path,
     ...(origin ? { origin } : {}),
     ...(opts?.entry ? { entry: true } : {}),
-    params: [],
+    params,
     ready,
     surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
   };

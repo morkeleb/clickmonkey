@@ -12,6 +12,8 @@ import { locatorIdentity, type Locator } from "../schema/locator.js";
 import { readyKey } from "../schema/refs.js";
 import { mintedBase, uniqueMint } from "./ids.js";
 import { descriptionRank } from "./describe.js";
+import { pageIdFromPath } from "./ready.js";
+import { templatizePath } from "./path-template.js";
 
 export function identityKey(
   surfaceId: string,
@@ -217,14 +219,71 @@ function preferIncomingDescription(keep: PageT, other: PageT): boolean {
   return Boolean(other.describeKey && other.describeKey === keep.describeKey);
 }
 
+function applyTemplate(page: PageT): void {
+  const t = templatizePath(page.path);
+  if (t.params.length === 0) return;
+  page.path = t.path;
+  page.params = t.params;
+}
+
+function rewriteOpens(pages: PageT[], fromId: string, toId: string): void {
+  if (fromId === toId) return;
+  for (const p of pages) {
+    for (const s of p.surfaces) {
+      for (const a of s.actions) {
+        if (a.opens === fromId) a.opens = toId;
+      }
+    }
+  }
+}
+
+/** Collapse `/customers/<token>/migrations` pages onto one `:id1` template. */
+export function foldPathTemplates(pages: readonly PageT[]): PageT[] {
+  const groups = new Map<string, PageT[]>();
+  for (const p of pages) {
+    const t = templatizePath(p.path);
+    const key = `${p.origin ?? ""}\0${t.path}`;
+    const g = groups.get(key) ?? [];
+    g.push(p);
+    groups.set(key, g);
+  }
+  const kept: PageT[] = [];
+  const used = new Set<string>();
+  const idMap = new Map<string, string>();
+  for (const group of groups.values()) {
+    let winner = structuredClone(group[0]!);
+    applyTemplate(winner);
+    for (let i = 1; i < group.length; i++) {
+      winner = mergePageDef(winner, group[i]!).page;
+      applyTemplate(winner);
+    }
+    const wantBase = pageIdFromPath(winner.path);
+    const wantId = used.has(wantBase) && winner.id !== wantBase ? uniqueMint(wantBase, used) : wantBase;
+    if (wantId !== winner.id) {
+      idMap.set(winner.id, wantId);
+      winner.id = wantId;
+    }
+    used.add(winner.id);
+    for (const p of group) {
+      if (p.id !== winner.id) idMap.set(p.id, winner.id);
+    }
+    kept.push(winner);
+  }
+  for (const [fromId, toId] of idMap) rewriteOpens(kept, fromId, toId);
+  return kept;
+}
+
 function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number } {
   const page = structuredClone(keep);
-  if (!page.origin && other.origin) page.origin = other.origin;
-  if (other.entry) page.entry = true;
-  if (other.description && preferIncomingDescription(page, other)) {
-    page.description = other.description;
-    if (other.describeKey) page.describeKey = other.describeKey;
-    if (other.describedBy) page.describedBy = other.describedBy;
+  applyTemplate(page);
+  const incomingPage = structuredClone(other);
+  applyTemplate(incomingPage);
+  if (!page.origin && incomingPage.origin) page.origin = incomingPage.origin;
+  if (incomingPage.entry) page.entry = true;
+  if (incomingPage.description && preferIncomingDescription(page, incomingPage)) {
+    page.description = incomingPage.description;
+    if (incomingPage.describeKey) page.describeKey = incomingPage.describeKey;
+    if (incomingPage.describedBy) page.describedBy = incomingPage.describedBy;
   }
   const used = new Set(page.surfaces.map((s) => s.id));
   const byKey = new Map<string, number>();
@@ -234,7 +293,7 @@ function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number }
   });
   let added = 0;
 
-  for (const incoming of other.surfaces) {
+  for (const incoming of incomingPage.surfaces) {
     const idx =
       byKey.get(`id:${incoming.id}`) ??
       (incoming.locator ? byKey.get(`loc:${locatorIdentity(incoming.locator)}`) : undefined);
@@ -266,12 +325,16 @@ export function mergeTrees(base: PageModelDraft, incoming: PageModelDraft): Page
   const indexById = new Map(pages.map((p, i) => [p.id, i] as const));
 
   const indexFor = (other: PageT): number | undefined => {
+    const otherTpl = templatizePath(other.path).path;
     const exact = pages.findIndex(
-      (p) => p.path === other.path && (p.origin ?? "") === (other.origin ?? ""),
+      (p) =>
+        templatizePath(p.path).path === otherTpl && (p.origin ?? "") === (other.origin ?? ""),
     );
     if (exact >= 0) return exact;
     if (other.origin) {
-      const legacy = pages.findIndex((p) => p.path === other.path && !p.origin);
+      const legacy = pages.findIndex(
+        (p) => templatizePath(p.path).path === otherTpl && !p.origin,
+      );
       if (legacy >= 0) return legacy;
     }
     const byId = indexById.get(other.id);
@@ -299,13 +362,14 @@ export function mergeTrees(base: PageModelDraft, incoming: PageModelDraft): Page
     added += 1;
   }
 
+  const folded = foldPathTemplates(pages);
   const generation = Math.max(base.generation, incoming.generation) + added;
 
   return {
     schemaVersion: 1,
     app: base.app || incoming.app,
     generation,
-    pages,
+    pages: folded,
   };
 }
 

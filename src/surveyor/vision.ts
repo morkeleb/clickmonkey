@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { ChatClient } from "../brains/chat.js";
+import { textContainsNastyPayload } from "../brains/nasty.js";
 import { VisionError } from "../schema/config.js";
 import type { QualityConfidence, QualityIssue } from "../schema/quality.js";
 
@@ -58,7 +59,7 @@ export const VISUAL_BLURB_PROMPT = [
   'Bad: "A dark web app with a purple sidebar and several buttons."',
 ].join("\n");
 
-const VISUAL_PROMPT = [
+export const VISUAL_PROMPT = [
   "Look at the screenshot first. Then list only defects you can point to in the pixels.",
   "",
   "Report these rules only:",
@@ -73,6 +74,8 @@ const VISUAL_PROMPT = [
   "- other: a user-visible rendering defect that does not fit the list",
   "",
   "Do not report: sticky headers/nav, expected page scroll, clean ellipsis truncation, brand or typography taste, missing features, hover/focus you cannot see, WCAG math, inventing that a control is unclickable, masonry or intentionally staggered cards, or a center-aligned hero title.",
+  "Do not report an open dropdown, select, combobox, popover, or menu covering the page behind it — that is expected stacking. Do report those only if the overlay itself is clipped, off-screen, or two overlays collide.",
+  "Do not report application data that looks like XSS, SQL injection, or overlong junk in a list/table cell (test payloads). That is content, not a rendering defect. Do report if that text actually overflows, clips, overlaps, or breaks a shared list edge.",
   "",
   "confidence: high = two named regions clearly collide, cut, or break a shared list edge in this image; medium = likely but could be intentional chrome; low = a guess — omit low from issues.",
   "where: name the visible regions (e.g. \"filter chip on table header\"). Do not invent widget ids.",
@@ -138,6 +141,28 @@ function extractJsonObject(raw: string): unknown {
   }
 }
 
+const LAYOUT_DEFECT =
+  /\b(overflow|clip|overlap|z-?index|scanline|unreadable|covered|leaking|cut off|collide|misalign)/i;
+
+/** Leftover --nasty catalog text in the report is content. Layout breakage from it still counts. */
+export function dropPayloadContentVisual(opts: { rule: string; message: string; where?: string }): boolean {
+  const blob = [opts.message, opts.where].filter(Boolean).join(" ");
+  if (LAYOUT_DEFECT.test(blob)) return false;
+  return textContainsNastyPayload(blob);
+}
+
+const FLOATING_OVERLAY =
+  /\b(drop-?downs?|combobox(?:es)?|popovers?|listboxes?|context menus?|select menus?)\b/i;
+const OVERLAY_ITSELF_BROKEN = /\b(clip|cut off|overflow|off-?screen|leaking|viewport)\b/i;
+
+/** Open menus covering the page behind them is stacking, not a defect. */
+export function dropExpectedOverlayVisual(opts: { rule: string; message: string; where?: string }): boolean {
+  if (opts.rule !== "overlap" && opts.rule !== "zIndex") return false;
+  const blob = [opts.message, opts.where].filter(Boolean).join(" ");
+  if (!FLOATING_OVERLAY.test(blob)) return false;
+  return !OVERLAY_ITSELF_BROKEN.test(blob);
+}
+
 function visualIssue(opts: {
   rule: string;
   severity: "error" | "warning";
@@ -188,6 +213,8 @@ export function parseVisualReply(raw: string): ParsedVisualReply {
       const rule = typeof rec.rule === "string" && VISUAL_RULE_SET.has(rec.rule) ? rec.rule : "other";
       const severity = rec.severity === "error" ? "error" : "warning";
       const where = typeof rec.where === "string" ? rec.where.replace(/\s+/g, " ").trim() : "";
+      const dropOpts = { rule, message, ...(where ? { where } : {}) };
+      if (dropPayloadContentVisual(dropOpts) || dropExpectedOverlayVisual(dropOpts)) continue;
       issues.push(
         visualIssue({
           rule,

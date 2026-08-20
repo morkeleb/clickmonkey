@@ -134,10 +134,12 @@ export const VISION_HELP = `vision is optional. Same connection shape as brain (
   "brain":  { "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5" }
   "vision": { "baseUrl": "http://127.0.0.1:8080/v1", "model": "qwen2.5-vl" }
 
-issues (default true) writes extras into quality.json.
+issues (default true) writes extras into that run's quality.json.
+High-confidence visual extras are also filed as findings with the step screenshot.
+Medium stays on the quality ledger. The walk does not stop.
 assist (default true) adds explore sight notes.
 Per-step screenshots must stay on (the default).
-Vision is not findings; decide stays text-only.
+decide stays text-only.
 `;
 
 export function errMessage(err: unknown): string {

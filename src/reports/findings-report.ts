@@ -3,13 +3,15 @@ import { z } from "zod";
 import { chat, type ChatClient } from "../brains/chat.js";
 import { collectFindingCases, type FindingCase } from "../persist/runs.js";
 import { loadPresence, presencePath } from "../persist/presence.js";
-import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
+import { loadCombinedQuality } from "../persist/quality.js";
 import { plannedReportPath, writeReportFolder } from "../persist/reports.js";
 import { newRunId } from "../persist/run-id.js";
-import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
+import { loadCombinedTestability } from "../persist/testability.js";
 import type { Config } from "../schema/config.js";
 import { formatExplorePlanItemLine, type UiExploreOutline } from "../schema/ui.js";
 import { severityForKind, type FindingSeverity } from "../schema/finding.js";
+import { templatizePath } from "../surveyor/path-template.js";
+import { applyDuplicateTitles } from "../surveyor/seo.js";
 import { parseLog } from "../schema/dsl.js";
 import type { QualityReport, QualityPage, QualityIssue, QualityRuntimeEvent } from "../schema/quality.js";
 import { joinWheres, qualityLedgerItems, qualityPageCounts } from "../schema/quality.js";
@@ -41,6 +43,9 @@ export function findingFingerprint(c: FindingCase): string {
   const path = pathOfHref(c.finding.url ?? c.url ?? "") ?? "";
   if (kind === "notFound") return `notFound\t${path}`;
   if (kind === "httpError") return `httpError\t${c.finding.httpStatus ?? ""}\t${path}`;
+  if (kind === "visualIssue") {
+    return `visualIssue\t${c.finding.widgetRef ?? ""}\t${templatizePath(path).path}`;
+  }
   const msg = c.finding.message.replace(/\s+/g, " ").trim();
   const harness = /^(locator\.|Timeout \d+ms exceeded)/i.test(msg);
   if (harness) return `${kind}\t${msg.split("(")[0]!.trim()}`;
@@ -199,13 +204,15 @@ function pageHasQuality(testability?: TestabilityPage, quality?: QualityPage): b
 }
 
 function qualityHeading(page: { path: string; origin?: string }): string {
-  return page.origin ? `${page.path} @ ${page.origin}` : page.path;
+  const path = templatizePath(page.path).path;
+  return page.origin ? `${path} @ ${page.origin}` : path;
 }
 
 export function renderQualitySection(
   testability?: TestabilityReport,
   quality?: QualityReport,
 ): string[] {
+  quality = quality ? applyDuplicateTitles(quality) : quality;
   const keys: Array<{ path: string; origin?: string }> = [];
   const add = (page: { path: string; origin?: string }) => {
     if (!keys.some((k) => sameLedgerPage(k, page))) keys.push({ path: page.path, origin: page.origin });
@@ -343,6 +350,10 @@ const RULE_HINTS: Record<string, string> = {
   "document-title": "This route never sets document.title.",
   "document-title-placeholder": "Title is still a framework default (Create Next App, Vite, …).",
   "document-title-long": "Title is longer than ~60 characters and will truncate in search results.",
+  "document-title-same":
+    "Every tab shows the same name. Set a unique document.title (and og:title) that names this page — screen readers announce it, and search uses it too.",
+  "document-title-instance":
+    "Different records on this route share one tab title. Put the record name in document.title (two customer tabs should not both say Customer).",
   "meta-description": "Add a unique meta description for search snippets and social fallback.",
   "og-title": "Open Graph title missing — shares will look untitled.",
   "og-description": "Open Graph description missing — shares get no summary.",
@@ -474,6 +485,7 @@ export function renderQualityDigest(
   testability?: TestabilityReport,
   quality?: QualityReport,
 ): string[] {
+  quality = quality ? applyDuplicateTitles(quality) : quality;
   const byKey = new Map<string, DigestRow>();
   const add = (pageKey: string, row: Omit<DigestRow, "pages" | "pageSet">) => {
     if (row.severity === "warning" && isNoisyQualityMessage(row.message)) return;
@@ -714,8 +726,8 @@ export async function writeRunsReport(opts: {
     generatedAt,
     runIds,
     ...(opts.config.brain?.model ? { brain: opts.config.brain.model } : {}),
-    testability: loadTestabilityReport(testabilityReportPath(opts.configPath)),
-    quality: loadQualityReport(qualityReportPath(opts.configPath)),
+    testability: loadCombinedTestability(opts.runDirs, opts.configPath),
+    quality: loadCombinedQuality(opts.runDirs, opts.configPath),
     ...(opts.qualityFull ? { qualityFull: true } : {}),
     ...(outlines.length > 0 ? { outlines } : {}),
   };

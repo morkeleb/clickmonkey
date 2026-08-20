@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Page } from "playwright";
 import { lastDocument } from "../oracles/http.js";
 import {
@@ -10,8 +11,8 @@ import {
 import { withFileLock } from "./lock.js";
 import { brokenPath, ensureWorkspace, legacyBrokenPath } from "./workspace.js";
 
-export function brokenReportPath(configPath: string): string {
-  return brokenPath(configPath);
+export function brokenReportPath(configPath: string, outDir?: string): string {
+  return outDir ? join(outDir, "broken.json") : brokenPath(configPath);
 }
 
 function resolveBrokenReadPath(configPath: string): string {
@@ -33,19 +34,30 @@ export function loadBrokenReport(path: string): BrokenReport {
   return BrokenReport.parse(JSON.parse(readFileSync(path, "utf8")));
 }
 
-/** Union an entry into the shared broken-pages report. Map file is never touched. */
-export function persistBrokenEntry(configPath: string, entry: BrokenEntry): BrokenReport {
-  ensureWorkspace(configPath);
-  const path = brokenPath(configPath);
+export function loadCombinedBroken(runDirs: string[], fallbackConfigPath?: string): BrokenReport {
+  const combined = runDirs.reduce(
+    (acc, d) => mergeBrokenReports(acc, loadBrokenReport(join(d, "broken.json"))),
+    emptyBrokenReport(),
+  );
+  if (combined.entries.length > 0) return combined;
+  if (fallbackConfigPath) return loadBrokenReport(resolveBrokenReadPath(fallbackConfigPath));
+  return emptyBrokenReport();
+}
+
+/** Union an entry into the broken-pages report. Map file is never touched. */
+export function persistBrokenEntry(configPath: string, entry: BrokenEntry, outDir?: string): BrokenReport {
+  const path = brokenReportPath(configPath, outDir);
+  if (outDir) mkdirSync(outDir, { recursive: true });
+  else ensureWorkspace(configPath);
   return withFileLock(path, () => {
-    const disk = loadBrokenReport(resolveBrokenReadPath(configPath));
+    const disk = loadBrokenReport(outDir ? path : resolveBrokenReadPath(configPath));
     const next = mergeBrokenReports(disk, { schemaVersion: 1, entries: [entry] });
     writeBroken(path, next);
     return next;
   });
 }
 
-export function reportDocumentNotFound(configPath: string, page: Page): BrokenReport | undefined {
+export function reportDocumentNotFound(configPath: string, page: Page, outDir?: string): BrokenReport | undefined {
   const doc = lastDocument(page);
   const href = page.url();
   const url = doc?.status === 404 ? doc.url : href;
@@ -56,11 +68,15 @@ export function reportDocumentNotFound(configPath: string, page: Page): BrokenRe
   } catch {
     path = url;
   }
-  return persistBrokenEntry(configPath, {
-    path,
-    url,
-    status: 404,
-    foundAt: new Date().toISOString(),
-    resourceType: "document",
-  });
+  return persistBrokenEntry(
+    configPath,
+    {
+      path,
+      url,
+      status: 404,
+      foundAt: new Date().toISOString(),
+      resourceType: "document",
+    },
+    outDir,
+  );
 }

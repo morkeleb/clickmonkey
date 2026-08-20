@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { hopsFromNavLog } from "./graph.js";
 import { loadConfig } from "../persist/config.js";
 import { isPresenceLive, listPresences } from "../persist/presence.js";
-import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
+import { loadCombinedQuality } from "../persist/quality.js";
 import { listReports } from "../persist/reports.js";
 import { collectFindingCases, listRuns } from "../persist/runs.js";
-import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
+import { loadCombinedTestability } from "../persist/testability.js";
 import { runsDir } from "../persist/workspace.js";
 import type { Config } from "../schema/config.js";
 import { UiLeash, UiRun, UiSnapshot, type UiRunStep } from "../schema/ui.js";
@@ -119,9 +119,10 @@ function collectUiRuns(configPath: string): UiRun[] {
 
 export function buildUiSnapshot(configPath: string): UiSnapshot {
   const config = loadConfig(configPath);
-  const testability = loadTestabilityReport(testabilityReportPath(configPath));
-  const quality = loadQualityReport(qualityReportPath(configPath));
   const listed = listRuns(configPath);
+  const runDirs = listed.map((r) => r.dir);
+  const testability = loadCombinedTestability(runDirs, configPath);
+  const quality = loadCombinedQuality(runDirs, configPath);
   const findings = collectFindingCases(listed.map((r) => r.dir));
   const hops = listed.flatMap((r) => {
     const nav = join(r.dir, "nav.jsonl");

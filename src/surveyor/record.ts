@@ -27,18 +27,23 @@ export async function recordPageLedgers(
   configPath: string,
   page: Page,
   testability: { insufficient: boolean; issues: TestabilityIssue[] },
-  opts?: { appOrigin?: string; seo?: SeoConfig },
+  opts?: { appOrigin?: string; seo?: SeoConfig; path?: string; outDir?: string },
 ): Promise<void> {
-  const path = pathOfPage(page);
+  const livePath = pathOfPage(page);
+  const path = opts?.path ?? livePath;
   const origin = ledgerOrigin(page.url(), opts?.appOrigin);
   const foundAt = new Date().toISOString();
-  persistTestabilityPage(configPath, {
-    path,
-    foundAt,
-    insufficient: testability.insufficient,
-    issues: testability.issues,
-    ...(origin ? { origin } : {}),
-  });
+  persistTestabilityPage(
+    configPath,
+    {
+      path,
+      foundAt,
+      insufficient: testability.insufficient,
+      issues: testability.issues,
+      ...(origin ? { origin } : {}),
+    },
+    opts?.outDir,
+  );
   let html: string;
   try {
     html = await page.content();
@@ -48,20 +53,32 @@ export async function recordPageLedgers(
   const htmlHash = hashHtml(html);
   const key = { path, ...(origin ? { origin } : {}) };
   const scanPublicMeta = !seoIsPrivate(path, opts?.seo);
-  const prev = lastQualityPage(configPath, key);
+  const prev = lastQualityPage(configPath, key, opts?.outDir);
+  let title: string | undefined;
+  try {
+    title = (await page.title()).replace(/\s+/g, " ").trim() || undefined;
+  } catch {
+    title = prev?.title;
+  }
   if (prev?.htmlHash === htmlHash) {
     try {
       const seo = await seoForHashHit(page, scanPublicMeta, prev.seo);
-      if (seo === undefined) return;
-      persistQualitySnapshot(configPath, {
-        path,
-        foundAt,
-        htmlHash,
-        html: prev.html,
-        a11y: prev.a11y,
-        seo,
-        ...(origin ? { origin } : {}),
-      });
+      if (seo === undefined && !title) return;
+      persistQualitySnapshot(
+        configPath,
+        {
+          path,
+          foundAt,
+          htmlHash,
+          html: prev.html,
+          a11y: prev.a11y,
+          seo: seo ?? prev.seo ?? [],
+          ...(origin ? { origin } : {}),
+          ...(title ? { title } : {}),
+          ...(title ? { titleInstance: { path: livePath, title } } : {}),
+        },
+        opts?.outDir,
+      );
     } catch {
       // scanners must not stall a walk
     }
@@ -71,15 +88,21 @@ export async function recordPageLedgers(
     const scanned = scanPublicMeta ? await scanSeo(page) : [];
     const seoIssues = scanned === undefined ? (prev?.seo ?? []) : scanned;
     const [htmlIssues, a11yIssues] = await Promise.all([validateHtml(html), scanA11y(page)]);
-    persistQualitySnapshot(configPath, {
-      path,
-      foundAt,
-      htmlHash,
-      html: htmlIssues,
-      a11y: a11yIssues,
-      seo: seoIssues,
-      ...(origin ? { origin } : {}),
-    });
+    persistQualitySnapshot(
+      configPath,
+      {
+        path,
+        foundAt,
+        htmlHash,
+        html: htmlIssues,
+        a11y: a11yIssues,
+        seo: seoIssues,
+        ...(origin ? { origin } : {}),
+        ...(title ? { title } : {}),
+        ...(title ? { titleInstance: { path: livePath, title } } : {}),
+      },
+      opts?.outDir,
+    );
   } catch {
     // scanners must not stall a walk
   }

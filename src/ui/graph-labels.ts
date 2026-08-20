@@ -16,7 +16,7 @@ export function sectionKey(path: string): string | undefined {
 }
 
 export function prettyPageLabel(path: string, fallback: string): { title: string; kicker?: string } {
-  const segs = pathSegments(path);
+  const segs = pathSegments(path).filter((s) => !s.startsWith(":"));
   if (segs.length === 0) {
     return { title: fallback === "home" ? "Home" : titleCaseSegment(fallback) };
   }

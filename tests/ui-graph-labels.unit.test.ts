@@ -11,6 +11,10 @@ describe("graph labels", () => {
     assert.deepEqual(prettyPageLabel("/", "home"), { title: "Home" });
     assert.deepEqual(prettyPageLabel("/login", "login"), { title: "Login" });
     assert.deepEqual(prettyPageLabel("/u/login", "u_login"), { title: "Login", kicker: "U" });
+    assert.deepEqual(prettyPageLabel("/customers/:id1/migrations", "customers_id1_migrations"), {
+      title: "Migrations",
+      kicker: "Customers",
+    });
   });
 
   it("clusters by the first path segment", () => {

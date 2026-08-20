@@ -79,10 +79,13 @@ take a screenshot when the last step was already a screenshot.
 clickmonkey.json                 # leash: url, fence, intro, writePolicy, screenshots, brain, vision, seo
 clickmonkey/
   map.json                       # living sitemap — parallel monkeys merge here
-  testability.json               # locatability (opaque controls, unlabeled, …)
-  quality.json                   # HTML, a11y (axe), JS, SEO/meta when enabled, visual extras when vision ran
-  broken.json
+  testability.json               # legacy workspace ledger (inspect without a run)
+  quality.json                   # legacy workspace ledger (inspect without a run)
+  broken.json                    # legacy workspace ledger (inspect without a run)
   runs/<id>/                     # tape, shots, findings, nav.jsonl for one walk
+  runs/<id>/quality.json         # HTML, a11y, JS, SEO, visual extras for that walk
+  runs/<id>/testability.json     # locatability for that walk
+  runs/<id>/broken.json          # 404s seen on that walk
   runs/<id>/verbose/             # --verbose only: per-step HTML + view.txt (safe to delete)
   reports/<id>/findings.md       # shareable reports (one folder per report)
   replays/<id>/comparison.md     # before/after vs that report
@@ -115,7 +118,7 @@ The `seo` block is optional. Leave it off for an app-only site. Use `private` pr
 - **skip** — extra widget id/label substrings the walker will not click. Sign out, log out, and close panel are skipped by default.
 - **screenshots** — per-step screenshots, default on. `"screenshots": false` turns auto shots off.
 - **seo** — optional. Scan the live `<head>` for title, meta description, Open Graph, and canonical problems. Off when omitted. See [SEO / meta](#seo--meta).
-- **vision** — optional. Same connection shape as `brain` (`baseUrl`, `model`, `apiKeyEnv`). Mix models (qwen text + qwen-vl on another host). `model` is required and is never copied from `brain`. `baseUrl` inherits when omitted. `apiKeyEnv` inherits only when `vision.baseUrl` is also omitted; `"apiKeyEnv": false` means no key. Per-step screenshots must stay on. `issues` (default true) writes extras into `quality.json` (overlap, overflow, clip, covered controls, alignment, scanline/list edges, unreadable contrast, broken images). Each visual extra has `high`/`medium` confidence so a human can decide whether to act; `low` guesses are dropped. `assist` (default true) adds explore sight notes. Vision is not findings; decide stays text-only.
+- **vision** — optional. Same connection shape as `brain` (`baseUrl`, `model`, `apiKeyEnv`). Mix models (qwen text + qwen-vl on another host). `model` is required and is never copied from `brain`. `baseUrl` inherits when omitted. `apiKeyEnv` inherits only when `vision.baseUrl` is also omitted; `"apiKeyEnv": false` means no key. Per-step screenshots must stay on. `issues` (default true) writes extras into that run's `quality.json` (overlap, overflow, clip, covered controls, alignment, scanline/list edges, unreadable contrast, broken images). Each visual extra has `high`/`medium` confidence; `low` guesses are dropped. High-confidence extras are also filed as findings with the step screenshot (the walk does not stop). Medium stays on the quality ledger. If a visual report quotes a `--nasty` catalog payload in a cell, that is treated as leftover test data, not a defect; overflow or clip from that text still counts. `assist` (default true) adds explore sight notes. decide stays text-only.
 
 v1 used `fence.blacklist` only for **URLs** (e.g. `#/login` after the monkey logged itself out). That is still the fence. `skip` is the widget denylist.
 
@@ -123,7 +126,7 @@ Duplicate accessible names (two **Settings** buttons) are a `duplicateName` **wa
 
 `clickmonkey/map.json` is the page model `inspect` / `map` grow. Each page gets a one-line `description` (path, heading, fields, dialogs). With `vision` configured, a page-level screenshot upgrades that to what is actually on screen (dashboard, list, form, details) — not a modal shot. Explore may still polish with the text brain. Extra widgets never fail a replay. Several processes may share that file: each step takes a short lock, unions the trees, and writes back. That is cheap next to Playwright and the LLM.
 
-As the monkey walks, each inspect updates `testability.json` (can we locate the controls?) and `quality.json` (html-validate for HTML, axe-core for WCAG, plus JS `console` / `pageerror` with merge counts). Testability, HTML, and axe issues keep a short `where` (accessible name, testid, id, or compacted CSS — not XPath). Per-step screenshots are on by default (`shots/step-NNN.png`). With `vision` configured, a second model may add visual extras to that ledger and a short Sight note for explore; those are not findings. `clickmonkey report` prints Quality (HTML / a11y / JS always; SEO when `seo` is on; visual when vision ran). Console warnings are ledger-only; the first uncaught `pageerror` per message is still a finding.
+As the monkey walks, each inspect updates that run's `testability.json` (can we locate the controls?) and `quality.json` (html-validate for HTML, axe-core for WCAG, plus JS `console` / `pageerror` with merge counts). A report also flags when most walked pages share one `document.title` (tabs, screen readers, and search cannot tell routes apart). A 404 goes in that run's `broken.json`. The shared sitemap stays in `map.json`. Testability, HTML, and axe issues keep a short `where` (accessible name, testid, id, or compacted CSS — not XPath). Per-step screenshots are on by default (`shots/step-NNN.png`). With `vision` configured, a second model may add visual extras to that run's ledger and a short Sight note for explore. High-confidence visual extras are also findings (with the screenshot); medium stays on the ledger. `clickmonkey report` combines quality/testability from the selected runs so two reports can be compared. Console warnings are ledger-only; the first uncaught `pageerror` per message is still a finding.
 
 A page that lives on another host than the leash `url` (SSO, IdP) gets an `origin`. Pages seen during intro (login, callback) are marked `entry`. Walkers only hop to leash-origin pages that have widgets, are not `entry`, and would not cross the fence. `open` uses the page origin so a path like `/u/login` is not rewritten onto the app host. Intro waits until the browser has left the start URL and landed on a real app page before the walk starts.
 
@@ -246,7 +249,7 @@ before start.
 
 ## SEO / meta
 
-Off until you add `seo` to the leash. Then each inspect reads the live `<head>` (what a renderer sees, not `view-source`) and writes a **SEO** group into `quality.json`. Not findings — same ledger as HTML/a11y.
+Off until you add `seo` to the leash. Then each inspect reads the live `<head>` (what a renderer sees, not `view-source`) and writes a **SEO** group into that run's `quality.json`. Not findings — same ledger as HTML/a11y.
 
 ```json
 "seo": { "private": ["/app", "/login"] }
@@ -259,6 +262,8 @@ A page with `meta name="robots"` / `googlebot` `noindex` is skipped even when it
 Checks (public pages only):
 
 - title missing, empty, a framework placeholder (`Create Next App`, `Vite App`, …), or longer than ~60 characters
+- at report time: the same `document.title` on most walked pages (browser tabs and screen readers cannot tell routes apart; search sees one title too)
+- at report time: two records on a parametric path (`/customers/:id1`) that still share one title (two customer tabs both say “Customer”)
 - meta description missing, a copy of the title, or outside ~20–160 characters
 - Open Graph: missing `og:title`, `og:description`, `og:image`, `og:url`; `og:image` / `og:url` not an absolute `http(s)` URL
 - `rel=canonical` missing, not absolute, or a different origin than the live page

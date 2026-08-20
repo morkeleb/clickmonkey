@@ -78,6 +78,36 @@ describe("workspace layout", () => {
     assert.ok(existsSync(brokenPath(path)));
   });
 
+  it("walk ledgers land in the run folder, not the workspace pile", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-ws-run-ledger-"));
+    const path = join(dir, "clickmonkey.json");
+    const outDir = join(dir, "clickmonkey", "runs", "20260820T000000Z-abcd");
+    saveConfig(path, emptyConfig("http://127.0.0.1:4173/"));
+    persistTestabilityPage(
+      path,
+      { path: "/", foundAt: "t", insufficient: false, issues: [] },
+      outDir,
+    );
+    persistQualitySnapshot(path, { path: "/", foundAt: "t", html: [], a11y: [] }, outDir);
+    persistBrokenEntry(
+      path,
+      {
+        path: "/missing",
+        url: "http://127.0.0.1:4173/missing",
+        status: 404,
+        foundAt: "t",
+        resourceType: "document",
+      },
+      outDir,
+    );
+    assert.ok(existsSync(join(outDir, "testability.json")));
+    assert.ok(existsSync(join(outDir, "quality.json")));
+    assert.ok(existsSync(join(outDir, "broken.json")));
+    assert.equal(existsSync(testabilityPath(path)), false);
+    assert.equal(existsSync(qualityPath(path)), false);
+    assert.equal(existsSync(brokenPath(path)), false);
+  });
+
   it("prefers a rich inline map over an empty seeded map.json", () => {
     const dir = mkdtempSync(join(tmpdir(), "cm-ws-inline-rich-"));
     const path = join(dir, "clickmonkey.json");

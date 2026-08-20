@@ -51,6 +51,17 @@ export function cannedReport(finding: Finding): string {
         finding.screenshotPath ? `Screenshot: ${finding.screenshotPath}` : "",
         "",
       ].join("\n");
+    case "visualIssue":
+      return [
+        `# ${finding.id}`,
+        "",
+        "High-confidence visual issue from the vision model.",
+        "",
+        finding.message,
+        "",
+        finding.screenshotPath ? `Screenshot: ${finding.screenshotPath}` : "",
+        "",
+      ].join("\n");
     default:
       return [`# ${finding.id}`, "", `${finding.kind}: ${finding.message}`, ""].join("\n");
   }

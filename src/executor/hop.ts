@@ -8,6 +8,7 @@ import {
   pathMatches,
 } from "../surveyor/ready.js";
 import { checkFence } from "./fence.js";
+import { pathHasParams } from "../surveyor/path-template.js";
 
 export type HopContext = {
   appUrl: string;
@@ -55,6 +56,7 @@ export function hoppablePages<T extends Page>(
     if (!isSameOriginPage(page, appOrigin)) return false;
     if (checkFence(openHref(page, hop.appUrl), hop.fence) !== "ok") return false;
     if (page.entry) return false;
+    if (pathHasParams(page)) return false;
     if (leftStart && pathMatches(page.path, startPath)) return false;
     if (!pageHasWidgets(page)) return false;
     return true;

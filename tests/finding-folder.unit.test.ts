@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { appendFindingReport, persistFinding, shouldPersistFinding } from "../src/persist/finding.js";
+import {
+  appendFindingReport,
+  persistFinding,
+  persistVisualIssueFindings,
+  shouldPersistFinding,
+  visualIssueMessage,
+} from "../src/persist/finding.js";
+import type { QualityIssue } from "../src/schema/quality.js";
 import { cannedReport } from "../src/reports/canned.js";
 import { Finding, findingId } from "../src/schema/finding.js";
 
@@ -245,5 +252,112 @@ describe("finding folder", () => {
     assert.equal(unresolved.created, false);
     assert.deepEqual(findingFolders(outDir), []);
     assert.equal(existsSync(join(outDir, "findings")), false);
+  });
+
+  it("files high-confidence visual issues with a screenshot and leaves the step shot", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-vlm-"));
+    const shot = join(outDir, "shots", "step-003.png");
+    mkdirSync(join(outDir, "shots"), { recursive: true });
+    writeFileSync(shot, "png-visual");
+    const issues: QualityIssue[] = [
+      {
+        source: "visual",
+        rule: "scanline",
+        severity: "warning",
+        message: "row icons drift",
+        count: 1,
+        confidence: "high",
+        where: "row action icons",
+      },
+      {
+        source: "visual",
+        rule: "overlap",
+        severity: "error",
+        message: "badge covers title",
+        count: 1,
+        confidence: "medium",
+      },
+    ];
+    const written = persistVisualIssueFindings(outDir, issues, {
+      stepIndex: 3,
+      url: "http://127.0.0.1:3000/customers/11111111-1111-4111-8111-111111111111/migrations",
+      screenshotPath: shot,
+      tapePath: join(outDir, "replay.log"),
+      replayLog: "open home\n",
+    });
+    assert.equal(written.length, 1);
+    assert.equal(written[0]?.created, true);
+    assert.equal(written[0]?.finding.kind, "visualIssue");
+    assert.equal(written[0]?.finding.severity, "minor");
+    assert.equal(written[0]?.finding.widgetRef, "scanline");
+    assert.equal(
+      written[0]?.finding.message,
+      visualIssueMessage(issues[0]!),
+    );
+    assert.ok(existsSync(shot), "step screenshot must stay");
+    const dir = join(outDir, "findings", findingId(3, "visualIssue"));
+    assert.ok(existsSync(join(dir, "screenshot.png")));
+    assert.match(readFileSync(join(dir, "report.md"), "utf8"), /High-confidence visual issue/);
+  });
+
+  it("dedups a visualIssue on the same templated path and rule", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-vlm-dedup-"));
+    const issue: QualityIssue = {
+      source: "visual",
+      rule: "overlap",
+      severity: "error",
+      message: "filter chip on table header",
+      count: 1,
+      confidence: "high",
+    };
+    const first = persistVisualIssueFindings(outDir, [issue], {
+      stepIndex: 2,
+      url: "http://127.0.0.1:3000/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations",
+      tapePath: join(outDir, "replay.log"),
+    });
+    const second = persistVisualIssueFindings(
+      outDir,
+      [{ ...issue, message: "chip overlaps the column title" }],
+      {
+        stepIndex: 9,
+        url: "http://127.0.0.1:3000/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations",
+        tapePath: join(outDir, "replay.log"),
+      },
+    );
+    assert.equal(first[0]?.created, true);
+    assert.equal(second[0]?.created, false);
+    assert.equal(second[0]?.finding.id, first[0]?.finding.id);
+    assert.deepEqual(findingFolders(outDir), [findingId(2, "visualIssue")]);
+  });
+
+  it("keeps separate visualIssue folders for different rules on the same page", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-vlm-rules-"));
+    const url = "http://127.0.0.1:3000/customers";
+    persistVisualIssueFindings(
+      outDir,
+      [
+        {
+          source: "visual",
+          rule: "scanline",
+          severity: "warning",
+          message: "row icons drift",
+          count: 1,
+          confidence: "high",
+        },
+        {
+          source: "visual",
+          rule: "overlap",
+          severity: "error",
+          message: "badge covers title",
+          count: 1,
+          confidence: "high",
+        },
+      ],
+      { stepIndex: 4, url, tapePath: join(outDir, "replay.log") },
+    );
+    assert.deepEqual(findingFolders(outDir), [
+      findingId(4, "visualIssue", 0),
+      findingId(4, "visualIssue", 1),
+    ]);
   });
 });

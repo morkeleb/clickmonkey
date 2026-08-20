@@ -319,8 +319,8 @@ export async function handleExploreQuality(host: McpHost): Promise<McpToolResult
   }
   const origin = ledgerOrigin(href, originOfHref(session.config?.url ?? ""));
   const key = { path, ...(origin ? { origin } : {}) };
-  const quality = loadQualityReport(qualityReportPath(configPath));
-  const testability = loadTestabilityReport(testabilityReportPath(configPath));
+  const quality = loadQualityReport(qualityReportPath(configPath, session.outDir));
+  const testability = loadTestabilityReport(testabilityReportPath(configPath, session.outDir));
   const lines = renderQualityDigest(
     { schemaVersion: 1, pages: testability.pages.filter((p) => sameLedgerPage(p, key)) },
     { schemaVersion: 1, pages: quality.pages.filter((p) => sameLedgerPage(p, key)) },
@@ -503,7 +503,7 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
   server.registerTool(
     "explore_quality",
     {
-      description: "Compact quality.json digest for the current page (ledger, not a rescan).",
+      description: "Compact quality digest for the current page (this run's ledger, not a rescan).",
       inputSchema: z.object({}),
     },
     async () => handleExploreQuality(host),

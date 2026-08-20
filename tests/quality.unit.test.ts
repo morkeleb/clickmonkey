@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   lastVisualHash,
+  loadCombinedQuality,
   loadQualityReport,
   persistQualityRuntime,
   persistQualitySnapshot,
@@ -83,6 +84,44 @@ describe("quality ledger", () => {
       { source: "a11y", rule: "color-contrast", severity: "error", message: "contrast", count: 1, where: 'span "Settings"' },
     ]);
     assert.equal(unioned[0]?.where, 'a "Milkshake" · span "Settings"');
+  });
+
+  it("collapses visual paraphrases of the same rule and upgrades severity", () => {
+    const merged = mergeQualityIssues([
+      {
+        source: "visual",
+        rule: "scanline",
+        severity: "warning",
+        message: "row icons drift",
+        count: 1,
+        confidence: "medium",
+        where: "row icons",
+      },
+      {
+        source: "visual",
+        rule: "scanline",
+        severity: "error",
+        message: "icons do not share a vertical edge",
+        count: 1,
+        confidence: "high",
+        where: "row action icons",
+      },
+      {
+        source: "visual",
+        rule: "overlap",
+        severity: "warning",
+        message: "badge covers title",
+        count: 1,
+        confidence: "medium",
+      },
+    ]);
+    assert.equal(merged.length, 2);
+    const scanline = merged.find((i) => i.rule === "scanline")!;
+    assert.equal(scanline.count, 2);
+    assert.equal(scanline.severity, "error");
+    assert.equal(scanline.confidence, "high");
+    assert.equal(scanline.message, "icons do not share a vertical edge");
+    assert.equal(scanline.where, "row icons · row action icons");
   });
 
   it("truncates messages used as keys", () => {
@@ -198,6 +237,111 @@ describe("quality ledger", () => {
     assert.equal(lastVisualHash(configPath, { path: "/other" }), undefined);
   });
 
+  it("persistQualityVisual unions a later scan with earlier visual issues", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-visual-merge-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistQualityVisual(configPath, {
+      path: "/customers/:id1/migrations",
+      foundAt: "t1",
+      visualHash: "png-a",
+      visual: [
+        { source: "visual", rule: "scanline", severity: "warning", message: "row icons drift", count: 1 },
+      ],
+    });
+    persistQualityVisual(configPath, {
+      path: "/customers/:id1/migrations",
+      foundAt: "t2",
+      visualHash: "png-b",
+      visual: [
+        { source: "visual", rule: "overlap", severity: "warning", message: "badge covers title", count: 1 },
+      ],
+    });
+    const page = loadQualityReport(qualityReportPath(configPath)).pages[0]!;
+    assert.deepEqual(
+      page.visual.map((i) => i.rule).sort(),
+      ["overlap", "scanline"],
+    );
+    assert.equal(page.visualHash, "png-b");
+  });
+
+  it("persistQualityVisual does not add a second row when the VLM rephrases the same rule", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-visual-dedupe-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistQualityVisual(configPath, {
+      path: "/customers/:id1/migrations",
+      foundAt: "t1",
+      visualHash: "png-a",
+      visual: [
+        {
+          source: "visual",
+          rule: "scanline",
+          severity: "warning",
+          message: "row icons drift",
+          count: 1,
+          confidence: "medium",
+        },
+      ],
+    });
+    persistQualityVisual(configPath, {
+      path: "/customers/:id1/migrations",
+      foundAt: "t2",
+      visualHash: "png-b",
+      visual: [
+        {
+          source: "visual",
+          rule: "scanline",
+          severity: "warning",
+          message: "trailing actions wander off the title column",
+          count: 1,
+          confidence: "high",
+          where: "row action icons",
+        },
+      ],
+    });
+    const page = loadQualityReport(qualityReportPath(configPath)).pages[0]!;
+    assert.equal(page.visual.length, 1);
+    assert.equal(page.visual[0]?.rule, "scanline");
+    assert.equal(page.visual[0]?.count, 2);
+    assert.equal(page.visual[0]?.confidence, "high");
+    assert.equal(page.visual[0]?.message, "trailing actions wander off the title column");
+    assert.equal(page.visual[0]?.where, "row action icons");
+  });
+
+  it("folds UUID customer pages onto one /customers/:id1/migrations ledger row", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-fold-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistQualitySnapshot(configPath, {
+      path: "/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations",
+      foundAt: "t1",
+      htmlHash: "h1",
+      html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "dup", count: 1 }],
+      a11y: [],
+    });
+    persistQualityVisual(configPath, {
+      path: "/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations",
+      foundAt: "t2",
+      visualHash: "png-a",
+      visual: [{ source: "visual", rule: "scanline", severity: "warning", message: "row icons drift", count: 1 }],
+    });
+    persistQualitySnapshot(configPath, {
+      path: "/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations",
+      foundAt: "t3",
+      htmlHash: "h2",
+      html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "dup", count: 1 }],
+      a11y: [],
+    });
+    persistQualityVisual(configPath, {
+      path: "/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations",
+      foundAt: "t4",
+      visualHash: "png-b",
+      visual: [{ source: "visual", rule: "overlap", severity: "warning", message: "badge covers title", count: 1 }],
+    });
+    const report = loadQualityReport(qualityReportPath(configPath));
+    assert.equal(report.pages.length, 1);
+    assert.equal(report.pages[0]?.path, "/customers/:id1/migrations");
+    assert.deepEqual(report.pages[0]?.visual.map((i) => i.rule).sort(), ["overlap", "scanline"]);
+  });
+
   it("qualityPageCounts includes visual errors", () => {
     const counts = qualityPageCounts({
       path: "/",
@@ -252,6 +396,65 @@ describe("quality ledger", () => {
     const idp = report.pages.find((p) => p.origin === "https://idp.example.com");
     assert.equal(app?.html[0]?.message, "app");
     assert.equal(idp?.html[0]?.message, "idp");
+  });
+
+  it("writes a run quality.json and combines selected runs without touching the workspace ledger", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-run-"));
+    const configPath = join(dir, "clickmonkey.json");
+    const runA = join(dir, "runs", "run-a");
+    const runB = join(dir, "runs", "run-b");
+    persistQualitySnapshot(
+      configPath,
+      {
+        path: "/",
+        foundAt: "t1",
+        html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "workspace", count: 1 }],
+        a11y: [],
+      },
+    );
+    persistQualitySnapshot(
+      configPath,
+      {
+        path: "/customers",
+        foundAt: "t2",
+        html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "run-a", count: 1 }],
+        a11y: [],
+      },
+      runA,
+    );
+    persistQualitySnapshot(
+      configPath,
+      {
+        path: "/pipelines",
+        foundAt: "t3",
+        html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "run-b", count: 1 }],
+        a11y: [],
+      },
+      runB,
+    );
+    assert.equal(existsSync(join(runA, "quality.json")), true);
+    assert.equal(existsSync(join(runB, "quality.json")), true);
+    const workspace = loadQualityReport(qualityReportPath(configPath));
+    assert.equal(workspace.pages.length, 1);
+    assert.equal(workspace.pages[0]?.html[0]?.message, "workspace");
+    const onlyA = loadCombinedQuality([runA]);
+    assert.equal(onlyA.pages.length, 1);
+    assert.equal(onlyA.pages[0]?.path, "/customers");
+    const both = loadCombinedQuality([runA, runB]);
+    assert.deepEqual(both.pages.map((p) => p.path).sort(), ["/customers", "/pipelines"]);
+    const reportA = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1/",
+        generatedAt: "t",
+        runIds: ["run-a"],
+        quality: onlyA,
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(reportA, /Workspace ledger across 1 page/);
+    assert.match(reportA, /\/customers/);
+    assert.doesNotMatch(reportA, /\/pipelines/);
   });
 
   it("html-validate flags duplicate ids and missing lang", async () => {

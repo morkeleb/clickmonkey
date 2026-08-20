@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { chat } from "../brains/chat.js";
-import { persistFinding, shouldPersistFinding } from "../persist/finding.js";
+import { persistFinding, persistVisualIssueFindings, shouldPersistFinding } from "../persist/finding.js";
 import { touchPresence } from "../persist/presence.js";
 import { persistSharedMap } from "../persist/config.js";
 import { lastVisualHash, persistQualityRuntime, persistQualityVisual } from "../persist/quality.js";
@@ -139,6 +139,7 @@ async function waitForPostIntro(
 export function attachOracles(
   state: Pick<RunState, "page" | "pendingFindings" | "configPath" | "replay"> & {
     appOrigin?: string;
+    outDir?: string;
   },
 ): void {
   if (attachedPages.has(state.page)) return;
@@ -170,6 +171,7 @@ export function attachOracles(
           firstSeen: now,
           lastSeen: now,
         },
+        state.outDir,
       );
     } catch {
       // ledger write must not stall the walk
@@ -256,7 +258,9 @@ async function scanStepVision(
       mapPage && mapPage.describedBy !== "vision" && state.blurbTriedHashByPage?.[pageKey] !== shotHash,
     );
     const lastHash =
-      needSight || needBlurb || !state.configPath ? undefined : lastVisualHash(state.configPath, key);
+      needSight || needBlurb || !state.configPath
+        ? undefined
+        : lastVisualHash(state.configPath, key, state.outDir);
     const apiKey = vision.apiKeyEnv ? process.env[vision.apiKeyEnv] : undefined;
     const result = await examineScreenshot({
       chat,
@@ -274,13 +278,28 @@ async function scanStepVision(
       applyPageSight(state, pageKey);
       return;
     }
-    if (vision.issues && result.persist && state.configPath) {
-      persistQualityVisual(state.configPath, {
-        ...key,
-        foundAt: new Date().toISOString(),
-        visual: result.issues,
-        visualHash: result.hash,
-      });
+    if (vision.issues && result.persist) {
+      if (state.configPath) {
+        persistQualityVisual(
+          state.configPath,
+          {
+            ...key,
+            foundAt: new Date().toISOString(),
+            visual: result.issues,
+            visualHash: result.hash,
+          },
+          state.outDir,
+        );
+      }
+      if (result.issues.some((i) => i.confidence === "high")) {
+        persistVisualIssueFindings(state.outDir, result.issues, {
+          stepIndex: state.log.steps.length,
+          url: state.page.url(),
+          screenshotPath: shotPath,
+          tapePath: join(state.outDir, "replay.log"),
+          replayLog: compactTape(state, step, "visual issue"),
+        });
+      }
     }
     if (vision.assist && result.sight) {
       state.lastSightByPage = { ...(state.lastSightByPage ?? {}), [pageKey]: result.sight };
@@ -320,7 +339,7 @@ async function captureNotFoundFinding(
   step: Step,
   href: string,
 ): Promise<Finding> {
-  if (state.configPath) reportDocumentNotFound(state.configPath, state.page);
+  if (state.configPath) reportDocumentNotFound(state.configPath, state.page, state.outDir);
   const http404 = isDocumentNotFound(state.page);
   const pending404 = state.pendingFindings.find((f) => f.kind === "notFound");
   const finding = await screenshotFinding(
@@ -337,6 +356,25 @@ async function captureNotFoundFinding(
   return finding;
 }
 
+function compactTape(state: RunState, step: Step, bug: string): string {
+  return formatLog(
+    compactLog(
+      {
+        schemaVersion: 1,
+        bug,
+        found: new Date().toISOString(),
+        comments: state.log.comments,
+        steps: [...state.log.steps, step],
+        usedLocators: { ...state.usedLocators },
+        result: "failed",
+      },
+      state.navLogPath && existsSync(state.navLogPath)
+        ? { hopped: hoppedStepIndexes(readFileSync(state.navLogPath, "utf8")) }
+        : undefined,
+    ),
+  );
+}
+
 function persistStepFinding(
   state: RunState,
   step: Step,
@@ -345,22 +383,7 @@ function persistStepFinding(
   if (!shouldPersistFinding(finding.kind)) return { finding, created: false };
   const persisted = persistFinding(state.outDir, finding, {
     screenshotPath: finding.screenshotPath,
-    replayLog: formatLog(
-      compactLog(
-        {
-          schemaVersion: 1,
-          bug: finding.message,
-          found: new Date().toISOString(),
-          comments: state.log.comments,
-          steps: [...state.log.steps, step],
-          usedLocators: { ...state.usedLocators },
-          result: "failed",
-        },
-        state.navLogPath && existsSync(state.navLogPath)
-          ? { hopped: hoppedStepIndexes(readFileSync(state.navLogPath, "utf8")) }
-          : undefined,
-      ),
-    ),
+    replayLog: compactTape(state, step, finding.message),
   });
   if (step.kind === "screenshot" && persisted.finding.screenshotPath) {
     state.lastScreenshotPath = persisted.finding.screenshotPath;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ledgerPath } from "../surveyor/path-template.js";
 import { sameLedgerPage } from "./testability.js";
 
 export { sameLedgerPage };
@@ -49,6 +50,12 @@ export const QualityPage = z
     htmlHash: z.string().min(1).optional(),
     /** Last PNG hash that produced `visual`. */
     visualHash: z.string().min(1).optional(),
+    /** Last live `document.title`. Used at report time to catch one title on every page. */
+    title: z.string().min(1).optional(),
+    /** Live pathnames + titles for parametric pages (`/customers/:id1`). */
+    titleInstances: z
+      .array(z.object({ path: z.string().min(1), title: z.string().min(1) }).strict())
+      .optional(),
     html: z.array(QualityIssue).default([]),
     a11y: z.array(QualityIssue).default([]),
     seo: z.array(QualityIssue).default([]),
@@ -58,7 +65,7 @@ export const QualityPage = z
   .strict();
 export type QualityPage = z.infer<typeof QualityPage>;
 
-/** clickmonkey/quality.json — HTML, a11y, visual, JS. Not the page map. */
+/** Per-run `quality.json` (HTML, a11y, visual, JS). Not the page map. */
 export const QualityReport = z
   .object({
     schemaVersion: z.literal(1),
@@ -95,6 +102,8 @@ export function normalizeQualityMessage(message: string): string {
 }
 
 export function qualityIssueKey(i: Pick<QualityIssue, "source" | "rule" | "message">): string {
+  // Visual rules are a closed list; VLM prose is not stable across shots or monkeys.
+  if (i.source === "visual") return `${i.source}\0${i.rule}`;
   return `${i.source}\0${i.rule}\0${i.message}`;
 }
 
@@ -108,6 +117,7 @@ export function qualityIssuesEqual(
 }
 
 const CONFIDENCE_RANK: Record<QualityConfidence, number> = { low: 0, medium: 1, high: 2 };
+const SEVERITY_RANK: Record<QualitySeverity, number> = { warning: 0, error: 1 };
 
 export function mergeQualityIssues(issues: QualityIssue[]): QualityIssue[] {
   const byKey = new Map<string, QualityIssue>();
@@ -117,11 +127,15 @@ export function mergeQualityIssues(issues: QualityIssue[]): QualityIssue[] {
     const prev = byKey.get(key);
     if (prev) {
       prev.count += i.count;
+      if (SEVERITY_RANK[i.severity] > SEVERITY_RANK[prev.severity]) {
+        prev.severity = i.severity;
+      }
       if (
         i.confidence &&
         CONFIDENCE_RANK[i.confidence] > CONFIDENCE_RANK[prev.confidence ?? "low"]
       ) {
         prev.confidence = i.confidence;
+        prev.message = message;
       }
       const where = joinWheres(prev.where, i.where);
       if (where) prev.where = where;
@@ -152,9 +166,101 @@ export function mergeRuntimeEvents(
   return [...byKey.values()].sort((a, b) => qualityIssueKey(a).localeCompare(qualityIssueKey(b)));
 }
 
+function ledgerGroupKey(page: { path: string; origin?: string }): string {
+  return `${page.origin ?? ""}\0${ledgerPath(page.path)}`;
+}
+
+export function mergeQualityPageGroup(pages: QualityPage[]): QualityPage {
+  const first = pages[0]!;
+  let foundAt = first.foundAt;
+  let htmlHash: string | undefined;
+  let visualHash: string | undefined;
+  let title: string | undefined;
+  let titleInstances: QualityPage["titleInstances"];
+  let html: QualityIssue[] = [];
+  let a11y: QualityIssue[] = [];
+  let seo: QualityIssue[] = [];
+  let visual: QualityIssue[] = [];
+  let runtime: QualityRuntimeEvent[] = [];
+  for (const p of pages) {
+    if (p.foundAt < foundAt) foundAt = p.foundAt;
+    if (p.htmlHash) htmlHash = p.htmlHash;
+    if (p.visualHash) visualHash = p.visualHash;
+    if (p.title?.trim()) title = p.title.replace(/\s+/g, " ").trim();
+    titleInstances = mergeTitleInstances(titleInstances, p.titleInstances);
+    html = mergeQualityIssues([...html, ...p.html]);
+    a11y = mergeQualityIssues([...a11y, ...p.a11y]);
+    seo = mergeQualityIssues([...seo, ...(p.seo ?? [])]);
+    visual = mergeQualityIssues([...visual, ...p.visual]);
+    runtime = mergeRuntimeEvents(runtime, p.runtime ?? []);
+  }
+  const next: QualityPage = {
+    path: ledgerPath(first.path),
+    foundAt,
+    html,
+    a11y,
+    seo,
+    visual,
+    runtime,
+  };
+  if (first.origin) next.origin = first.origin;
+  if (htmlHash) next.htmlHash = htmlHash;
+  if (visualHash) next.visualHash = visualHash;
+  if (title) next.title = title;
+  if (titleInstances) next.titleInstances = titleInstances;
+  return next;
+}
+
+export function foldQualityPages(pages: QualityPage[]): QualityPage[] {
+  const groups = new Map<string, QualityPage[]>();
+  for (const p of pages) {
+    const key = ledgerGroupKey(p);
+    const g = groups.get(key) ?? [];
+    g.push(p);
+    groups.set(key, g);
+  }
+  const out = [...groups.values()].map(mergeQualityPageGroup);
+  out.sort((a, b) => {
+    const o = (a.origin ?? "").localeCompare(b.origin ?? "");
+    return o !== 0 ? o : a.path.localeCompare(b.path);
+  });
+  return out;
+}
+
+const TITLE_INSTANCES_MAX = 12;
+
+export function mergeTitleInstances(
+  existing: QualityPage["titleInstances"] | undefined,
+  incoming: QualityPage["titleInstances"] | undefined,
+): QualityPage["titleInstances"] {
+  const byPath = new Map<string, { path: string; title: string }>();
+  for (const i of [...(existing ?? []), ...(incoming ?? [])]) {
+    const title = i.title.replace(/\s+/g, " ").trim();
+    const path = i.path.trim();
+    if (!title || !path) continue;
+    byPath.set(path, { path, title });
+  }
+  const out = [...byPath.values()];
+  if (out.length === 0) return undefined;
+  return out.length <= TITLE_INSTANCES_MAX ? out : out.slice(out.length - TITLE_INSTANCES_MAX);
+}
+
+export function foldQualityReport(report: QualityReport): QualityReport {
+  return { schemaVersion: 1, pages: foldQualityPages(report.pages) };
+}
+
+/** Union several run ledgers onto templated paths. */
+export function combineQualityReports(reports: QualityReport[]): QualityReport {
+  return foldQualityReport({
+    schemaVersion: 1,
+    pages: reports.flatMap((r) => r.pages),
+  });
+}
+
 export function upsertQualityPage(report: QualityReport, page: QualityPage): QualityReport {
-  const pages = report.pages.filter((p) => !sameLedgerPage(p, page));
-  pages.push(page);
+  const folded: QualityPage = { ...page, path: ledgerPath(page.path) };
+  const pages = foldQualityPages(report.pages).filter((p) => !sameLedgerPage(p, folded));
+  pages.push(folded);
   pages.sort((a, b) => {
     const o = (a.origin ?? "").localeCompare(b.origin ?? "");
     return o !== 0 ? o : a.path.localeCompare(b.path);

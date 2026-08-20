@@ -10,7 +10,9 @@ import {
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { cannedReport } from "../reports/canned.js";
-import { Finding, severityForKind, type FindingKind } from "../schema/finding.js";
+import { Finding, findingId, severityForKind, type FindingKind, type FindingSeverity } from "../schema/finding.js";
+import type { QualityIssue } from "../schema/quality.js";
+import { templatizePath } from "../surveyor/path-template.js";
 
 const BRAIN_MISS_KINDS = new Set<FindingKind>(["unknownId", "unresolvedId"]);
 
@@ -54,6 +56,17 @@ function pathOfFindingUrl(url: string | undefined): string | undefined {
   }
 }
 
+function templatedPathOfUrl(url: string | undefined): { origin: string; path: string } | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === "" ? "/" : parsed.pathname;
+    return { origin: parsed.origin, path: templatizePath(path).path };
+  } catch {
+    return { origin: "", path: templatizePath(url).path };
+  }
+}
+
 function samePersistedFinding(a: Finding, b: Finding): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "notFound") {
@@ -66,6 +79,12 @@ function samePersistedFinding(a: Finding, b: Finding): boolean {
     const pa = pathOfFindingUrl(a.url);
     const pb = pathOfFindingUrl(b.url);
     return Boolean(pa && pb && pa === pb);
+  }
+  if (a.kind === "visualIssue") {
+    const pa = templatedPathOfUrl(a.url);
+    const pb = templatedPathOfUrl(b.url);
+    if (!pa || !pb) return a.message === b.message;
+    return pa.origin === pb.origin && pa.path === pb.path && a.widgetRef === b.widgetRef;
   }
   if (a.message !== b.message) return false;
   if (a.url && b.url && a.url !== b.url) return false;
@@ -85,17 +104,24 @@ function findDuplicateFinding(outDir: string, finding: Finding): Finding | undef
 
 export type PersistFindingResult = { finding: Finding; created: boolean };
 
+export type PersistFindingOpts = {
+  screenshotPath?: string;
+  replayLog?: string;
+  /** Copy the PNG into the finding folder but leave the source in place (step shots). */
+  keepScreenshotSource?: boolean;
+};
+
 export function persistFinding(
   outDir: string,
   finding: Finding,
-  opts?: { screenshotPath?: string; replayLog?: string },
+  opts?: PersistFindingOpts,
 ): PersistFindingResult {
   if (!shouldPersistFinding(finding.kind)) return { finding, created: false };
 
   const existing = findDuplicateFinding(outDir, finding);
   if (existing) {
     const src = opts?.screenshotPath ?? finding.screenshotPath;
-    if (src && existsSync(src)) unlinkIfOutsideFindings(outDir, src);
+    if (src && existsSync(src) && !opts?.keepScreenshotSource) unlinkIfOutsideFindings(outDir, src);
     return { finding: existing, created: false };
   }
 
@@ -107,7 +133,7 @@ export function persistFinding(
     const dest = join(dir, "screenshot.png");
     if (resolve(src) !== resolve(dest)) {
       copyFileSync(src, dest);
-      unlinkIfOutsideFindings(outDir, src);
+      if (!opts?.keepScreenshotSource) unlinkIfOutsideFindings(outDir, src);
     }
     finding.screenshotPath = dest;
   } else {
@@ -132,4 +158,51 @@ export function appendFindingReport(outDir: string, findingId: string, extraMark
   const extra = extraMarkdown.trim();
   if (!extra || !existsSync(path)) return;
   appendFileSync(path, extra.endsWith("\n") ? `\n${extra}` : `\n${extra}\n`, "utf8");
+}
+
+export function visualIssueMessage(issue: Pick<QualityIssue, "rule" | "message" | "where">): string {
+  const loc = issue.where ? ` — ${issue.where}` : "";
+  return `${issue.rule}: ${issue.message}${loc}`;
+}
+
+export function severityForVisualIssue(issue: Pick<QualityIssue, "severity">): FindingSeverity {
+  return issue.severity === "error" ? "major" : "minor";
+}
+
+/** File high-confidence visual issues as findings. Medium stays on the quality ledger. */
+export function persistVisualIssueFindings(
+  outDir: string,
+  issues: QualityIssue[],
+  ctx: {
+    stepIndex: number;
+    url?: string;
+    screenshotPath?: string;
+    tapePath: string;
+    replayLog?: string;
+  },
+): PersistFindingResult[] {
+  const high = issues.filter((i) => i.source === "visual" && i.confidence === "high");
+  const results: PersistFindingResult[] = [];
+  for (const [i, issue] of high.entries()) {
+    const finding: Finding = {
+      schemaVersion: 1,
+      id: findingId(ctx.stepIndex, "visualIssue", high.length === 1 ? undefined : i),
+      kind: "visualIssue",
+      severity: severityForVisualIssue(issue),
+      message: visualIssueMessage(issue),
+      tapePath: ctx.tapePath,
+      stepIndex: ctx.stepIndex,
+      widgetRef: issue.rule,
+      ...(ctx.url ? { url: ctx.url } : {}),
+      ...(ctx.screenshotPath ? { screenshotPath: ctx.screenshotPath } : {}),
+    };
+    results.push(
+      persistFinding(outDir, finding, {
+        screenshotPath: ctx.screenshotPath,
+        replayLog: ctx.replayLog,
+        keepScreenshotSource: true,
+      }),
+    );
+  }
+  return results;
 }

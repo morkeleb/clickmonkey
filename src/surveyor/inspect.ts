@@ -13,7 +13,7 @@ import {
 import { recordPageLedgers } from "./record.js";
 import { auditVisible } from "./audit.js";
 import { collectCandidates } from "./collect.js";
-import { identityKey, mergePageModel } from "./merge.js";
+import { foldPathTemplates, identityKey, mergePageModel } from "./merge.js";
 import {
   createPageFromUrl,
   findPageForHref,
@@ -65,6 +65,7 @@ async function modelForPage(page: Page, ctx: SurveyorContext): Promise<{
   }
 
   const model = PageModel.parse(structuredClone(ctx.model));
+  model.pages = foldPathTemplates(model.pages);
   const existing = appOrigin
     ? findPageForHref(model.pages, page.url(), appOrigin)
     : undefined;
@@ -223,6 +224,7 @@ export async function inspectAndSaveConfig(
   await recordPageLedgers(configPath, page, result.testability, {
     appOrigin: originOfHref(config.url),
     seo: config.seo,
+    path: result.model.pages.find((p) => p.id === result.pageId)?.path,
   });
   const saved = persistSharedMap(configPath, result.model);
   return { ...result, model: saved.map };

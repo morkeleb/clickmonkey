@@ -130,6 +130,45 @@ describe("findings report", () => {
     assert.equal((md.match(/^### /gm) ?? []).length, 2);
   });
 
+  it("collapses visualIssue findings on the same templated path and rule", () => {
+    const root = mkdtempSync(join(tmpdir(), "cm-rep-visual-"));
+    function writeVisual(runId: string, id: string, url: string, message: string) {
+      const folder = join(root, "runs", runId, "findings", id);
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(
+        join(folder, "finding.json"),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          id,
+          kind: "visualIssue",
+          severity: "minor",
+          message,
+          tapePath: join(folder, "replay.log"),
+          stepIndex: 1,
+          url,
+          widgetRef: "scanline",
+        })}\n`,
+      );
+      writeFileSync(join(folder, "replay.log"), "open home\n");
+      writeFileSync(join(folder, "screenshot.png"), "png");
+    }
+    writeVisual(
+      "run-a",
+      "fnd_2_visualIssue",
+      "http://127.0.0.1:3000/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations",
+      "scanline: row icons drift",
+    );
+    writeVisual(
+      "run-b",
+      "fnd_8_visualIssue",
+      "http://127.0.0.1:3000/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations",
+      "scanline: icons do not share an edge",
+    );
+    const cases = collectFindingCases([join(root, "runs", "run-a"), join(root, "runs", "run-b")]);
+    assert.equal(cases.length, 2);
+    assert.equal(collapseFindingCases(cases).length, 1);
+  });
+
   it("renders an Explore outline from selected runs", () => {
     const root = mkdtempSync(join(tmpdir(), "cm-rep-outline-"));
     const runDir = join(root, "runs", "20260818T120000Z-exp");
@@ -371,6 +410,42 @@ describe("findings report", () => {
     assert.doesNotMatch(md, /Pages with the most issues/);
     assert.doesNotMatch(md, /preloaded but not used/);
     assert.doesNotMatch(md, /### `\/` —/);
+  });
+
+  it("counts UUID customer pages as one quality heading", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:3000/",
+        generatedAt: "t",
+        runIds: [],
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations",
+              foundAt: "t",
+              html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "dup", count: 1 }],
+              a11y: [],
+              visual: [],
+              runtime: [],
+            },
+            {
+              path: "/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations",
+              foundAt: "t",
+              html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "dup", count: 1 }],
+              a11y: [],
+              visual: [],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /Workspace ledger across 1 page/);
+    assert.match(md, /\/customers\/:id1\/migrations/);
+    assert.doesNotMatch(md, /aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/);
   });
 
   it("treats majority and large-walk thirds as chrome", () => {

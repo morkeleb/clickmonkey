@@ -1,7 +1,11 @@
 import type { Page } from "playwright";
 import { pathPrefixMatch } from "../executor/fence.js";
 import type { SeoConfig } from "../schema/config.js";
-import { mergeQualityIssues, type QualityIssue } from "../schema/quality.js";
+import {
+  mergeQualityIssues,
+  type QualityIssue,
+  type QualityReport,
+} from "../schema/quality.js";
 
 const TITLE_MAX = 60;
 const DESC_MIN = 20;
@@ -134,6 +138,88 @@ export function issuesFromMeta(meta: PageMeta, pageUrl: string): QualityIssue[] 
   }
 
   return mergeQualityIssues(out);
+}
+
+const DUPLICATE_TITLE_MIN_PAGES = 3;
+const DUPLICATE_TITLE_SHARE = 2 / 3;
+
+function titleKey(title: string): string {
+  return title.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * Report-time: one document.title on most walked pages.
+ * Tabs, screen readers, and search all need a title that names this page.
+ * Needs at least three titled pages; stamps `document-title-same` on the majority set.
+ */
+export function applyDuplicateTitles(report: QualityReport): QualityReport {
+  return applyInstanceTitles(applySiteWideTitles(report));
+}
+
+function applySiteWideTitles(report: QualityReport): QualityReport {
+  const titled = report.pages.filter((p) => (p.title ?? "").trim());
+  if (titled.length < DUPLICATE_TITLE_MIN_PAGES) return report;
+  const groups = new Map<string, typeof titled>();
+  for (const p of titled) {
+    const key = titleKey(p.title!);
+    const g = groups.get(key) ?? [];
+    g.push(p);
+    groups.set(key, g);
+  }
+  const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
+  if (!best || best.length < DUPLICATE_TITLE_MIN_PAGES) return report;
+  if (best.length / titled.length < DUPLICATE_TITLE_SHARE) return report;
+  const display = best[0]!.title!.replace(/\s+/g, " ").trim();
+  const issue: QualityIssue = {
+    source: "a11y",
+    rule: "document-title-same",
+    severity: "warning",
+    message: `Same document.title on ${best.length} pages (“${display}”) — browser tabs and screen readers cannot tell them apart`,
+    count: 1,
+    where: "title",
+  };
+  const hit = new Set(best);
+  return {
+    schemaVersion: 1,
+    pages: report.pages.map((p) => {
+      if (!hit.has(p)) return p;
+      if (p.a11y.some((i) => i.rule === "document-title-same")) return p;
+      return { ...p, a11y: mergeQualityIssues([...p.a11y, issue]) };
+    }),
+  };
+}
+
+function isParametricLedgerPath(path: string): boolean {
+  return /(^|\/):[A-Za-z_]/.test(path);
+}
+
+/**
+ * Two records on `/customers/:id1` should not share a tab title.
+ * Needs two different live pathnames and only one distinct title among them.
+ */
+function applyInstanceTitles(report: QualityReport): QualityReport {
+  return {
+    schemaVersion: 1,
+    pages: report.pages.map((p) => {
+      if (!isParametricLedgerPath(p.path)) return p;
+      if (p.a11y.some((i) => i.rule === "document-title-instance")) return p;
+      const inst = p.titleInstances ?? [];
+      const paths = new Set(inst.map((i) => i.path));
+      if (paths.size < 2) return p;
+      const titles = new Set(inst.map((i) => titleKey(i.title)));
+      if (titles.size !== 1) return p;
+      const display = inst[0]!.title.replace(/\s+/g, " ").trim();
+      const issue: QualityIssue = {
+        source: "a11y",
+        rule: "document-title-instance",
+        severity: "warning",
+        message: `${paths.size} ${p.path} records share document.title “${display}” — different records look the same in tabs`,
+        count: 1,
+        where: "title",
+      };
+      return { ...p, a11y: mergeQualityIssues([...p.a11y, issue]) };
+    }),
+  };
 }
 
 const READ_META_SRC = `

@@ -306,6 +306,31 @@ describe("mergeTrees", () => {
     assert.equal(submit?.length, 1);
   });
 
+  it("folds two UUID detail pages onto /customers/:id1/migrations", () => {
+    const draft = emptyDraft("x");
+    const a = structuredClone(loadHome().pages[0]!);
+    a.id = "cust_a";
+    a.path = "/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations";
+    a.params = [];
+    a.ready = { by: "testId", value: "migrations" };
+    a.surfaces = [
+      {
+        id: "page",
+        kind: "page",
+        fields: [],
+        actions: [{ id: "edit", by: "testId", value: "edit", status: "ok", opens: "cust_a" }],
+      },
+    ];
+    const b = structuredClone(a);
+    b.id = "cust_b";
+    b.path = "/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations";
+    b.surfaces[0]!.actions = [{ id: "edit", by: "testId", value: "edit", status: "ok", opens: "cust_b" }];
+    const merged = mergeTrees({ ...draft, pages: [a] }, { ...draft, pages: [b] });
+    assert.equal(merged.pages.length, 1);
+    assert.equal(merged.pages[0]!.path, "/customers/:id1/migrations");
+    assert.deepEqual(merged.pages[0]!.params, ["id1"]);
+  });
+
   it("keeps same-path pages on different origins apart and stamps origin onto a legacy page", () => {
     const base = loadHome();
     const idp = structuredClone(base.pages[0]!);

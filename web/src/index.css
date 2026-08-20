@@ -95,6 +95,12 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* Radix viewport wraps children in display:table, which ignores the panel width. */
+[data-slot="scroll-area-viewport"] > div {
+  min-width: 0 !important;
+  display: block !important;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -198,6 +204,7 @@
   border-radius: 0.4rem;
   border: 1px solid oklch(1 0 0 / 10%);
   margin: 0.75em 0;
+  cursor: zoom-in;
 }
 .markdown a {
   color: oklch(0.82 0.04 250);

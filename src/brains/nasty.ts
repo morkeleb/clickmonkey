@@ -117,6 +117,48 @@ function poolFor(fieldType: string | undefined, catalog: Record<string, string[]
   return items;
 }
 
+const SPECIAL_PAYLOAD = /[<>'"%;{}()=\\/$]/;
+const MIN_SPECIAL = 6;
+const MIN_PLAIN = 12;
+const OVERLONG_PREFIX = 24;
+
+function distinctiveNeedles(catalog: Record<string, string[]>): string[] {
+  const out: string[] = [];
+  for (const lines of Object.values(catalog)) {
+    for (const raw of lines) {
+      const expanded = interpret(raw);
+      for (const s of expanded === raw ? [expanded] : [expanded, raw]) {
+        if (!s) continue;
+        const ok = SPECIAL_PAYLOAD.test(s) ? s.length >= MIN_SPECIAL : s.length >= MIN_PLAIN;
+        if (ok) out.push(s);
+        if (s.length >= OVERLONG_PREFIX && /^(.)\1{23,}/.test(s)) out.push(s.slice(0, OVERLONG_PREFIX));
+      }
+    }
+  }
+  return [...new Set(out)].sort((a, b) => b.length - a.length);
+}
+
+let cachedNeedles: string[] | undefined;
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/** True when `text` quotes a catalog payload (leftover --nasty data, not a pixel defect). */
+export function textContainsNastyPayload(text: string, dir?: string): boolean {
+  const hay = decodeEntities(text);
+  if (!hay) return false;
+  const needles = dir
+    ? distinctiveNeedles(loadPayloads(dir))
+    : (cachedNeedles ??= distinctiveNeedles(loadPayloads()));
+  return needles.some((n) => hay.includes(n));
+}
+
 export function pickNasty(fieldType: string | undefined, rng: () => number = Math.random): string {
   const catalog = loadPayloads();
   const pool = poolFor(fieldType, catalog);

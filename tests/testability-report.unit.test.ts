@@ -77,4 +77,24 @@ describe("testability report", () => {
     assert.equal(app?.insufficient, false);
     assert.equal(idp?.insufficient, true);
   });
+
+  it("folds UUID customer pages onto one /customers/:id1/migrations row", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-a11y-fold-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistTestabilityPage(configPath, {
+      path: "/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations",
+      foundAt: "t1",
+      insufficient: false,
+      issues: [{ code: "missingStableId", severity: "warn", tag: "button", where: 'button "Edit"' }],
+    });
+    persistTestabilityPage(configPath, {
+      path: "/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations",
+      foundAt: "t2",
+      insufficient: false,
+      issues: [{ code: "missingStableId", severity: "warn", tag: "button", where: 'button "Delete"' }],
+    });
+    const report = loadTestabilityReport(testabilityReportPath(configPath));
+    assert.equal(report.pages.length, 1);
+    assert.equal(report.pages[0]?.path, "/customers/:id1/migrations");
+  });
 });

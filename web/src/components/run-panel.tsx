@@ -4,9 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Shot, ShotPreview } from "@/components/shot";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { publicUrl } from "@/lib/paths";
 import { clockOf, shortHref, useRunDetail } from "@/lib/run-detail";
 import { cn, runHue } from "@/lib/utils";
 
@@ -25,36 +24,6 @@ function HopLine({ from, to }: { from: string; to: string }) {
       <span className="mx-1 text-zinc-600">→</span>
       <span>{shortHref(to)}</span>
     </div>
-  );
-}
-
-function Shot({
-  url,
-  alt,
-  onOpen,
-}: {
-  url: string;
-  alt: string;
-  onOpen: (url: string) => void;
-}) {
-  const href = url.startsWith("/") ? publicUrl(url) : url;
-  const [failedFor, setFailedFor] = useState<string | null>(null);
-  if (failedFor === href) return null;
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen(href)}
-      className="mt-2 block overflow-hidden rounded-md border border-border bg-zinc-950 text-left"
-    >
-      <img
-        key={href}
-        src={href}
-        alt={alt}
-        loading="lazy"
-        className="max-h-40 w-full object-cover object-top"
-        onError={() => setFailedFor(href)}
-      />
-    </button>
   );
 }
 
@@ -213,19 +182,14 @@ function RunBody({ detail }: { detail: UiRunDetail }) {
           </ScrollArea>
         </TabsContent>
       </Tabs>
-      <Sheet open={Boolean(preview)} onOpenChange={(open) => !open && setPreview(null)}>
-        <SheetContent className="w-full sm:max-w-3xl">
-          <SheetHeader>
-            <SheetTitle>Screenshot</SheetTitle>
-            <SheetDescription>Captured when the step finished.</SheetDescription>
-          </SheetHeader>
-          {preview ? (
-            <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
-              <img src={preview} alt="Step screenshot" className="w-full rounded-md border border-border" />
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+      <ShotPreview
+        url={preview}
+        alt="Step screenshot"
+        description="Captured when the step finished."
+        onOpenChange={(open) => {
+          if (!open) setPreview(null);
+        }}
+      />
     </>
   );
 }

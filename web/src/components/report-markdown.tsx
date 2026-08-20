@@ -1,9 +1,11 @@
 import { Check, Copy, Printer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ShotPreview } from "@/components/shot";
 import { Button } from "@/components/ui/button";
 import { copyReportToClipboard } from "@/lib/report-clipboard";
 import { renderReportHtml } from "@/lib/markdown";
 import { fetchFirstJson } from "@/lib/paths";
+import { shotFromClick } from "@/lib/shot";
 
 type ReportPayload = {
   id: string;
@@ -18,12 +20,14 @@ export function ReportMarkdown({ reportId }: { reportId: string }) {
   const [report, setReport] = useState<ReportPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "failed">("idle");
+  const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setReport(null);
     setError(null);
     setCopyState("idle");
+    setPreview(null);
     void (async () => {
       try {
         const enc = encodeURIComponent(reportId);
@@ -88,8 +92,25 @@ export function ReportMarkdown({ reportId }: { reportId: string }) {
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto print:h-auto print:overflow-visible">
-        <article className="markdown mx-auto max-w-3xl px-8 py-8" dangerouslySetInnerHTML={{ __html: html }} />
+        <article
+          className="markdown mx-auto max-w-3xl px-8 py-8"
+          dangerouslySetInnerHTML={{ __html: html }}
+          onClick={(event) => {
+            const href = shotFromClick(event.target);
+            if (!href) return;
+            event.preventDefault();
+            setPreview(href);
+          }}
+        />
       </div>
+      <ShotPreview
+        url={preview}
+        alt="Report screenshot"
+        description="From this report."
+        onOpenChange={(open) => {
+          if (!open) setPreview(null);
+        }}
+      />
     </div>
   );
 }

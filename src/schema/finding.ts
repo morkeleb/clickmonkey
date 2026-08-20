@@ -12,6 +12,7 @@ export const FindingKind = z.enum([
   "writePolicyBlocked",
   "locatorAmbiguous",
   "uiIssue",
+  "visualIssue",
 ]);
 export type FindingKind = z.infer<typeof FindingKind>;
 
@@ -35,6 +36,8 @@ export function severityForKind(kind: FindingKind): FindingSeverity {
       return "minor";
     case "uiIssue":
       return "suggestion";
+    case "visualIssue":
+      return "minor";
   }
 }
 

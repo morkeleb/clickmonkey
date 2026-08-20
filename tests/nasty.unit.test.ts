@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decideUnleashNasty, listCatalogs, loadPayloads, pickNasty, samplePayloads } from "../src/brains/nasty.js";
+import {
+  decideUnleashNasty,
+  listCatalogs,
+  loadPayloads,
+  pickNasty,
+  samplePayloads,
+  textContainsNastyPayload,
+} from "../src/brains/nasty.js";
 import { parseLine } from "../src/schema/dsl.js";
 import type { View } from "../src/schema/view.js";
 
@@ -16,6 +23,13 @@ function viewOf(partial: Partial<View>): View {
 }
 
 describe("nasty payloads", () => {
+  it("textContainsNastyPayload matches catalog strings, not the word malicious", () => {
+    assert.equal(textContainsNastyPayload("cells contain <script>alert(1)</script>"), true);
+    assert.equal(textContainsNastyPayload("name is ' OR 1=1--"), true);
+    assert.equal(textContainsNastyPayload("Listing looks malicious and broken"), false);
+    assert.equal(textContainsNastyPayload("two cards overlap on the header"), false);
+  });
+
   it("loadPayloads has sqli and xss", () => {
     const catalog = loadPayloads();
     assert.ok(Array.isArray(catalog.sqli) && catalog.sqli.length > 0);

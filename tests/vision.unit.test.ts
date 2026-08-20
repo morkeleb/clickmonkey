@@ -4,7 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { ChatClient, ChatRequest } from "../src/brains/chat.js";
-import { examineScreenshot, hashPngFile, parseVisualReply, VISUAL_BLURB_PROMPT } from "../src/surveyor/vision.js";
+import {
+  dropExpectedOverlayVisual,
+  dropPayloadContentVisual,
+  examineScreenshot,
+  hashPngFile,
+  parseVisualReply,
+  VISUAL_BLURB_PROMPT,
+  VISUAL_PROMPT,
+} from "../src/surveyor/vision.js";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -48,6 +56,16 @@ describe("parseVisualReply", () => {
     assert.match(VISUAL_BLURB_PROMPT, /primary action/);
     assert.match(VISUAL_BLURB_PROMPT, /sidebar or top nav/);
     assert.match(VISUAL_BLURB_PROMPT, /Do not: colors/);
+  });
+
+  it("tells the model leftover nasty payloads are content, not a rendering defect", () => {
+    assert.match(VISUAL_PROMPT, /test payloads/);
+    assert.match(VISUAL_PROMPT, /Do report if that text actually overflows/);
+  });
+
+  it("tells the model an open dropdown covering the page is expected stacking", () => {
+    assert.match(VISUAL_PROMPT, /expected stacking/);
+    assert.match(VISUAL_PROMPT, /open dropdown/);
   });
 
   it("reads a page blurb from the same JSON", () => {
@@ -158,6 +176,102 @@ describe("parseVisualReply", () => {
     assert.equal(out.ok, true);
     if (!out.ok) return;
     assert.equal(out.issues[0]?.rule, "scanline");
+  });
+
+  it("drops a report only when it quotes a --nasty catalog payload, not the word malicious", () => {
+    assert.equal(
+      dropPayloadContentVisual({
+        rule: "broken",
+        message: "Customer list looks broken; cells contain <script>alert(1)</script>",
+      }),
+      true,
+    );
+    assert.equal(
+      dropPayloadContentVisual({
+        rule: "broken",
+        message: "Listing looks malicious and broken",
+      }),
+      false,
+    );
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "broken",
+            severity: "warning",
+            confidence: "high",
+            message: "Table rows show XSS payload text like <script>alert(1)</script>",
+          },
+          {
+            rule: "broken",
+            severity: "warning",
+            confidence: "high",
+            message: "Listing looks malicious and broken",
+          },
+          {
+            rule: "overflow",
+            severity: "error",
+            confidence: "high",
+            message: "Overlong name overflows the table cell",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.issues.length, 2);
+    assert.deepEqual(
+      out.issues.map((i) => i.rule),
+      ["broken", "overflow"],
+    );
+  });
+
+  it("drops an open dropdown covering the page, keeps a clipped menu or colliding cards", () => {
+    assert.equal(
+      dropExpectedOverlayVisual({
+        rule: "overlap",
+        message: "Dropdown menu overlaps with the 'No matching records' message, visually obscuring part of the text.",
+        where: "Readiness dropdown menu and 'No matching records' message",
+      }),
+      true,
+    );
+    assert.equal(
+      dropExpectedOverlayVisual({
+        rule: "overlap",
+        message: "Two cards overlap on the dashboard",
+      }),
+      false,
+    );
+    assert.equal(
+      dropExpectedOverlayVisual({
+        rule: "clip",
+        message: "Dropdown menu is cut off by the viewport",
+      }),
+      false,
+    );
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "overlap",
+            severity: "warning",
+            confidence: "medium",
+            where: "Readiness dropdown menu and 'No matching records' message",
+            message: "Dropdown menu overlaps with the 'No matching records' message",
+          },
+          {
+            rule: "overlap",
+            severity: "error",
+            confidence: "high",
+            message: "Two cards overlap",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.issues.length, 1);
+    assert.equal(out.issues[0]?.message, "Two cards overlap");
   });
 });
 

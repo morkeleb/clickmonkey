@@ -56,7 +56,12 @@ function classify(opts: {
   if (setup.length > 0) return "error";
   const mechanical = opts.findings.filter((f) => MECHANICAL.has(f.kind));
   if (mechanical.length > 0) return "still";
-  if (tapeWantsEyes(opts.log) || opts.findings.some((f) => f.kind === "uiIssue")) return "look";
+  if (
+    tapeWantsEyes(opts.log) ||
+    opts.findings.some((f) => f.kind === "uiIssue" || f.kind === "visualIssue")
+  ) {
+    return "look";
+  }
   return "fixed";
 }
 

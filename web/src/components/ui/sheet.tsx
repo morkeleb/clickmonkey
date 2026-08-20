@@ -36,13 +36,15 @@ function SheetContent({
   className,
   children,
   side = "right",
+  overlayClassName,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
+  overlayClassName?: string;
 }) {
   return (
     <SheetPortal>
-      <SheetOverlay />
+      <SheetOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="sheet-content"
         className={cn(

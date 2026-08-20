@@ -1,8 +1,12 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
+  combineQualityReports,
   emptyQualityReport,
+  foldQualityReport,
   mergeQualityIssues,
   mergeRuntimeEvents,
+  mergeTitleInstances,
   QualityReport,
   sameLedgerPage,
   upsertQualityPage,
@@ -10,11 +14,34 @@ import {
   type QualityPage,
   type QualityRuntimeEvent,
 } from "../schema/quality.js";
+import { ledgerPath } from "../surveyor/path-template.js";
+import { applyDuplicateTitles } from "../surveyor/seo.js";
 import { withFileLock } from "./lock.js";
 import { ensureWorkspace, qualityPath } from "./workspace.js";
 
-export function qualityReportPath(configPath: string): string {
+export function qualityReportPath(configPath: string, outDir?: string): string {
+  return outDir ? join(outDir, "quality.json") : qualityPath(configPath);
+}
+
+function resolveQualityWritePath(configPath: string, outDir?: string): string {
+  if (outDir) {
+    mkdirSync(outDir, { recursive: true });
+    return join(outDir, "quality.json");
+  }
+  ensureWorkspace(configPath);
   return qualityPath(configPath);
+}
+
+/** Combine `runs/<id>/quality.json`. Empty run files fall back to the workspace ledger. */
+export function loadCombinedQuality(runDirs: string[], fallbackConfigPath?: string): QualityReport {
+  const combined = combineQualityReports(runDirs.map((d) => loadQualityReport(join(d, "quality.json"))));
+  const sourced =
+    combined.pages.length > 0
+      ? combined
+      : fallbackConfigPath
+        ? loadQualityReport(qualityPath(fallbackConfigPath))
+        : emptyQualityReport();
+  return applyDuplicateTitles(sourced);
 }
 
 function writeReport(path: string, report: QualityReport): void {
@@ -25,7 +52,7 @@ function writeReport(path: string, report: QualityReport): void {
 
 export function loadQualityReport(path: string): QualityReport {
   if (!existsSync(path)) return emptyQualityReport();
-  return QualityReport.parse(JSON.parse(readFileSync(path, "utf8")));
+  return foldQualityReport(QualityReport.parse(JSON.parse(readFileSync(path, "utf8"))));
 }
 
 function findPage(
@@ -41,24 +68,36 @@ export function persistQualitySnapshot(
   page: Omit<QualityPage, "runtime" | "visual" | "visualHash" | "seo"> & {
     runtime?: QualityRuntimeEvent[];
     seo?: QualityIssue[];
+    titleInstance?: { path: string; title: string };
   },
+  outDir?: string,
 ): QualityReport {
-  ensureWorkspace(configPath);
-  const path = qualityPath(configPath);
+  const path = resolveQualityWritePath(configPath, outDir);
   return withFileLock(path, () => {
     const disk = loadQualityReport(path);
-    const prev = findPage(disk, page);
+    const key = { path: ledgerPath(page.path), ...(page.origin ? { origin: page.origin } : {}) };
+    const prev = findPage(disk, key);
+    const titleInstances = mergeTitleInstances(
+      prev?.titleInstances,
+      page.titleInstance ? [page.titleInstance] : page.titleInstances,
+    );
     const nextPage: QualityPage = {
-      path: page.path,
+      path: key.path,
       foundAt: page.foundAt,
       html: page.html,
       a11y: page.a11y,
       seo: page.seo ?? [],
       visual: prev?.visual ?? [],
       runtime: page.runtime ?? prev?.runtime ?? [],
-      ...(page.origin ? { origin: page.origin } : {}),
+      ...(key.origin ? { origin: key.origin } : {}),
       ...(page.htmlHash ? { htmlHash: page.htmlHash } : {}),
       ...(prev?.visualHash ? { visualHash: prev.visualHash } : {}),
+      ...(page.title?.trim()
+        ? { title: page.title.replace(/\s+/g, " ").trim() }
+        : prev?.title
+          ? { title: prev.title }
+          : {}),
+      ...(titleInstances ? { titleInstances } : {}),
     };
     const next = upsertQualityPage(disk, nextPage);
     writeReport(path, next);
@@ -70,24 +109,27 @@ export function persistQualityRuntime(
   configPath: string,
   key: { path: string; origin?: string },
   event: QualityRuntimeEvent,
+  outDir?: string,
 ): QualityReport {
-  ensureWorkspace(configPath);
-  const path = qualityPath(configPath);
+  const path = resolveQualityWritePath(configPath, outDir);
   const now = event.lastSeen;
   return withFileLock(path, () => {
     const disk = loadQualityReport(path);
-    const prev = findPage(disk, key);
+    const foldedKey = { path: ledgerPath(key.path), ...(key.origin ? { origin: key.origin } : {}) };
+    const prev = findPage(disk, foldedKey);
     const nextPage: QualityPage = {
-      path: key.path,
+      path: foldedKey.path,
       foundAt: prev?.foundAt ?? now,
       html: prev?.html ?? [],
       a11y: prev?.a11y ?? [],
       seo: prev?.seo ?? [],
       visual: prev?.visual ?? [],
       runtime: mergeRuntimeEvents(prev?.runtime ?? [], [event]),
-      ...(key.origin ? { origin: key.origin } : {}),
+      ...(foldedKey.origin ? { origin: foldedKey.origin } : {}),
       ...(prev?.htmlHash ? { htmlHash: prev.htmlHash } : {}),
       ...(prev?.visualHash ? { visualHash: prev.visualHash } : {}),
+      ...(prev?.title ? { title: prev.title } : {}),
+      ...(prev?.titleInstances ? { titleInstances: prev.titleInstances } : {}),
     };
     const next = upsertQualityPage(disk, nextPage);
     writeReport(path, next);
@@ -98,8 +140,9 @@ export function persistQualityRuntime(
 export function lastQualityPage(
   configPath: string,
   key: { path: string; origin?: string },
+  outDir?: string,
 ): QualityPage | undefined {
-  const path = qualityPath(configPath);
+  const path = qualityReportPath(configPath, outDir);
   if (!existsSync(path)) return undefined;
   return findPage(loadQualityReport(path), key);
 }
@@ -111,7 +154,7 @@ export function lastHtmlHash(
   return lastQualityPage(configPath, key)?.htmlHash;
 }
 
-/** Replace visual for this path+origin; keep html, a11y, runtime, htmlHash. */
+/** Union visual issues for this path+origin; keep html, a11y, runtime, htmlHash. */
 export function persistQualityVisual(
   configPath: string,
   page: {
@@ -121,23 +164,26 @@ export function persistQualityVisual(
     visual: QualityIssue[];
     visualHash: string;
   },
+  outDir?: string,
 ): QualityReport {
-  ensureWorkspace(configPath);
-  const path = qualityPath(configPath);
+  const path = resolveQualityWritePath(configPath, outDir);
   return withFileLock(path, () => {
     const disk = loadQualityReport(path);
-    const prev = findPage(disk, page);
+    const key = { path: ledgerPath(page.path), ...(page.origin ? { origin: page.origin } : {}) };
+    const prev = findPage(disk, key);
     const nextPage: QualityPage = {
-      path: page.path,
+      path: key.path,
       foundAt: page.foundAt,
       html: prev?.html ?? [],
       a11y: prev?.a11y ?? [],
       seo: prev?.seo ?? [],
-      visual: mergeQualityIssues(page.visual),
+      visual: mergeQualityIssues([...(prev?.visual ?? []), ...page.visual]),
       runtime: prev?.runtime ?? [],
       visualHash: page.visualHash,
-      ...(page.origin ? { origin: page.origin } : {}),
+      ...(key.origin ? { origin: key.origin } : {}),
       ...(prev?.htmlHash ? { htmlHash: prev.htmlHash } : {}),
+      ...(prev?.title ? { title: prev.title } : {}),
+      ...(prev?.titleInstances ? { titleInstances: prev.titleInstances } : {}),
     };
     const next = upsertQualityPage(disk, nextPage);
     writeReport(path, next);
@@ -148,8 +194,9 @@ export function persistQualityVisual(
 export function lastVisualHash(
   configPath: string,
   key: { path: string; origin?: string },
+  outDir?: string,
 ): string | undefined {
-  const path = qualityPath(configPath);
+  const path = qualityReportPath(configPath, outDir);
   if (!existsSync(path)) return undefined;
   return findPage(loadQualityReport(path), key)?.visualHash;
 }
