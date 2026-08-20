@@ -135,6 +135,36 @@ describe("formatView", () => {
     assert.match(text, /fonts: Arial 16px\/400 \(4\), Times New Roman 20px\/700 \(1\)/);
     assert.match(text, /covered: go ← blocker/);
   });
+
+  it("prints walker mode after page when set", () => {
+    const form = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [{ id: "submit" }],
+      mode: "form",
+    });
+    assert.match(formatView(form), /^page: home$/m);
+    assert.match(formatView(form), /^mode: form$/m);
+    const nav = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [{ id: "go" }],
+      mode: "nav",
+    });
+    assert.match(formatView(nav), /^mode: nav$/m);
+    const unset = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [],
+    });
+    assert.doesNotMatch(formatView(unset), /^mode:/m);
+  });
 });
 
 describe("includeWalkAction", () => {
@@ -206,7 +236,9 @@ describe("buildView", () => {
         assert.equal(view.content.includes("Create"), true);
         const json = JSON.stringify(view);
         assert.equal(/<\/?[a-z][\s\S]*>/i.test(json), false);
+        assert.equal(view.mode, "form");
         const text = formatView(view);
+        assert.match(text, /mode: form/);
         assert.match(text, /surface: createDialog/);
         assert.match(text, /name: ""  \[required, text\]/);
         assert.match(text, /content:/);

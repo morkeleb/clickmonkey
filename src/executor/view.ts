@@ -8,6 +8,7 @@ import {
 } from "../schema/testability.js";
 import type { Fence } from "../schema/config.js";
 import { auditVisible } from "../surveyor/audit.js";
+import { detectWalkerMode } from "../brains/walker-mode.js";
 import { isLeaveAction, isPageHop, looksLikeNavWidget, matchesSkip } from "../brains/unleash.js";
 import { pageNotesFromModel } from "../surveyor/describe.js";
 import { hoppablePages } from "./hop.js";
@@ -280,7 +281,7 @@ export async function buildView(state: {
     : state.model.pages.map((p) => p.id);
   const pageNotes = pageNotesFromModel(state.model.pages);
 
-  return {
+  const draft = {
     page: state.pageId,
     pages: hopPages,
     ...(pageNotes ? { pageNotes } : {}),
@@ -295,6 +296,8 @@ export async function buildView(state: {
       : {}),
     ...(state.last ? { last: state.last } : {}),
   };
+  const mode = detectWalkerMode({ view: draft, pages: state.model.pages, stepsUsed: 0 }).name;
+  return { ...draft, mode };
 }
 
 function formatPagesLines(view: View): string[] {
@@ -323,6 +326,7 @@ export function formatView(view: View): string {
   const here = view.pageNotes?.[view.page];
   const lines: string[] = [
     here ? `page: ${view.page} — ${here}` : `page: ${view.page}`,
+    ...(view.mode ? [`mode: ${view.mode}`] : []),
     ...formatPagesLines(view),
     `surface: ${view.surface}`,
     `stack: ${view.stack.join(" > ")}`,

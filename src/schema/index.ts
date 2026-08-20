@@ -3,6 +3,7 @@ export * from "./refs.js";
 export * from "./page-model.js";
 export * from "./finding.js";
 export * from "./view.js";
+export * from "./visit.js";
 export * from "./log.js";
 export * from "./config.js";
 export * from "./broken.js";

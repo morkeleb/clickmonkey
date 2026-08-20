@@ -61,7 +61,9 @@ describe("buildView look", () => {
         );
         assert.ok(view.testability?.issues.some((i) => i.code === "occludedWidget"));
         assert.equal(view.testability?.insufficient ?? false, false);
+        assert.equal(view.mode, "nav");
         const text = formatView(view);
+        assert.match(text, /mode: nav/);
         assert.match(text, /look:/);
         assert.match(text, /covered: go ← blocker/);
       });

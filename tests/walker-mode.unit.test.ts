@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { decideUnleash } from "../src/brains/unleash.js";
 import type { BrainContext } from "../src/brains/types.js";
 import { detectWalkerMode, UNLEASH_MODES } from "../src/brains/walker-mode.js";
+import { formatExploreVisit } from "../src/schema/visit.js";
 import type { View } from "../src/schema/view.js";
 
 function viewOf(partial: Partial<View>): View {
@@ -156,5 +157,61 @@ describe("walker modes", () => {
       assert.doesNotMatch(text, /click .*(submit|create|button_add_customer)/);
       assert.doesNotMatch(text, /^open /);
     }
+  });
+});
+
+describe("formatExploreVisit", () => {
+  it("includes mode, formatted view text, ready, legalOpen, and shot", () => {
+    const view = viewOf({
+      mode: "form",
+      pages: ["home", "about"],
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [{ id: "submit" }],
+    });
+    const ready = { by: "testId" as const, value: "home" };
+    const visit = formatExploreVisit({
+      view,
+      ready,
+      legalOpen: ["home", "about"],
+      shot: "shots/home.png",
+      sight: "create dialog",
+      writePolicy: "validationOnly",
+      planLine: "fill the name",
+    });
+    assert.equal(visit.mode, "form");
+    assert.match(visit.formatted, /^page: home$/m);
+    assert.match(visit.formatted, /^mode: form$/m);
+    assert.deepEqual(visit.ready, ready);
+    assert.deepEqual(visit.legalOpen, ["home", "about"]);
+    assert.equal(visit.shot, "shots/home.png");
+    assert.equal(visit.sight, "create dialog");
+    assert.equal(visit.writePolicy, "validationOnly");
+    assert.equal(visit.planLine, "fill the name");
+    assert.equal(visit.view.page, "home");
+    assert.equal(visit.view.mode, "form");
+  });
+
+  it("detects mode when missing and defaults legalOpen from view.pages", () => {
+    const form = formatExploreVisit({
+      view: viewOf({
+        pages: ["home", "invoices"],
+        shown: [{ id: "name", value: "", type: "text" }],
+        actions: [{ id: "submit" }],
+      }),
+    });
+    assert.equal(form.mode, "form");
+    assert.match(form.formatted, /^mode: form$/m);
+    assert.deepEqual(form.legalOpen, ["home", "invoices"]);
+    assert.equal(form.ready, undefined);
+    assert.equal(form.shot, undefined);
+
+    const nav = formatExploreVisit({
+      view: viewOf({
+        actions: [{ id: "button_expand" }],
+      }),
+    });
+    assert.equal(nav.mode, "nav");
+    assert.match(nav.formatted, /^mode: nav$/m);
+    assert.deepEqual(nav.legalOpen, []);
   });
 });

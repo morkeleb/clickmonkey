@@ -17,6 +17,7 @@ import {
   LegacyConfigError,
   Locator,
   View,
+  ExploreVisit,
   TestabilityReport,
 } from "../src/schema/index.js";
 
@@ -271,6 +272,15 @@ describe("View schema", () => {
     });
     assert.equal(withLook.look?.fonts[0]?.family, "Arial");
     assert.equal(withLook.look?.covered[0]?.by, "blocker");
+    const withMode = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [],
+      mode: "nav",
+    });
+    assert.equal(withMode.mode, "nav");
     assert.throws(() =>
       View.parse({
         page: "home",
@@ -278,6 +288,48 @@ describe("View schema", () => {
         stack: ["page"],
         shown: [],
         actions: [],
+        html: "<div>",
+      }),
+    );
+    assert.throws(() =>
+      View.parse({
+        page: "home",
+        surface: "page",
+        stack: ["page"],
+        shown: [],
+        actions: [],
+        mode: "walk",
+      }),
+    );
+  });
+});
+
+describe("ExploreVisit schema", () => {
+  it("wraps a view and rejects extra keys", () => {
+    const view = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [],
+      actions: [{ id: "go" }],
+      mode: "nav",
+    });
+    const visit = ExploreVisit.parse({
+      mode: "nav",
+      formatted: "page: home\nmode: nav\n",
+      legalOpen: ["home"],
+      shot: "shots/home.png",
+      view,
+    });
+    assert.equal(visit.mode, "nav");
+    assert.equal(visit.shot, "shots/home.png");
+    assert.deepEqual(visit.legalOpen, ["home"]);
+    assert.equal(visit.ready, undefined);
+    assert.throws(() =>
+      ExploreVisit.parse({
+        mode: "nav",
+        formatted: "page: home\n",
+        view,
         html: "<div>",
       }),
     );
