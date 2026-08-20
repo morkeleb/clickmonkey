@@ -29,9 +29,9 @@ export async function runMcp(opts?: { config?: string }): Promise<void> {
     process.stdin.once("end", stop);
     process.stdin.once("close", stop);
   });
-  if (host.session?.started) {
+  if (host.session) {
     try {
-      await host.session.finish();
+      await host.session.abort();
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
     }

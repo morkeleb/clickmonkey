@@ -73,7 +73,7 @@ const CATALOG_DESCRIPTIONS: Record<string, string> = {
   "control-chars": "NUL / CR / LF / TAB tokens",
 };
 
-const SAMPLE_MAX_CHARS = 120;
+export const SAMPLE_MAX_CHARS = 120;
 const SAMPLE_DEFAULT_LIMIT = 6;
 
 export function listCatalogs(dir?: string): NastyCatalogInfo[] {

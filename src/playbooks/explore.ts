@@ -6,8 +6,6 @@ import {
   ExploreError,
   draftExplorePlan,
   formatViewForBrain,
-  isScreenshotLine,
-  isVisualCharter,
   probeExploreChat,
   type ExploreBrain,
 } from "../brains/explore.js";
@@ -270,7 +268,6 @@ export async function runExplore(opts: {
         ...(session.plan ? { plan: session.plan } : {}),
       });
       const line = decision.line.trim();
-      const lastStep = view.last?.step ?? "";
       const stepped = await session.step(line, {
         note: decision.note,
         good: decision.good,
@@ -288,15 +285,6 @@ export async function runExplore(opts: {
         continue;
       }
       consecutiveRefusals = 0;
-      if (
-        isScreenshotLine(line) &&
-        isScreenshotLine(lastStep) &&
-        !isVisualCharter(charter)
-      ) {
-        throw new ExploreError(
-          `explore will not take a screenshot when the last step was already a screenshot (${lastStep})`,
-        );
-      }
       view = stepped.visit.view;
       itemSteps += 1;
       const itemFinished = Boolean(decision.done) || stepped.newProductFinding || itemSteps >= 10;

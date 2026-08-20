@@ -2,15 +2,8 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import {
-  defaultExploreSkills,
-  EXPLORE_PLAN_SYSTEM,
-  formatPlanningCards,
-  formatReachDag,
-  isScreenshotLine,
-  parseExplorePlanReply,
-} from "../brains/explore.js";
-import { listCatalogs, pickNasty, samplePayloads } from "../brains/nasty.js";
+import { defaultExploreSkills, EXPLORE_PLAN_SYSTEM, parseExplorePlanReply } from "../brains/explore.js";
+import { listCatalogs, pickNasty, SAMPLE_MAX_CHARS, samplePayloads } from "../brains/nasty.js";
 import { resolveConfigPath, resolveOutDir } from "../cli/common.js";
 import { loadConfig, saveConfig } from "../persist/config.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
@@ -27,8 +20,9 @@ import { renderQualityDigest, writeRunsReport } from "../reports/findings-report
 import type { Config } from "../schema/config.js";
 import { emptyConfig } from "../schema/config.js";
 import { formatStep } from "../schema/dsl.js";
+import type { Finding } from "../schema/finding.js";
 import type { Page } from "../schema/page-model.js";
-import type { UiExplorePlan } from "../schema/ui.js";
+import { formatExplorePlanItemLine, type UiExplorePlan } from "../schema/ui.js";
 import type { View } from "../schema/view.js";
 import type { ExploreVisit } from "../schema/visit.js";
 import { ledgerOrigin, originOfHref } from "../surveyor/ready.js";
@@ -45,7 +39,7 @@ export type McpToolResult = {
 
 export type McpSession = Pick<
   ExploreSession,
-  "start" | "visit" | "step" | "setPlan" | "advancePlan" | "addNote" | "addGood" | "finish"
+  "start" | "visit" | "step" | "setPlan" | "advancePlan" | "addNote" | "addGood" | "finish" | "abort"
 > & {
   started?: boolean;
   outDir?: string;
@@ -56,6 +50,10 @@ export type McpSession = Pick<
   livePageUrl?: string;
   currentView?: View;
   plan?: UiExplorePlan;
+  charter?: string;
+  notes?: readonly string[];
+  goods?: readonly string[];
+  findings?: readonly Finding[];
 };
 
 export type McpHost = {
@@ -110,34 +108,37 @@ function runIdOf(session: McpSession): string {
   return session.outDir ? basename(session.outDir) : "";
 }
 
+const VISIT_SIGHT_MAX = 200;
+
+function clipLine(text: string, max: number): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  if (one.length <= max) return one;
+  return `${one.slice(0, max - 1)}…`;
+}
+
 function formatVisitText(visit: ExploreVisit, session?: McpSession): string {
   const runId = session ? runIdOf(session) : "";
   const ready = visit.ready ? JSON.stringify(visit.ready) : "";
-  const last = visit.view.last
-    ? `${visit.view.last.ok ? "ok" : "fail"} ${visit.view.last.step}${visit.view.last.finding ? ` ${visit.view.last.finding}` : ""}`
-    : "";
+  const sight = visit.sight ? clipLine(visit.sight, VISIT_SIGHT_MAX) : undefined;
   const header = [
     runId ? `run: ${runId}` : undefined,
-    `mode: ${visit.mode}`,
     ready ? `ready: ${ready}` : undefined,
     `legalOpen: ${visit.legalOpen.join(", ") || "(none)"}`,
     visit.shot ? `shot: ${visit.shot}` : undefined,
     visit.planLine ? `planLine: ${visit.planLine}` : undefined,
-    last ? `last: ${last}` : undefined,
+    sight ? `sight: ${sight}` : undefined,
   ]
     .filter(Boolean)
     .join("\n");
   return `${header}\n\n${visit.formatted}`;
 }
 
-function startExtras(visit: ExploreVisit, session: McpSession): string {
-  const pages = session.pages ?? [];
-  const skip = session.config?.skip;
-  const cards = pages.length > 0 ? formatPlanningCards(pages, { skip }) : "";
-  const dag = pages.length > 0 ? formatReachDag(pages, { skip }) : "";
-  return [cards, dag, `Legal open ids: ${visit.legalOpen.join(", ") || "(none)"}`, PROMPT_NAMES]
-    .filter(Boolean)
-    .join("\n\n");
+function startExtras(visit: ExploreVisit): string {
+  return [
+    `Legal open ids: ${visit.legalOpen.join(", ") || "(none)"}`,
+    "sitemap: clickmonkey://map",
+    PROMPT_NAMES,
+  ].join("\n");
 }
 
 function pngContent(path: string): McpContent {
@@ -197,8 +198,15 @@ export async function handleExploreStart(
       skills: args.skills,
       brainName: "mcp",
     });
-    return textResult(`${formatVisitText(visit, session)}\n\n${startExtras(visit, session)}`);
+    return textResult(`${formatVisitText(visit, session)}\n\n${startExtras(visit)}`);
   } catch (err) {
+    if (session.started) {
+      try {
+        await session.finish();
+      } catch {
+        // start already failed; still drop a zombie ctx
+      }
+    }
     return textResult(errText(err), true);
   }
 }
@@ -222,12 +230,6 @@ export async function handleExploreStep(
   }
   const text = formatVisitText(result.visit, session);
   if (!result.ok) return textResult(`${result.error}\n\n${text}`, true);
-  if (isScreenshotLine(args.line)) {
-    const shot = session.lastScreenshotPath;
-    if (shot && existsSync(shot)) {
-      return { content: [{ type: "text", text }, pngContent(shot)] };
-    }
-  }
   return textResult(text);
 }
 
@@ -364,9 +366,15 @@ export async function handleNastyList(): Promise<McpToolResult> {
   return textResult(rows.join("\n") || "(none)");
 }
 
-export async function handleNastySamples(args: { id: string }): Promise<McpToolResult> {
-  const samples = samplePayloads(args.id);
-  if (samples.length === 0) return textResult(`unknown catalog: ${args.id}`, true);
+export async function handleNastySamples(args: { id: string; dir?: string }): Promise<McpToolResult> {
+  const opts = args.dir ? { dir: args.dir } : undefined;
+  if (!listCatalogs(args.dir).some((c) => c.id === args.id)) {
+    return textResult(`unknown catalog: ${args.id}`, true);
+  }
+  const samples = samplePayloads(args.id, opts);
+  if (samples.length === 0) {
+    return textResult(`catalog ${args.id} has no samples under ${SAMPLE_MAX_CHARS} chars`, true);
+  }
   return textResult(samples.join("\n"));
 }
 
@@ -555,6 +563,36 @@ export function registerMcpPrompts(server: McpServer): void {
   );
 }
 
+export function sessionResourceText(host: McpHost): string {
+  const session = liveSession(host);
+  if (!session) return "no live session\n";
+  const path = session.outDir ? join(session.outDir, "session.md") : undefined;
+  if (path && existsSync(path)) return readFileSync(path, "utf8");
+  return liveSessionSummary(session);
+}
+
+function liveSessionSummary(session: McpSession): string {
+  const runId = runIdOf(session);
+  const notes = session.notes ?? [];
+  const findings = session.findings ?? [];
+  const plan = session.plan;
+  const planBlock = plan
+    ? [plan.goal, ...plan.items.map((it) => formatExplorePlanItemLine(it))].join("\n")
+    : "(none)";
+  return [
+    runId ? `run: ${runId}` : "run: (none)",
+    `charter: ${session.charter ?? "(none)"}`,
+    "## Plan",
+    planBlock,
+    "## Notes",
+    notes.length > 0 ? notes.map((n) => `- ${n}`).join("\n") : "(none)",
+    "## Findings",
+    findings.length > 0 ? findings.map((f) => `- ${f.id}: ${f.message}`).join("\n") : "(none)",
+    "session.md is written on explore_finish",
+    "",
+  ].join("\n");
+}
+
 export function registerMcpResources(server: McpServer, host: McpHost): void {
   server.registerResource(
     "oracles",
@@ -576,13 +614,7 @@ export function registerMcpResources(server: McpServer, host: McpHost): void {
     "session",
     "clickmonkey://session",
     { title: "Live explore session.md", mimeType: "text/markdown" },
-    async (uri) => {
-      const session = liveSession(host);
-      const path = session?.outDir ? join(session.outDir, "session.md") : undefined;
-      const text =
-        path && existsSync(path) ? readFileSync(path, "utf8") : "no live session\n";
-      return { contents: [{ uri: uri.href, text }] };
-    },
+    async (uri) => ({ contents: [{ uri: uri.href, text: sessionResourceText(host) }] }),
   );
   server.registerResource(
     "nasty",

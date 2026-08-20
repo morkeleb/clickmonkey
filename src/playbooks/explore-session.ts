@@ -14,7 +14,7 @@ import { detectWalkerMode } from "../brains/walker-mode.js";
 import { bootRun } from "../executor/boot.js";
 import { logBrainDecide } from "../executor/nav-log.js";
 import { createExecutor, type RunState, type StepResult } from "../executor/run.js";
-import { withRun } from "../executor/session.js";
+import { withRun, type RunHandle } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
 import { writeLog } from "../persist/log.js";
 import { exploreOutlineOf, setPresenceOutline, stopPresence } from "../persist/presence.js";
@@ -311,10 +311,45 @@ export type ExploreWalkOpts = {
   onAfterStep?: ExploreAfterStep;
 };
 
+type ExploreRunner = (
+  opts: { headed?: boolean; timeout?: number; storageState?: string },
+  fn: (h: RunHandle) => Promise<void>,
+) => Promise<unknown>;
+
+/** First resolve/reject wins; later calls are no-ops. */
+export function onceSettled<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+} {
+  let settled = false;
+  let resolveFn!: (value: T) => void;
+  let rejectFn!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveFn = resolve;
+    rejectFn = reject;
+  });
+  return {
+    promise,
+    resolve(value) {
+      if (settled) return;
+      settled = true;
+      resolveFn(value);
+    },
+    reject(reason) {
+      if (settled) return;
+      settled = true;
+      rejectFn(reason);
+    },
+  };
+}
+
 export class ExploreSession {
   private ctx?: ExploreWalkCtx;
   private releaseRun?: () => void;
   private runDone?: Promise<void>;
+  private visitGate?: ReturnType<typeof onceSettled<ExploreVisit>>;
+  private closing = false;
 
   static attach(opts: ExploreWalkOpts): ExploreSession {
     const session = new ExploreSession();
@@ -336,6 +371,18 @@ export class ExploreSession {
 
   get plan(): UiExplorePlan | undefined {
     return this.ctx?.plan;
+  }
+
+  get charter(): string | undefined {
+    return this.ctx?.charter;
+  }
+
+  get notes(): string[] {
+    return this.ctx?.notes ?? [];
+  }
+
+  get goods(): string[] {
+    return this.ctx?.goods ?? [];
   }
 
   get currentView(): View | undefined {
@@ -384,15 +431,15 @@ export class ExploreSession {
     skills?: string;
     verbose?: boolean;
     brainName?: string;
+    /** Test seam; defaults to withRun. */
+    run?: ExploreRunner;
   }): Promise<ExploreVisit> {
     if (this.ctx) await this.finish();
+    else if (this.runDone) await this.abort();
+    this.closing = false;
     const charter = opts.charter?.trim() || DEFAULT_EXPLORE_CHARTER;
-    let resolveVisit!: (visit: ExploreVisit) => void;
-    let rejectVisit!: (err: unknown) => void;
-    const visitReady = new Promise<ExploreVisit>((res, rej) => {
-      resolveVisit = res;
-      rejectVisit = rej;
-    });
+    const visitGate = onceSettled<ExploreVisit>();
+    this.visitGate = visitGate;
     let released = false;
     const untilRelease = new Promise<void>((res) => {
       this.releaseRun = () => {
@@ -401,13 +448,16 @@ export class ExploreSession {
         res();
       };
     });
-    this.runDone = withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+    const run = opts.run ?? withRun;
+    this.runDone = run({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
       try {
+        if (this.closing) return;
         const state = await bootRun(handle, opts.config, opts.outDir, {
           configPath: opts.configPath,
           verbose: opts.verbose,
           brain: opts.brainName ?? "explore",
         });
+        if (this.closing) return;
         const exec = createExecutor(state);
         setPresenceOutline(opts.outDir, exploreOutlineOf({ charter }));
         if (state.config.intro.length > 0) await exec.runIntro();
@@ -422,20 +472,30 @@ export class ExploreSession {
           configPath: opts.configPath,
           outDir: opts.outDir,
         });
+        if (this.closing) {
+          this.ctx = undefined;
+          return;
+        }
         const visit = await this.visit();
-        resolveVisit(visit);
+        visitGate.resolve(visit);
         await untilRelease;
       } catch (err) {
-        rejectVisit(err);
+        this.ctx = undefined;
+        this.releaseRun?.();
+        this.releaseRun = undefined;
+        visitGate.reject(err);
         throw err;
       } finally {
         stopPresence(opts.outDir);
       }
     }).then(
       () => undefined,
-      () => undefined,
+      (err) => {
+        this.ctx = undefined;
+        visitGate.reject(err);
+      },
     );
-    return visitReady;
+    return visitGate.promise;
   }
 
   async snapshot(): Promise<View> {
@@ -499,17 +559,25 @@ export class ExploreSession {
     if (good) ctx.goods.push(good);
   }
 
+  async abort(): Promise<void> {
+    this.closing = true;
+    this.visitGate?.reject(new Error("explore session aborted"));
+    const outDir = this.ctx?.outDir;
+    const done = this.runDone;
+    this.releaseRun?.();
+    this.releaseRun = undefined;
+    this.ctx = undefined;
+    this.runDone = undefined;
+    this.visitGate = undefined;
+    if (done) await done;
+    if (outDir) stopPresence(outDir);
+  }
+
   async finish(opts?: { notes?: string[]; goods?: string[] }): Promise<ExploreResult> {
     try {
       return this.flush(opts);
     } finally {
-      const outDir = this.ctx?.outDir;
-      this.releaseRun?.();
-      if (this.runDone) await this.runDone;
-      if (outDir) stopPresence(outDir);
-      this.ctx = undefined;
-      this.releaseRun = undefined;
-      this.runDone = undefined;
+      await this.abort();
     }
   }
 

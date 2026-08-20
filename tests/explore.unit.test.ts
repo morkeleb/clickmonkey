@@ -35,14 +35,16 @@ import { formatExplorePlanItemLine } from "../src/schema/ui.js";
 import { PageModel } from "../src/schema/page-model.js";
 import type { ChatMessage } from "../src/brains/chat.js";
 import { saveConfig } from "../src/persist/config.js";
-import { Config } from "../src/schema/config.js";
+import { Config, emptyConfig } from "../src/schema/config.js";
 import type { View } from "../src/schema/view.js";
 import type { RunState } from "../src/executor/run.js";
 import { createExecutor } from "../src/executor/run.js";
 import { runExplore } from "../src/playbooks/explore.js";
 import {
   applyExploreStep,
+  ExploreSession,
   exploreVisitOf,
+  onceSettled,
   writeSessionMd,
   type ExploreWalkCtx,
 } from "../src/playbooks/explore-session.js";
@@ -1243,6 +1245,83 @@ describe("exploreVisitOf", () => {
     assert.equal(visit.sight, "create dialog");
     assert.equal(visit.writePolicy, "validationOnly");
     assert.match(visit.planLine ?? "", /\[>\] Empty name/);
+  });
+});
+
+describe("onceSettled", () => {
+  it("ignores a second reject after resolve", async () => {
+    const gate = onceSettled<number>();
+    gate.resolve(1);
+    gate.reject(new Error("nope"));
+    assert.equal(await gate.promise, 1);
+  });
+
+  it("ignores a second resolve after reject", async () => {
+    const gate = onceSettled<number>();
+    gate.reject(new Error("boom"));
+    gate.resolve(2);
+    await assert.rejects(() => gate.promise, /boom/);
+  });
+});
+
+describe("ExploreSession.start", () => {
+  it("rejects when withRun fails before the callback and does not hang", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "cm-explore-start-"));
+    const session = new ExploreSession();
+    try {
+      await assert.rejects(
+        () =>
+          session.start({
+            config: emptyConfig("http://127.0.0.1:9/"),
+            configPath: join(tmp, "clickmonkey.json"),
+            outDir: join(tmp, "out"),
+            run: async () => {
+              throw new Error("chromium.launch failed");
+            },
+          }),
+        /chromium\.launch failed/,
+      );
+      assert.equal(session.started, false);
+    } finally {
+      await session.abort();
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("clears started when the run callback throws", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "cm-explore-bind-"));
+    const session = new ExploreSession();
+    try {
+      await assert.rejects(() =>
+        session.start({
+          config: emptyConfig("http://127.0.0.1:9/"),
+          configPath: join(tmp, "clickmonkey.json"),
+          outDir: join(tmp, "out"),
+          run: async (_opts, fn) => {
+            await fn({
+              browser: { close: async () => undefined },
+              context: {
+                close: async () => undefined,
+                setDefaultTimeout: () => undefined,
+              },
+              page: {
+                on: () => undefined,
+                url: () => "about:blank",
+                goto: async () => {
+                  throw new Error("goto failed");
+                },
+                close: async () => undefined,
+                mainFrame: () => ({}),
+              },
+            } as never);
+          },
+        }),
+      );
+      assert.equal(session.started, false);
+    } finally {
+      await session.abort();
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
