@@ -31,7 +31,7 @@ export async function runMcp(opts?: { config?: string }): Promise<void> {
   });
   if (host.session) {
     try {
-      await host.session.abort();
+      await host.session.finish();
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
     }
