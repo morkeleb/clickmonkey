@@ -13,6 +13,7 @@ import type { ExploreResult, ExploreStepResult } from "../src/playbooks/explore-
 import {
   createMcpHost,
   handleExploreFinish,
+  handleExploreShot,
   handleExploreStart,
   handleExploreStep,
   handleNastyList,
@@ -209,6 +210,32 @@ describe("mcp tools", () => {
     assert.match(visit.formatted, /^last: /m);
   });
 
+  it("explore_start forwards skills to the session", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-skills-"));
+    const configPath = join(dir, "clickmonkey.json");
+    let seen: string | undefined;
+    try {
+      saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/"));
+      const host: McpHost = {
+        createSession: () =>
+          stubSession({
+            start: async (opts) => {
+              seen = opts.skills;
+              return visitOf();
+            },
+          }),
+      };
+      const result = await handleExploreStart(host, {
+        config: configPath,
+        skills: "billing lives under settings",
+      });
+      assert.equal(result.isError, undefined);
+      assert.equal(seen, "billing lives under settings");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("explore_start extras point at the map resource instead of dumping the DAG", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cm-mcp-start-"));
     const configPath = join(dir, "clickmonkey.json");
@@ -266,6 +293,8 @@ describe("mcp tools", () => {
           outDir: dir,
           charter: "walk the form",
           notes: ["Runtime: blank name accepted"],
+          goods: ["required name blocks submit"],
+          skills: "billing lives under settings",
           findings: [{ id: "F1", message: "blank name saved", kind: "expectFailed", schemaVersion: 1, tapePath: "t", stepIndex: 0 }],
           plan: {
             goal: "Walk home",
@@ -278,9 +307,31 @@ describe("mcp tools", () => {
       assert.match(text, /Walk home/);
       assert.match(text, /Empty name/);
       assert.match(text, /blank name accepted/);
+      assert.match(text, /required name blocks submit/);
+      assert.match(text, /billing lives under settings/);
       assert.match(text, /F1: blank name saved/);
       assert.match(text, /session.md is written on explore_finish/);
       assert.doesNotMatch(text, /no live session/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("explore_shot rejects paths outside the run directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-shotjail-"));
+    const png = join(dir, "ok.png");
+    writeFileSync(png, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+    try {
+      const host: McpHost = { session: stubSession({ outDir: dir, lastScreenshotPath: png }) };
+      const escape = await handleExploreShot(host, { path: "../secret.png" });
+      assert.equal(escape.isError, true);
+      assert.match(textOf(escape), /outside the run directory/);
+      const abs = await handleExploreShot(host, { path: "/etc/passwd" });
+      assert.equal(abs.isError, true);
+      assert.match(textOf(abs), /outside the run directory/);
+      const ok = await handleExploreShot(host, { path: "ok.png" });
+      assert.equal(ok.isError, undefined);
+      assert.equal(ok.content.some((c) => c.type === "image"), true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

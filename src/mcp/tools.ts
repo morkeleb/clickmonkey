@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { defaultExploreSkills, EXPLORE_PLAN_SYSTEM, parseExplorePlanReply } from "../brains/explore.js";
@@ -51,6 +51,7 @@ export type McpSession = Pick<
   currentView?: View;
   plan?: UiExplorePlan;
   charter?: string;
+  skills?: string;
   notes?: readonly string[];
   goods?: readonly string[];
   findings?: readonly Finding[];
@@ -145,13 +146,16 @@ function pngContent(path: string): McpContent {
   return { type: "image", mimeType: "image/png", data: readFileSync(path).toString("base64") };
 }
 
-function resolveShot(session: McpSession, given?: string): string | undefined {
-  if (given) {
-    if (isAbsolute(given)) return given;
-    if (session.outDir) return join(session.outDir, given);
-    return resolve(process.cwd(), given);
-  }
-  return session.lastScreenshotPath;
+/** Run-dir only. Absolute paths and `..` outside `outDir` are rejected. */
+export function resolveShot(session: McpSession, given?: string): string | undefined {
+  const candidate = given ?? session.lastScreenshotPath;
+  if (!candidate) return undefined;
+  const root = session.outDir;
+  if (!root) return given ? undefined : candidate;
+  const resolved = isAbsolute(candidate) ? candidate : resolve(root, candidate);
+  const rel = relative(root, resolved);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  return resolved;
 }
 
 export async function handleExploreInit(
@@ -251,6 +255,9 @@ export async function handleExploreShot(
   const session = requireLive(host);
   if (isToolResult(session)) return session;
   const path = resolveShot(session, args.path);
+  if (args.path && !path) {
+    return textResult("shot path is outside the run directory", true);
+  }
   if (!path || !existsSync(path)) {
     return textResult("no screenshot yet; run explore_step with screenshot or wait for a step shot", true);
   }
@@ -407,7 +414,7 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
     "explore_start",
     {
       description:
-        "Start an explore run (browser). Does not require config.brain. Presence name is mcp.",
+        "Start an explore run (browser). Does not require config.brain. Presence name is mcp. skills is architecture context kept on the session (not a second charter).",
       inputSchema: z.object({
         charter: z.string().min(1).optional(),
         skills: z.string().min(1).optional(),
@@ -574,18 +581,23 @@ export function sessionResourceText(host: McpHost): string {
 function liveSessionSummary(session: McpSession): string {
   const runId = runIdOf(session);
   const notes = session.notes ?? [];
+  const goods = session.goods ?? [];
   const findings = session.findings ?? [];
   const plan = session.plan;
   const planBlock = plan
     ? [plan.goal, ...plan.items.map((it) => formatExplorePlanItemLine(it))].join("\n")
     : "(none)";
+  const skills = session.skills?.trim();
   return [
     runId ? `run: ${runId}` : "run: (none)",
     `charter: ${session.charter ?? "(none)"}`,
+    skills ? `skills: ${clipLine(skills, VISIT_SIGHT_MAX)}` : "skills: (none)",
     "## Plan",
     planBlock,
     "## Notes",
     notes.length > 0 ? notes.map((n) => `- ${n}`).join("\n") : "(none)",
+    "## Positive observations",
+    goods.length > 0 ? goods.map((n) => `- ${n}`).join("\n") : "(none)",
     "## Findings",
     findings.length > 0 ? findings.map((f) => `- ${f.id}: ${f.message}`).join("\n") : "(none)",
     "session.md is written on explore_finish",

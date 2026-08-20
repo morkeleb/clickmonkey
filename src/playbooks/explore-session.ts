@@ -7,6 +7,7 @@ import {
   isBrainMissFinding,
   isNewProductFinding,
   legalDirectOpenIds,
+  PLAN_CONTEXT_MAX,
   recordPlanStep,
   usefulExploreNote,
 } from "../brains/explore.js";
@@ -68,6 +69,12 @@ export function snapshotView(state: RunState): Promise<View> {
   });
 }
 
+/** `buildView` does not stamp last; keep the prior step so visit/screenshot policy still see it. */
+export function withPriorLast(view: View, last?: View["last"]): View {
+  if (view.last !== undefined || last === undefined) return view;
+  return { ...view, last };
+}
+
 function relativeShot(path: string | undefined, outDir: string): string | undefined {
   if (!path) return undefined;
   const rel = relative(outDir, path);
@@ -109,6 +116,7 @@ export function writeSessionMd(opts: {
   notes: string[];
   goods: string[];
   plan?: UiExplorePlan;
+  skills?: string;
 }): void {
   const bySev: Record<FindingSeverity, Finding[]> = {
     critical: [],
@@ -131,6 +139,9 @@ export function writeSessionMd(opts: {
     `- url: ${opts.config.url}`,
     `- model: ${brain?.model ?? ""}`,
     `- baseUrl: ${brain?.baseUrl ?? ""}`,
+    opts.skills?.trim()
+      ? `- skills:\n${opts.skills.trim().length <= PLAN_CONTEXT_MAX ? opts.skills.trim() : `${opts.skills.trim().slice(0, PLAN_CONTEXT_MAX - 1)}…`}`
+      : "- skills: (none)",
     "## Runtime errors",
     listFindings(runtime),
     "## Critical / Major / Minor / Suggestion",
@@ -174,6 +185,7 @@ export type ExploreWalkCtx = {
   startedAt: number;
   logPath: string;
   sessionPath: string;
+  skills?: string;
   polish?: () => Promise<void>;
   onAfterStep?: ExploreAfterStep;
 };
@@ -270,8 +282,7 @@ export async function applyExploreStep(
     ctx.view = await resetToSeed(ctx.exec, ctx.state, ctx.seedPageId);
   } else {
     if (ctx.polish) await ctx.polish();
-    ctx.view = await snapshotView(ctx.state);
-    if (ctx.view.last === undefined && result.view.last) ctx.view = { ...ctx.view, last: result.view.last };
+    ctx.view = withPriorLast(await snapshotView(ctx.state), result.view.last);
   }
 
   if (opts?.done && ctx.plan) {
@@ -307,6 +318,7 @@ export type ExploreWalkOpts = {
   config: Config;
   configPath?: string;
   outDir: string;
+  skills?: string;
   polish?: () => Promise<void>;
   onAfterStep?: ExploreAfterStep;
 };
@@ -421,6 +433,10 @@ export class ExploreSession {
     }
   }
 
+  get skills(): string | undefined {
+    return this.ctx?.skills;
+  }
+
   async start(opts: {
     config: Config;
     configPath: string;
@@ -471,6 +487,7 @@ export class ExploreSession {
           config: opts.config,
           configPath: opts.configPath,
           outDir: opts.outDir,
+          ...(opts.skills?.trim() ? { skills: opts.skills.trim() } : {}),
         });
         if (this.closing) {
           this.ctx = undefined;
@@ -500,7 +517,7 @@ export class ExploreSession {
 
   async snapshot(): Promise<View> {
     const ctx = this.requireWalk();
-    ctx.view = await snapshotView(ctx.state);
+    ctx.view = withPriorLast(await snapshotView(ctx.state), ctx.view?.last);
     return ctx.view;
   }
 
@@ -599,6 +616,7 @@ export class ExploreSession {
       startedAt: opts.startedAt,
       logPath: join(opts.outDir, "log.txt"),
       sessionPath: join(opts.outDir, "session.md"),
+      ...(opts.skills ? { skills: opts.skills } : {}),
       polish: opts.polish,
       onAfterStep: opts.onAfterStep,
     };
@@ -631,6 +649,7 @@ export class ExploreSession {
         notes: opts?.notes ?? ctx.notes,
         goods: opts?.goods ?? ctx.goods,
         plan: ctx.plan,
+        ...(ctx.skills ? { skills: ctx.skills } : {}),
       });
     }
     return {

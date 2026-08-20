@@ -39,6 +39,7 @@ export {
   createExploreWalk,
   exploreVisitOf,
   snapshotView,
+  withPriorLast,
   writeSessionMd,
   EXPLORE_REPORT_PROMPT,
   type ExploreStepResult,

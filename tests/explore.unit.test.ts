@@ -45,6 +45,7 @@ import {
   ExploreSession,
   exploreVisitOf,
   onceSettled,
+  withPriorLast,
   writeSessionMd,
   type ExploreWalkCtx,
 } from "../src/playbooks/explore-session.js";
@@ -1209,6 +1210,29 @@ describe("applyExploreStep", () => {
     }
     assert.equal(ctx.refused.has("open accounts_receivable_period_close"), false);
   });
+
+  it("refuses a second screenshot when last is still a screenshot", async () => {
+    let ran = 0;
+    const ctx = walkCtx(viewOf({ last: { step: "screenshot", ok: true } }), async () => {
+      ran += 1;
+      throw new Error("should not run");
+    });
+    ctx.stepsUsed = 1;
+    const result = await applyExploreStep(ctx, "screenshot");
+    assert.equal(result.ok, false);
+    assert.equal(ran, 0);
+    if (!result.ok) assert.match(result.error, /already a screenshot/);
+  });
+});
+
+describe("withPriorLast", () => {
+  it("keeps last when the snapshot has none", () => {
+    const last = { step: "screenshot", ok: true as const };
+    const kept = withPriorLast(viewOf(), last);
+    assert.equal(kept.last?.step, "screenshot");
+    const already = withPriorLast(viewOf({ last: { step: "click page.x", ok: true } }), last);
+    assert.equal(already.last?.step, "click page.x");
+  });
 });
 
 describe("exploreVisitOf", () => {
@@ -1338,12 +1362,14 @@ describe("writeSessionMd", () => {
         findings: [],
         notes: [],
         goods: [],
+        skills: "chrome is the left nav; billing is under settings",
       });
       const body = readFileSync(path, "utf8");
       assert.match(body, /^- model: $/m);
       assert.match(body, /^- baseUrl: $/m);
       assert.match(body, /url: http:\/\/127\.0\.0\.1\//);
       assert.match(body, /walk the form/);
+      assert.match(body, /chrome is the left nav/);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
