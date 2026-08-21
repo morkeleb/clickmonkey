@@ -15,7 +15,8 @@ import {
   pathFamily,
   renderFindingsReport,
 } from "../src/reports/findings-report.js";
-import { findingId } from "../src/schema/finding.js";
+import { cannedReport } from "../src/reports/canned.js";
+import { findingId, pageErrorExplanation, pageErrorTitle, validationMissExplanation } from "../src/schema/finding.js";
 
 describe("findings report", () => {
   it("renders severity groups, screenshot links, and clickmonkey fences", () => {
@@ -392,6 +393,77 @@ describe("findings report", () => {
     );
     assert.match(md, /\*\*url:\*\* https:\/\/app\.example\/accounting\/closing-routines/);
     assert.match(md, /\*\*path:\*\* \/accounting\/closing-routines/);
+    assert.match(md, /Uncaught JavaScript error: Ga\(\.\.\.\) is not a function/);
+    assert.match(md, /uncaught JavaScript error/);
+    assert.match(md, /not `console\.error`/);
+    assert.match(md, /not a field validation message/);
+    assert.doesNotMatch(md, /validation is missing/);
+    assert.doesNotMatch(md, /bad input/);
+  });
+
+  it("explains a throw after fill as missing validation and an uncaught JS error", () => {
+    const title = pageErrorTitle("Invalid time value");
+    assert.equal(title, "Uncaught JavaScript error: Invalid time value");
+    const body = pageErrorExplanation("Invalid time value", {
+      field: "page.from_date",
+      value: "%00%00%00%00",
+      markedInvalid: false,
+    });
+    assert.match(body, /uncaught JavaScript error/);
+    assert.match(body, /the page crashed/i);
+    assert.match(body, /page\.from_date/);
+    assert.match(body, /%00%00%00%00/);
+    assert.match(body, /not marked invalid/);
+    assert.match(body, /Validation is missing|does not wrap parsing/i);
+    assert.match(body, /product bug/);
+    assert.match(body, /Exception: `Invalid time value`/);
+    const again = pageErrorExplanation(body);
+    assert.match(again, /uncaught JavaScript error/);
+    assert.match(again, /page\.from_date/);
+    assert.equal(pageErrorTitle(body), title);
+    const generic = pageErrorExplanation("Ga(...) is not a function");
+    assert.match(generic, /uncaught JavaScript error/);
+    assert.doesNotMatch(generic, /validation is missing/);
+    assert.doesNotMatch(generic, /ClickMonkey had just filled/);
+  });
+
+  it("renders a silent-accept finding as missing validation, not a raw expect", () => {
+    const message = validationMissExplanation([{ field: "page.from_date", value: "%00%00%00%00" }]);
+    const root = mkdtempSync(join(tmpdir(), "cm-rep-valid-"));
+    const runDir = join(root, "runs", "20260821T000000Z-vald");
+    const folder = join(runDir, "findings", "fnd_4_expectFailed");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, "finding.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: findingId(4, "expectFailed"),
+        kind: "expectFailed",
+        severity: "major",
+        message,
+        tapePath: join(folder, "replay.log"),
+        stepIndex: 4,
+      })}\n`,
+    );
+    writeFileSync(join(folder, "replay.log"), "open home\nfill page.from_date \"%00%00%00%00\"\nclick page.save\n");
+    const md = renderFindingsReport(
+      collectFindingCases([runDir]),
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["20260821T000000Z-vald"] },
+      join(root, "findings.md"),
+    );
+    assert.match(md, /### Validation did not catch junk in `page\.from_date`/);
+    assert.match(md, /product bug/);
+    assert.doesNotMatch(md, /### filled page\.from_date/);
+    const canned = cannedReport({
+      schemaVersion: 1,
+      id: findingId(4, "expectFailed"),
+      kind: "expectFailed",
+      message,
+      tapePath: "t",
+      stepIndex: 4,
+    });
+    assert.match(canned, /Validation did not catch junk in `page\.from_date`/);
+    assert.doesNotMatch(canned, /Expected validation \/ expect failed/);
   });
 
   it("rolls quality into unique rules and omits preload noise", () => {

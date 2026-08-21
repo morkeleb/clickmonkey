@@ -9,7 +9,19 @@ import { lastQualityPage, lastVisualHash, persistQualityRuntime, persistQualityV
 import { normalizeQualityMessage } from "../schema/quality.js";
 import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { parseLine, formatLog, formatStep } from "../schema/dsl.js";
-import { findingId, severityForKind, type Finding, type FindingKind } from "../schema/finding.js";
+import {
+  findingId,
+  findingTapeBug,
+  pageErrorExplanation,
+  severityForKind,
+  type Finding,
+  type FindingKind,
+} from "../schema/finding.js";
+import {
+  clearTrackedFills,
+  fillCtxForPageError,
+  type TrackedFill,
+} from "./field-validity.js";
 import type { Locator } from "../schema/locator.js";
 import type { Log, Step } from "../schema/log.js";
 import { resolveVision, type Config } from "../schema/config.js";
@@ -56,6 +68,8 @@ export interface RunState {
   replay?: boolean;
   configPath?: string;
   lastAction?: { surface: string; id: string; opens?: string; fromPage?: string };
+  lastFill?: TrackedFill;
+  lastFills?: TrackedFill[];
   lastScreenshotPath?: string;
   /** `page.content()` for this step; quality checks read this, not the live page. */
   stepHtml?: string;
@@ -184,6 +198,10 @@ export function attachOracles(
   });
 }
 
+function pageErrorFillCtx(state: RunState, step?: Step) {
+  return fillCtxForPageError(state.lastFills ?? (state.lastFill ? [state.lastFill] : undefined), step);
+}
+
 async function screenshotFinding(
   state: RunState,
   partial: StepFailure | OracleFinding | (Partial<Finding> & { kind: FindingKind; message: string }),
@@ -210,7 +228,10 @@ async function screenshotFinding(
     id,
     kind,
     severity: severityForKind(kind),
-    message: partial.message,
+    message:
+      kind === "pageError"
+        ? pageErrorExplanation(partial.message, pageErrorFillCtx(state, step))
+        : partial.message,
     tapePath: join(state.outDir, "replay.log"),
     stepIndex,
     ...(screenshotPath ? { screenshotPath } : {}),
@@ -404,7 +425,7 @@ function persistStepFinding(
   if (!shouldPersistFinding(finding.kind)) return { finding, created: false };
   const persisted = persistFinding(state.outDir, finding, {
     screenshotPath: finding.screenshotPath,
-    replayLog: compactTape(state, step, finding.message),
+    replayLog: compactTape(state, step, findingTapeBug(finding.kind, finding.message)),
   });
   if (step.kind === "screenshot" && persisted.finding.screenshotPath) {
     state.lastScreenshotPath = persisted.finding.screenshotPath;
@@ -451,6 +472,7 @@ async function finish(
       finding = await screenshotFinding(state, state.pendingFindings.shift()!, step);
     }
   }
+  if (state.page.url() !== hrefBefore) clearTrackedFills(state);
 
   let findingCreated = false;
   if (finding) {

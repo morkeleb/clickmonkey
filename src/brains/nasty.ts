@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ShownField } from "../schema/view.js";
 import type { BrainContext, BrainDecision } from "./types.js";
+import { fakerFill } from "./faker-fill.js";
 import { decideUnleashWork, pickSelectOption } from "./unleash.js";
 
 const defaultDir = join(dirname(fileURLToPath(import.meta.url)), "../../payloads");
@@ -167,9 +168,13 @@ export function pickNasty(fieldType: string | undefined, rng: () => number = Mat
   return interpret(pick(pool, rng));
 }
 
-/** Native `<select>` cannot hold catalog payloads; pick a listed option. Type-in fields still get junk. */
+const NATIVE_TEMPORAL = new Set(["date", "datetime-local", "time", "month", "week"]);
+
+/** Native `<select>` / date inputs reject catalog junk; type-in fields still get it. */
 export function pickNastyFill(field: ShownField, rng: () => number = Math.random): string {
   if (field.type === "select") return pickSelectOption(field.options, rng) ?? "";
+  const html = (field.constraints?.htmlType ?? "").toLowerCase();
+  if (NATIVE_TEMPORAL.has(html)) return fakerFill(field, rng);
   return pickNasty(field.type, rng);
 }
 

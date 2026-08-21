@@ -1,4 +1,4 @@
-import type { Finding } from "../schema/finding.js";
+import { findingReportTitle, pageErrorExplanation, pageErrorTitle, type Finding } from "../schema/finding.js";
 
 export function cannedReport(finding: Finding): string {
   switch (finding.kind) {
@@ -6,9 +6,11 @@ export function cannedReport(finding: Finding): string {
       return [
         `# ${finding.id}`,
         "",
+        pageErrorTitle(finding.message),
+        "",
         `Uncaught JavaScript error on ${finding.url ?? "the page"} after a step.`,
         "",
-        finding.message,
+        pageErrorExplanation(finding.message),
         "",
       ].join("\n");
     case "httpError":
@@ -29,15 +31,20 @@ export function cannedReport(finding: Finding): string {
         finding.message,
         "",
       ].join("\n");
-    case "expectFailed":
+    case "expectFailed": {
+      const heading = findingReportTitle(finding.kind, finding.message);
+      const named =
+        heading !== finding.message ||
+        /validation did not catch|accepted empty/i.test(heading);
       return [
         `# ${finding.id}`,
         "",
-        "Expected validation / expect failed.",
+        named ? heading : "Expected validation / expect failed.",
         "",
         finding.message,
         "",
       ].join("\n");
+    }
     case "fenceViolation":
       return [`# ${finding.id}`, "", "Left the leash.", "", finding.message, ""].join("\n");
     case "uiIssue":

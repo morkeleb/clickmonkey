@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+import { pageErrorTitle } from "../schema/finding.js";
 import { normalizeQualityMessage } from "../schema/quality.js";
 import type { OracleFinding } from "./http.js";
 
@@ -17,8 +18,9 @@ export function attachPageErrorOracle(
 ): void {
   const seenPageErrors = new Set<string>();
   page.on("pageerror", (err) => {
-    const message = err.message || String(err);
-    const key = normalizeQualityMessage(message);
+    const raw = err.message || String(err);
+    const message = `${pageErrorTitle(raw)} (page threw; this is not field validation)`;
+    const key = normalizeQualityMessage(raw);
     if (!seenPageErrors.has(key)) {
       seenPageErrors.add(key);
       push({ kind: "pageError", message });

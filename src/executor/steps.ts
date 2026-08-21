@@ -1,5 +1,5 @@
 import type { Page } from "playwright";
-import type { FindingKind } from "../schema/finding.js";
+import { validationMissExplanation, type FindingKind } from "../schema/finding.js";
 import { locatorOf, type Locator } from "../schema/locator.js";
 import { readyKey, widgetKey } from "../schema/refs.js";
 import {
@@ -25,7 +25,18 @@ import {
 } from "./locators.js";
 import type { RunState } from "./run.js";
 import { resolveSecretAsync } from "./secrets.js";
-import { isPotentialWrite } from "./write-policy.js";
+import { isPotentialWrite, looksLikeSubmitClick } from "./write-policy.js";
+import { readFieldConstraints } from "./field-constraints.js";
+import {
+  clipFillValue,
+  clearTrackedFills,
+  fieldLooksInvalid,
+  fillShouldLookInvalid,
+  readFieldValidity,
+  rememberTrackedFill,
+  type FieldValidity,
+  type TrackedFill,
+} from "./field-validity.js";
 import {
   formatSelectOptionList,
   matchSelectOption,
@@ -209,7 +220,50 @@ async function performOpen(state: RunState, pageId: string): Promise<StepFailure
   state.pageId = pageDef.id;
   const pageSurface = pageDef.surfaces.find((s) => s.kind === "page");
   state.surfaceStack = [pageSurface?.id ?? pageDef.id];
+  clearTrackedFills(state);
   return undefined;
+}
+
+const INVALID_SETTLE_MS = 800;
+
+async function readFieldValiditySettled(
+  state: RunState,
+  live: Parameters<typeof readFieldValidity>[0],
+  fieldId: string,
+): Promise<FieldValidity> {
+  const started = Date.now();
+  let validity = await readFieldValidity(live, state.page, fieldId);
+  while (!fieldLooksInvalid(validity) && Date.now() - started < INVALID_SETTLE_MS) {
+    await state.page.waitForTimeout(100);
+    validity = await readFieldValidity(live, state.page, fieldId);
+  }
+  return validity;
+}
+
+async function checkTrackedFillsAfterSubmit(state: RunState): Promise<StepFailure | undefined> {
+  const suspects = (state.lastFills ?? []).filter((f) => f.shouldInvalid);
+  if (suspects.length === 0) return undefined;
+  if (state.pendingFindings.some((f) => f.kind === "pageError")) return undefined;
+  const stillOk: TrackedFill[] = [];
+  for (const last of suspects) {
+    const filled = findWidget(state, last.surface, last.id);
+    if (!filled) continue;
+    const loc = widgetLocator(state.page, filled.surface, locatorOf(filled.widget));
+    const live = await pickActable(loc, state.page);
+    if (!live) continue;
+    const validity = await readFieldValiditySettled(state, live, last.id);
+    rememberTrackedFill(state, { ...last, validity });
+    if (!fieldLooksInvalid(validity)) stillOk.push({ ...last, validity });
+  }
+  if (stillOk.length === 0) return undefined;
+  const first = stillOk[0]!;
+  return {
+    kind: "expectFailed",
+    message: validationMissExplanation(
+      stillOk.map((f) => ({ field: `${f.surface}.${f.id}`, value: clipFillValue(f.value) })),
+    ),
+    widgetRef: widgetKey(first.surface, first.id),
+  };
 }
 
 async function performClick(
@@ -245,6 +299,13 @@ async function performClick(
       message: oneLineBug(raw) || `${actable.key} click failed`,
       widgetRef: actable.key,
     };
+  }
+  if (
+    !isField(actable.widget) &&
+    looksLikeSubmitClick(actable.widget, actable.surface.actions)
+  ) {
+    const missed = await checkTrackedFillsAfterSubmit(state);
+    if (missed) return missed;
   }
   if (!isField(actable.widget) && actable.widget.opens) {
     const opened = findSurface(state, actable.widget.opens);
@@ -300,7 +361,43 @@ async function performFill(
   }
   await pw.fill("");
   if (resolved !== "") await pw.fill(resolved);
+  await pw.evaluate((el) => {
+    const node = el as { blur?: () => void };
+    node.blur?.();
+  }).catch(() => undefined);
+  const constraints = await readFieldConstraints(pw);
+  const validity = await readFieldValidity(pw, state.page, id);
+  const shouldInvalid = fillShouldLookInvalid(
+    {
+      id,
+      type: field?.type,
+      required: field?.required,
+      label: field?.name ?? field?.previousLabel,
+      constraints,
+    },
+    resolved,
+  );
+  rememberTrackedFill(state, { surface: surfaceId, id, value: resolved, shouldInvalid, validity });
   return undefined;
+}
+
+function trackedFillFor(state: RunState, surfaceId: string, id: string): TrackedFill | undefined {
+  return (
+    state.lastFills?.find((f) => f.surface === surfaceId && f.id === id) ??
+    (state.lastFill?.surface === surfaceId && state.lastFill.id === id ? state.lastFill : undefined)
+  );
+}
+
+function invalidExpectFailure(state: RunState, surfaceId: string, id: string): StepFailure {
+  const key = widgetKey(surfaceId, id);
+  const last = trackedFillFor(state, surfaceId, id);
+  return {
+    kind: "expectFailed",
+    message: last
+      ? validationMissExplanation([{ field: key, value: clipFillValue(last.value) }])
+      : `expected ${key} invalid`,
+    widgetRef: key,
+  };
 }
 
 async function performExpectInvalid(
@@ -311,25 +408,11 @@ async function performExpectInvalid(
   const actable = requireActable(state, surfaceId, id);
   if (!actable.ok) return actable.failure;
   const pw = await pickActable(widgetLocator(state.page, actable.surface, actable.locator), state.page);
-  if (!pw) {
-    return {
-      kind: "expectFailed",
-      message: `expected ${widgetKey(surfaceId, id)} invalid`,
-      widgetRef: widgetKey(surfaceId, id),
-    };
-  }
+  if (!pw) return invalidExpectFailure(state, surfaceId, id);
   const visible = await pw.isVisible().catch(() => false);
-  const ariaInvalid = (await pw.getAttribute("aria-invalid").catch(() => null)) === "true";
-  const errorVisible = await state.page
-    .getByTestId(`${id}-error`)
-    .isVisible()
-    .catch(() => false);
-  if (visible && (ariaInvalid || errorVisible)) return undefined;
-  return {
-    kind: "expectFailed",
-    message: `expected ${widgetKey(surfaceId, id)} invalid`,
-    widgetRef: widgetKey(surfaceId, id),
-  };
+  const validity = await readFieldValidity(pw, state.page, id);
+  if (visible && fieldLooksInvalid(validity)) return undefined;
+  return invalidExpectFailure(state, surfaceId, id);
 }
 
 export function locatorForSurface(

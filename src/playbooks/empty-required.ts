@@ -136,6 +136,7 @@ export async function runEmptyRequired(opts: {
         if (result.finding) {
           finding = result.finding;
           findings.push(result.finding);
+          break;
         }
       }
       const ran = state.log.steps.slice(start);

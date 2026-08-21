@@ -107,6 +107,25 @@ describe("nasty payloads", () => {
     if (parsed.kind === "fill") assert.equal(parsed.value, "mailing");
   });
 
+  it("fills a native date input with yyyy-MM-dd, not catalog junk", () => {
+    const field = {
+      id: "posted_from",
+      value: "",
+      type: "text" as const,
+      constraints: { htmlType: "date" },
+    };
+    const value = pickNastyFill(field, () => 0.3);
+    assert.match(value, /^\d{4}-\d{2}-\d{2}$/);
+    const catalog = loadPayloads();
+    const pool = [
+      ...(catalog.xss ?? []),
+      ...(catalog.sqli ?? []),
+      ...(catalog.format ?? []),
+      ...(catalog.overlong ?? []),
+    ];
+    assert.equal(pool.includes(value), false);
+  });
+
   it("hops when the view is empty instead of reopening the same page", () => {
     const view = viewOf({
       page: "settings",

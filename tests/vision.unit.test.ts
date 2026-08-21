@@ -203,6 +203,14 @@ describe("parseVisualReply", () => {
     );
     assert.equal(
       dropPayloadContentVisual({
+        rule: "broken",
+        message: "Input fields contain malformed SVG code instead of text",
+        where: "Billing Split",
+      }),
+      true,
+    );
+    assert.equal(
+      dropPayloadContentVisual({
         rule: "overflow",
         message: "XSS payload text overflows the Tenant Id field",
       }),

@@ -146,7 +146,7 @@ const LAYOUT_DEFECT =
 
 /** VLM often names the attack class instead of quoting the catalog string. */
 const PAYLOAD_AS_CONTENT =
-  /\b(xss|sql\s*injection|sqli|test payloads?|payload texts?|injection (?:text|payload|string)s?)\b/i;
+  /\b(xss|sql\s*injection|sqli|test payloads?|payload texts?|injection (?:text|payload|string)s?|malformed svg|svg\/onload|leftover (?:test )?data)\b/i;
 
 /** Leftover --nasty fills are content. Layout breakage from that text still counts. */
 export function dropPayloadContentVisual(opts: { rule: string; message: string; where?: string }): boolean {

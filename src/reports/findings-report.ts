@@ -9,7 +9,12 @@ import { newRunId } from "../persist/run-id.js";
 import { loadCombinedTestability } from "../persist/testability.js";
 import type { Config } from "../schema/config.js";
 import { formatExplorePlanItemLine, type UiExploreOutline } from "../schema/ui.js";
-import { severityForKind, type FindingSeverity } from "../schema/finding.js";
+import {
+  findingReportTitle,
+  pageErrorExplanation,
+  severityForKind,
+  type FindingSeverity,
+} from "../schema/finding.js";
 import { templatizePath } from "../surveyor/path-template.js";
 import { applyDuplicateTitles } from "../surveyor/seo.js";
 import { parseLog } from "../schema/dsl.js";
@@ -123,7 +128,7 @@ function renderCase(
   extra?: { title?: string; expected?: string; actual?: string; why?: string },
   copies: FindingCase[] = [],
 ): string {
-  const title = extra?.title || c.title;
+  const title = extra?.title || findingReportTitle(c.finding.kind, c.title || c.finding.message);
   const url = c.finding.url ?? c.url;
   const path = url ? pathOfHref(url) : undefined;
   const all = [c, ...copies];
@@ -152,6 +157,8 @@ function renderCase(
   }
   if (extra?.actual) {
     lines.push(`**Actual:** ${extra.actual}`, "");
+  } else if (c.finding.kind === "pageError") {
+    lines.push(pageErrorExplanation(c.finding.message), "");
   } else {
     lines.push(c.finding.message, "");
   }
@@ -195,6 +202,7 @@ export function isNoisyQualityMessage(message: string): boolean {
   const m = message.toLowerCase();
   if (m.includes("invalid keyframe")) return true;
   if (m.includes("preload") && (m.includes("not used") || m.includes("few seconds"))) return true;
+  if (m.includes("does not conform to the required format") && m.includes("yyyy-mm-dd")) return true;
   return false;
 }
 
@@ -367,7 +375,8 @@ const RULE_HINTS: Record<string, string> = {
   "nested-interactive": "Interactive element nested inside another (button in a link).",
   "console.error": "JavaScript error or failed network request on this page.",
   "console.warning": "Runtime warning — read the message for the library that logged it.",
-  pageError: "Uncaught exception.",
+  pageError:
+    "Uncaught JavaScript error (`pageerror`). Not console.error and not a validation message — the script crashed.",
 };
 
 type StartScope = "chrome" | "cluster" | "page";

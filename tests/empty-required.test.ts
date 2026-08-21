@@ -33,7 +33,8 @@ describe("empty-required playbook", () => {
       assert.ok(existsSync(result.logPath));
       const tape = readFileSync(result.logPath, "utf8");
       assert.match(tape, /# bug:/);
-      assert.match(tape, /expect \S+ invalid/);
+      assert.match(tape, /fill \S+/);
+      assert.match(failed.message, /accepted empty|expected \S+ invalid|Validation did not catch/i);
       assert.ok(failed.screenshotPath && existsSync(failed.screenshotPath));
       assert.ok(findingFiles(outDir).length > 0);
     } finally {

@@ -26,6 +26,8 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 | **Testability** | Unlabeled fields, unnamed controls, click on `<svg>`/`<div>`, no `main`, occluded widgets, duplicate names, missing stable ids | Inspect audit |
 | **Layout** | Overlap, clip, overflow, z-index, scanline, contrast in the pixels | Vision model; high-confidence extras become findings |
 | **Empty required** | Blank required field + submit must look invalid | Playbook `empty-required` |
+| **Junk not invalid** | `--nasty` / typed junk + submit still not `aria-invalid` / visible error / HTML5 constraint validation | Unleash after submit |
+| **Throw instead of invalid** | Fill then uncaught `pageerror` (e.g. `Invalid time value`) | Runtime oracle |
 | **Map / harness** | Unknown or drifted ids, ambiguous locators | Inspect + replay |
 | **Shallow payload** | XSS/SQLi/overlong in fields on a site you own | `unleash --nasty` / `nasty_*` |
 | **Explore oracles** | Claim vs behavior, purpose, consistency, interruption, affordance | MCP / `explore` when the host files them |
@@ -50,15 +52,18 @@ click <submit>
 expect <surface>.<field> invalid
 ```
 
-Invalid means `aria-invalid="true"` or a visible `{id}-error` node. Silent accept of a blank required field is a finding. A pass is not.
+Invalid means `aria-invalid="true"`, a visible `{id}-error` node, or HTML5 constraint validation when the form is not `novalidate`. Native `validity.valid === false` on a `novalidate` form is not a visible error. Silent accept of a blank required field is a finding. A pass is not.
 
-Unleash and explore **prefer empty then invalid then a plausible value**. That is opportunistic: they do not assert `invalid` unless this playbook or a spec does.
+A `pageerror` after a fill is the worse case of the same class: validation did not mark the field invalid, and the page **threw an uncaught JavaScript error**. `Invalid time value` is that crash, not “you typed a bad date.” The report names the field and value and says the throw means validation is missing or does not wrap parsing.
+
+Unleash and explore **prefer empty then invalid then a plausible value**. After `--nasty` junk and a submit, if the field is still not invalid, that is a finding. A `pageerror` on that fill is reported as a crash because validation is missing.
 
 Unleash fills with Faker, scored from field id/label, HTML `type` / `autocomplete` / `inputmode`, and live `min` / `max` / `minlength` / `maxlength` / `step` / `pattern`. Native `<select>` still uses the option list. `--nasty` still uses catalog junk on type-in fields.
 
+Unleash after submit also flags **typed junk** the control should not accept: HTML `type` (email/url/number/date), `pattern`, `min`/`max`/`minlength`/`maxlength`, and `--nasty` catalog payloads. If those fields are still not invalid, that is the same class as empty-required.
+
 Not automatic:
 
-- Format rules (email, min length, “must match”) — fence `expect … invalid` / `expect text`
 - Cross-field rules (end after start)
 - “Next stays disabled until the step is valid” as its own oracle (disabled Next is omitted from `actions:` until a fill enables it)
 - Proving the **write did not happen** (we check the control, not the database)

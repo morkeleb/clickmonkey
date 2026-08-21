@@ -24,6 +24,17 @@ export type { RunHandle } from "./executor/session.js";
 export { toPlaywrightLocator, widgetLocator } from "./executor/locators.js";
 export { liveValidate } from "./executor/live-validate.js";
 export type { LiveFailure } from "./executor/live-validate.js";
+export {
+  clipFillValue,
+  clearTrackedFills,
+  fieldLooksInvalid,
+  fillCtxForPageError,
+  fillShouldLookInvalid,
+  readFieldValidity,
+  rememberTrackedFill,
+  upsertTrackedFill,
+} from "./executor/field-validity.js";
+export type { FieldValidity, TrackedFill } from "./executor/field-validity.js";
 export { resolveCount } from "./surveyor/resolve.js";
 export { inspect, inspectAndSaveConfig } from "./surveyor/inspect.js";
 export { templatizePath, looksParametric, pathHasParams, ledgerPath } from "./surveyor/path-template.js";
