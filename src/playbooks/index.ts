@@ -1,5 +1,24 @@
 export { runEmptyRequired, type EmptyRequiredResult } from "./empty-required.js";
 export { replayLog, ReplayLiveValidateError, keysFromSteps } from "./replay.js";
+export {
+  listSpecFiles,
+  checkSpecFile,
+  formatCheckReport,
+  runSpecs,
+  formatSpecResults,
+  formatSpecTable,
+  surveyorErrorCount,
+  surveyorShouldFail,
+  shouldFailOnFindings,
+  specStepFailed,
+  specFenceIdleError,
+  countHarvestedFindings,
+  SPEC_SOFT_KINDS,
+  type SpecCheckCase,
+  type SpecCheckFileResult,
+  type SpecRunCase,
+  type SpecRunResult,
+} from "./spec.js";
 export { replayReport, formatReplayReport, type ReplayReportResult } from "./replay-report.js";
 export {
   compactLog,

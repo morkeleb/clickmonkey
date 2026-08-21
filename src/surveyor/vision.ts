@@ -75,7 +75,7 @@ export const VISUAL_PROMPT = [
   "",
   "Do not report: sticky headers/nav, expected page scroll, clean ellipsis truncation, brand or typography taste, missing features, hover/focus you cannot see, WCAG math, inventing that a control is unclickable, masonry or intentionally staggered cards, or a center-aligned hero title.",
   "Do not report an open dropdown, select, combobox, popover, or menu covering the page behind it — that is expected stacking. Do report those only if the overlay itself is clipped, off-screen, or two overlays collide.",
-  "Do not report application data that looks like XSS, SQL injection, or overlong junk in a list/table cell (test payloads). That is content, not a rendering defect. Do report if that text actually overflows, clips, overlaps, or breaks a shared list edge.",
+  "Do not report that a field, cell, or URL contains XSS / SQL-injection / overlong junk (including paraphrases like \"XSS payload text\"). That is leftover --nasty test data, not a rendering defect. Do report if that text actually overflows, clips, overlaps, or breaks a shared list edge.",
   "",
   "confidence: high = two named regions clearly collide, cut, or break a shared list edge in this image; medium = likely but could be intentional chrome; low = a guess — omit low from issues.",
   "where: name the visible regions (e.g. \"filter chip on table header\"). Do not invent widget ids.",
@@ -144,11 +144,15 @@ function extractJsonObject(raw: string): unknown {
 const LAYOUT_DEFECT =
   /\b(overflow|clip|overlap|z-?index|scanline|unreadable|covered|leaking|cut off|collide|misalign)/i;
 
-/** Leftover --nasty catalog text in the report is content. Layout breakage from it still counts. */
+/** VLM often names the attack class instead of quoting the catalog string. */
+const PAYLOAD_AS_CONTENT =
+  /\b(xss|sql\s*injection|sqli|test payloads?|payload texts?|injection (?:text|payload|string)s?)\b/i;
+
+/** Leftover --nasty fills are content. Layout breakage from that text still counts. */
 export function dropPayloadContentVisual(opts: { rule: string; message: string; where?: string }): boolean {
   const blob = [opts.message, opts.where].filter(Boolean).join(" ");
   if (LAYOUT_DEFECT.test(blob)) return false;
-  return textContainsNastyPayload(blob);
+  return textContainsNastyPayload(blob) || PAYLOAD_AS_CONTENT.test(blob);
 }
 
 const FLOATING_OVERLAY =

@@ -32,6 +32,19 @@ describe("workspace layout", () => {
     assert.equal(workspaceDir(path), join(dir, "clickmonkey"));
   });
 
+  it("loadConfig overlays clickmonkey/dev-origin onto the leash path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-ws-origin-"));
+    const path = join(dir, "clickmonkey.json");
+    saveConfig(path, emptyConfig("http://127.0.0.1:3000/api/auth/test-login/", "app"));
+    mkdirSync(join(dir, "clickmonkey"), { recursive: true });
+    writeFileSync(join(dir, "clickmonkey", "dev-origin"), "http://127.0.0.1:3001\n");
+    const loaded = loadConfig(path);
+    assert.equal(loaded.url, "http://127.0.0.1:3001/api/auth/test-login/");
+    saveConfig(path, loaded);
+    const leash = JSON.parse(readFileSync(path, "utf8")) as { url: string };
+    assert.equal(leash.url, "http://127.0.0.1:3000/api/auth/test-login/");
+  });
+
   it("loadConfig still reads an inline map when map.json is missing", () => {
     const dir = mkdtempSync(join(tmpdir(), "cm-ws-inline-"));
     const path = join(dir, "clickmonkey.json");

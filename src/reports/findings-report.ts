@@ -81,6 +81,7 @@ export interface ReportMeta {
   /** Per-page quality dump. Default is a rolled-up digest. */
   qualityFull?: boolean;
   outlines?: Array<{ runId: string; outline: UiExploreOutline }>;
+  extra?: string;
 }
 
 function resolveApiKey(apiKeyEnv: string | undefined): string | undefined {
@@ -620,7 +621,14 @@ function renderExploreOutlines(outlines: ReportMeta["outlines"]): string[] {
       for (const item of outline.plan.items) lines.push(formatExplorePlanItemLine(item));
       lines.push("");
     }
+    const goods = outline.goods ?? [];
+    if (goods.length > 0) {
+      lines.push("**Positive observations:**", "");
+      for (const good of goods) lines.push(`- ${good}`);
+      lines.push("");
+    }
     if (outline.notes.length > 0) {
+      lines.push("**Notes:**", "");
       for (const note of outline.notes) lines.push(`- ${note}`);
       lines.push("");
     }
@@ -680,6 +688,10 @@ export function renderFindingsReport(
   if (qualityLines.length > 0) {
     lines.push(...qualityLines);
   }
+  const extra = meta.extra?.trim();
+  if (extra) {
+    lines.push("## Extra", "", extra, "");
+  }
   lines.push("## Appendix", "", "Source finding folders live under each run's `findings/` directory.", "");
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
 }
@@ -696,6 +708,15 @@ export type WrittenRunsReport = {
   summary?: string;
 };
 
+const HOST_TEXT_MAX = 8000;
+
+function clipHostText(text: string | undefined): string | undefined {
+  const one = text?.trim();
+  if (!one) return undefined;
+  if (one.length <= HOST_TEXT_MAX) return one;
+  return `${one.slice(0, HOST_TEXT_MAX - 1)}…`;
+}
+
 /** Shared by `clickmonkey report` and MCP `explore_finish`. Skips the LLM unless `config.brain` is set. */
 export async function writeRunsReport(opts: {
   configPath: string;
@@ -703,24 +724,29 @@ export async function writeRunsReport(opts: {
   runDirs: string[];
   qualityFull?: boolean;
   onBrainError?: (message: string) => void;
+  summary?: string;
+  extra?: string;
+  outlines?: Array<{ runId: string; outline: UiExploreOutline }>;
 }): Promise<WrittenRunsReport> {
   const cases = collectFindingCases(opts.runDirs);
   const runIds = opts.runDirs.map((d) => d.split(/[/\\]/).pop() ?? d);
   const generatedAt = new Date().toISOString();
   const reportId = newRunId();
   const mdPath = plannedReportPath(opts.configPath, reportId);
-  let summary: string | undefined;
+  const hostSummary = clipHostText(opts.summary);
+  const extra = clipHostText(opts.extra);
+  let summary: string | undefined = hostSummary;
   let extras: Map<string, { title?: string; expected?: string; actual?: string; why?: string }> | undefined;
   if (opts.config.brain) {
     try {
       const enriched = await enrichWithBrain(cases, opts.config);
-      summary = enriched.summary || undefined;
+      if (!summary) summary = enriched.summary || undefined;
       extras = enriched.extras;
     } catch (err) {
       opts.onBrainError?.(err instanceof Error ? err.message : String(err));
     }
   }
-  const outlines = outlinesFromRunDirs(opts.runDirs);
+  const outlines = opts.outlines?.length ? opts.outlines : outlinesFromRunDirs(opts.runDirs);
   const meta: ReportMeta = {
     url: opts.config.url,
     generatedAt,
@@ -730,6 +756,7 @@ export async function writeRunsReport(opts: {
     quality: loadCombinedQuality(opts.runDirs, opts.configPath),
     ...(opts.qualityFull ? { qualityFull: true } : {}),
     ...(outlines.length > 0 ? { outlines } : {}),
+    ...(extra ? { extra } : {}),
   };
   const markdown = renderFindingsReport(cases, meta, mdPath, extras, summary);
   const findingCount = collapseFindingCases(cases).length;

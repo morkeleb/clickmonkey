@@ -9,6 +9,8 @@ it in `clickmonkey/`. The log is a line DSL. The view is what a brain
 (human or model) sees — ids, values, actions, a scoped accessibility
 snapshot, and a `look` block (font palette + hit-tested cover) — not HTML.
 
+What it harvests vs what QA still owns: [docs/issue-classes.md](docs/issue-classes.md).
+
 0.0.7 stays tagged. Those configs will not run here.
 
 ## Install
@@ -90,7 +92,29 @@ clickmonkey/
   reports/<id>/findings.md       # shareable reports (one folder per report)
   replays/<id>/comparison.md     # before/after vs that report
   explore-context.md             # optional: app architecture for explore --skills
+  specs/*.md                     # replayable clickmonkey fences
 ```
+
+### Git
+
+Commit the leash, the map, specs, and explore context. Ignore generated walks (screenshots, verbose DOM, presence) — they are large and local.
+
+```gitignore
+# ClickMonkey
+clickmonkey/runs/
+clickmonkey/replays/
+clickmonkey/bundle/
+clickmonkey/reports/
+clickmonkey/dev-origin
+clickmonkey/**/*.json.lock
+clickmonkey/**/*.json.tmp
+```
+
+Leave `clickmonkey.json`, `clickmonkey/map.json`, `clickmonkey/specs/`, and `clickmonkey/explore-context.md` tracked. Secrets in the leash are `$CLICKMONKEY_*` tokens, not values.
+
+`reports/` is optional to ignore: markdown without `runs/` has no screenshots. CI should keep reports as job artifacts (`examples/gitlab-ci.yml`). Commit a single `findings.md` only if you want a paper trail.
+
+Do not gitignore the whole `clickmonkey/` folder.
 
 `clickmonkey.json` is the file you edit:
 
@@ -170,6 +194,7 @@ clickmonkey explore [--config] [--url] [--out] [--steps] [--minutes] [--charter]
 clickmonkey mcp [--config]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
 clickmonkey replay <log|report.md> [--config] [--url] [--out]
+clickmonkey spec [file.md] [--check] [--fail-on-findings]
 clickmonkey compact <log> [--out <file>]
 clickmonkey bundle [--config] [--out]
 clickmonkey ui
@@ -181,38 +206,101 @@ clickmonkey ui
 
 ## Exploratory testing via MCP
 
-**Benefits**
+The host LLM (Grok, Claude, Cursor, …) decides the next click. ClickMonkey still owns the browser, fence, map, and run tape. Visits are compact (pagemap, mode, look) — no page HTML. `config.brain` is not required; the host is the brain.
 
-- The host LLM (Grok/Claude/Cursor) decides, with the repo and other tools available
-- No page HTML in the transcript — compact visit (pagemap, form-vs-nav mode, look/testability, shot path)
-- The walk is a real explore run (`clickmonkey/runs/<id>/`) so the dashboard and `clickmonkey report` see it
-- Same fence, map, oracles, and DSL as `clickmonkey explore`
+Prompt `clickmonkey` and resource `clickmonkey://guide` are the product menu (map / unleash / explore / spec / replay). Map, unleash, spec, and replay stay CLI.
 
-**Setup**
+Unattended CI still uses `clickmonkey explore` and needs `brain` in the leash.
 
-1. In the app under test: `clickmonkey init --url http://…` (creates `clickmonkey.json` + `clickmonkey/`). Or call `explore_init` from the MCP.
-2. Optionally `clickmonkey inspect` / `clickmonkey map` so the map is not empty.
-3. Wire stdio:
+### Where files live
+
+The MCP server uses the **same folder as the CLI**. Settings are `clickmonkey.json` (the leash). The sitemap, runs, and reports sit next to it in `clickmonkey/`. That folder is *the product under test* (or a testing sibling), not the ClickMonkey git repo.
+
+```
+my-app/                            # cwd for `clickmonkey` and for `clickmonkey mcp`
+  clickmonkey.json                 # leash: url, fence, intro, …
+  clickmonkey/
+    map.json
+    explore-context.md             # optional architecture for --skills
+    specs/*.md                     # replayable fences (commit these)
+    runs/<id>/                     # this MCP walk
+    reports/<id>/findings.md
+```
+
+Default config path is `./clickmonkey.json` in the MCP process cwd. `--config /abs/path/clickmonkey.json` (CLI flag or `explore_start` argument) pins the leash even if cwd is wrong. The workspace is always `dirname(that json)/clickmonkey/`. Gitignore for that folder is under [Git](#git).
+
+Optional `clickmonkey/dev-origin` is one line (`http://127.0.0.1:3001`). When that file exists, load keeps the leash **path** and replaces scheme/host/port. It is not written back into `clickmonkey.json`. Tools that assign ports (for example `fde dev up`) write this file; gitignore it. No sidecar → the leash `url` is used as written.
+
+### 1. Leash
+
+From the app (or testing) folder:
+
+```bash
+clickmonkey init --url http://127.0.0.1:3000/
+# optional: grow the sitemap before the host walks
+clickmonkey inspect
+clickmonkey map --steps 40
+```
+
+Or call `explore_init` from MCP with the same `url` (creates the json + folder if they are missing).
+
+`clickmonkey` must be on `PATH` (`npm run link` from this repo, or a global install).
+
+### 2. Wire the host
+
+The stdio server is `clickmonkey mcp`. The **browser starts on `explore_start`**, not when the MCP process connects. Playwright cold start can exceed a 30s MCP startup timeout — raise it.
+
+**Grok** (project-scoped — put this *in the folder that has `clickmonkey.json`* so cwd is correct):
+
+```toml
+# my-app/.grok/config.toml
+[mcp_servers.clickmonkey]
+command = "clickmonkey"
+args = ["mcp"]
+startup_timeout_sec = 60
+```
+
+Or pin the leash from `~/.grok/config.toml` if you start Grok from other directories:
 
 ```toml
 [mcp_servers.clickmonkey]
 command = "clickmonkey"
-args = ["mcp"]
+args = ["mcp", "--config", "/abs/path/to/my-app/clickmonkey.json"]
+startup_timeout_sec = 60
 ```
 
-Claude/Cursor: `{"command":"clickmonkey","args":["mcp"]}`.
+Then `grok mcp list` / `grok mcp doctor clickmonkey`. Open Grok with cwd in `my-app/` (or always pass `--config`).
 
-cwd must be the folder with `clickmonkey.json`. The browser starts on `explore_start`, not at MCP connect. `config.brain` is not required.
+**Claude Code** (`~/.claude.json` or project `.mcp.json`) and **Cursor**:
 
-**Loop**
+```json
+{
+  "mcpServers": {
+    "clickmonkey": {
+      "command": "clickmonkey",
+      "args": ["mcp"],
+      "cwd": "/abs/path/to/my-app"
+    }
+  }
+}
+```
 
-1. `explore_start` with a charter (and architecture/skills if you have `clickmonkey/explore-context.md`)
-2. `explore_set_plan` from the sitemap cards
+If the client has no `cwd` field, pass `"args": ["mcp", "--config", "/abs/path/to/my-app/clickmonkey.json"]`.
+
+### 3. Optional dashboard
+
+From the same folder: `clickmonkey ui`. Live MCP walks show up as a monkey on the map (`brain: mcp`).
+
+### 4. Loop
+
+1. `explore_start` with a charter (and `skills` from `clickmonkey/explore-context.md` if you have it)
+2. `explore_set_plan` from the sitemap cards (`clickmonkey://map`)
 3. `explore_step` / `nasty_fill` while reading `mode` (form vs list vs nav)
-4. `explore_shot` when you need pixels
-5. `explore_finish` writes `session.md` and a findings report
+4. `explore_note` / `explore_good`; `explore_finding` to file a bug with a screenshot
+5. `explore_shot` when you need pixels; `explore_findings` for this run’s persisted list
+6. `explore_finish` with `summary` (what you tried, what you trust). Writes `session.md` and a findings report. Disconnect writes the report if you skip finish.
 
-Unattended CI still uses `clickmonkey explore` and needs `config.brain`.
+After a good walk, freeze the compact tape into `clickmonkey/specs/*.md` (`spec_writer`). Prose, mermaid, and photos stay outside the fence. `spec_check` or `clickmonkey spec --check` before claiming done. `clickmonkey spec` plays the fences as a real walk (not `replay`); the run writes `spec-results.md` only. PASS with findings is exit 0 unless `--fail-on-findings`.
 
 `--nasty` / `nasty_*` is for a site you own.
 
@@ -291,6 +379,8 @@ expect <surface>.<field> invalid
 
 A passing expect is not a finding. A failing expect writes `replay.log`, a
 screenshot, and a finding JSON. Replay that log with no brain in the loop.
+Format rules, cross-field checks, and “Next stays disabled” are specs (or a
+human), not this playbook — see [docs/issue-classes.md](docs/issue-classes.md).
 
 ## Migrating from 0.0.7
 

@@ -123,13 +123,21 @@ export function isPageHop(
   return false;
 }
 
-/** Sidebar/header links: landmark, role=link, or minted `link_` / `menuitem_` ids. */
+/** Record row hops (`customers_row_*`, `link_row_1`). Not a page-header "New …" CTA. */
+export function isRecordRowAction(action: ShownAction): boolean {
+  return /(?:^|_)row(?:_|$)/i.test(action.id);
+}
+
+/**
+ * Sidebar/header landmarks and menu items.
+ * In-page `<a>` CTAs (`role=link`, minted `link_*`) are ordinary actions — apps
+ * routinely style links as buttons.
+ */
 export function looksLikeNavWidget(action: ShownAction): boolean {
   if (action.nav) return true;
   const role = (action.role ?? "").toLowerCase();
-  if (role === "link" || role === "menuitem") return true;
-  const id = action.id.toLowerCase();
-  return id.startsWith("link_") || id.startsWith("menuitem_");
+  if (role === "menuitem") return true;
+  return action.id.toLowerCase().startsWith("menuitem_");
 }
 
 /** In-page actions minus dismiss while a form is on screen. */
@@ -140,12 +148,12 @@ export function legalUnleashActions(view: View, pages?: readonly Page[]): ShownA
 }
 
 /**
- * Buttons and dialogs that stay on this surface. Unique record links and
- * sidebar hops are legal only after these (and any empty fields) are gone.
+ * In-page controls, including links styled as buttons and unique hops like
+ * "New migration". Landmark chrome and table-row hops wait.
  */
 export function stayActions(view: View, pages?: readonly Page[]): ShownAction[] {
   return legalUnleashActions(view, pages).filter(
-    (a) => !isPageHop(a, pages, view.pages) && !looksLikeNavWidget(a),
+    (a) => !looksLikeNavWidget(a) && !isRecordRowAction(a),
   );
 }
 
@@ -212,12 +220,11 @@ export function listChromeActions(actions: readonly ShownAction[]): ShownAction[
   return actions.filter(isListChrome);
 }
 
-/** Record hops, including in-page links not yet stamped with `opens`. */
+/** Record hops, including in-page row links not yet stamped with `opens`. */
 export function listRowActions(view: View, pages?: readonly Page[]): ShownAction[] {
   return legalUnleashActions(view, pages).filter((a) => {
-    if (isListChrome(a) || a.nav) return false;
-    if (isPageHop(a, pages, view.pages)) return true;
-    return looksLikeNavWidget(a);
+    if (isListChrome(a) || a.nav || looksLikeNavWidget(a)) return false;
+    return isRecordRowAction(a);
   });
 }
 

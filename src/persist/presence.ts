@@ -74,9 +74,14 @@ export function exploreOutlineOf(opts: {
   charter: string;
   now?: string;
   notes?: readonly string[];
+  goods?: readonly string[];
   plan?: Outline["plan"];
 }): Outline {
   const notes = (opts.notes ?? [])
+    .map((n) => clip(n, 160))
+    .filter(Boolean)
+    .slice(-8);
+  const goods = (opts.goods ?? [])
     .map((n) => clip(n, 160))
     .filter(Boolean)
     .slice(-8);
@@ -85,6 +90,7 @@ export function exploreOutlineOf(opts: {
     charter: clip(opts.charter, 400),
     ...(now ? { now } : {}),
     notes,
+    goods,
     ...(opts.plan ? { plan: opts.plan } : {}),
   });
 }

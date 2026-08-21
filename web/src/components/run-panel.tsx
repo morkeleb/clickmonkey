@@ -277,21 +277,22 @@ export function RunPanel({ run }: { run: UiRun | undefined }) {
               <Badge variant={run.live ? "default" : "secondary"}>{run.live ? "live" : "idle"}</Badge>
               {error ? <span className="text-xs text-red-400">{error}</span> : null}
             </div>
-            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              <span>
+            <div className="mt-1 flex min-w-0 items-baseline gap-x-4 overflow-hidden text-sm text-muted-foreground">
+              <span className="inline-flex min-w-0 flex-1 items-baseline gap-1">
+                page <span className="truncate font-mono text-foreground">{shown.pageId ?? "—"}</span>
+              </span>
+              <span className="inline-flex shrink-0 items-baseline gap-1">
                 brain <span className="text-foreground">{run.brain ?? "—"}</span>
               </span>
-              <span>
-                page <span className="font-mono text-foreground">{shown.pageId ?? "—"}</span>
+              <span className="inline-flex shrink-0 items-baseline gap-1">
+                steps <span className="text-foreground">{shown.steps.length}</span>
               </span>
-              <span>
-                <span className="text-foreground">{shown.steps.length}</span> steps
+              <span className="inline-flex shrink-0 items-baseline gap-1">
+                findings <span className="text-foreground">{shown.findingCount}</span>
               </span>
-              <span>
-                <span className="text-foreground">{shown.findingCount}</span> finding
-                {shown.findingCount === 1 ? "" : "s"}
+              <span className="inline-flex shrink-0 items-baseline gap-1">
+                run <span className="font-mono text-foreground">{run.id}</span>
               </span>
-              <span className="font-mono text-xs">{run.id}</span>
             </div>
           </div>
         </div>

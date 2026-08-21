@@ -44,6 +44,42 @@ export const ExpectVisibleStep = z
   .strict();
 export type ExpectVisibleStep = z.infer<typeof ExpectVisibleStep>;
 
+export const ExpectHiddenStep = z
+  .object({
+    kind: z.literal("expectHidden"),
+    surface: z.string().min(1),
+  })
+  .strict();
+export type ExpectHiddenStep = z.infer<typeof ExpectHiddenStep>;
+
+export const ExpectTextStep = z
+  .object({
+    kind: z.literal("expectText"),
+    surface: z.string().min(1),
+    id: z.string().min(1),
+    text: z.string().min(1),
+  })
+  .strict();
+export type ExpectTextStep = z.infer<typeof ExpectTextStep>;
+
+export const ExpectValueStep = z
+  .object({
+    kind: z.literal("expectValue"),
+    surface: z.string().min(1),
+    id: z.string().min(1),
+    value: z.string(),
+  })
+  .strict();
+export type ExpectValueStep = z.infer<typeof ExpectValueStep>;
+
+export const ExpectPageTextStep = z
+  .object({
+    kind: z.literal("expectPageText"),
+    text: z.string().min(1),
+  })
+  .strict();
+export type ExpectPageTextStep = z.infer<typeof ExpectPageTextStep>;
+
 export const ExpectPathStep = z
   .object({
     kind: z.literal("expectPath"),
@@ -67,6 +103,10 @@ export const Step = z.discriminatedUnion("kind", [
   FillStep,
   ExpectInvalidStep,
   ExpectVisibleStep,
+  ExpectHiddenStep,
+  ExpectTextStep,
+  ExpectValueStep,
+  ExpectPageTextStep,
   ExpectPathStep,
   ScreenshotStep,
 ]);

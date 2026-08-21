@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import {
   checkExploreLine,
@@ -17,8 +17,9 @@ import { logBrainDecide } from "../executor/nav-log.js";
 import { createExecutor, type RunState, type StepResult } from "../executor/run.js";
 import { withRun, type RunHandle } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
+import { writeFinding } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
-import { exploreOutlineOf, setPresenceOutline, stopPresence } from "../persist/presence.js";
+import { exploreOutlineOf, setPresenceOutline, stopPresence, touchPresence } from "../persist/presence.js";
 import type { Config } from "../schema/config.js";
 import { severityForKind, type Finding, type FindingSeverity } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
@@ -42,6 +43,9 @@ export type ExploreStepOpts = {
   note?: string;
   good?: string;
   done?: boolean;
+  /** Host-filed bug: skip walker screenshot-spam bans. */
+  hostFinding?: boolean;
+  severity?: FindingSeverity;
 };
 
 export type ExploreStepResult =
@@ -190,6 +194,21 @@ export type ExploreWalkCtx = {
   onAfterStep?: ExploreAfterStep;
 };
 
+function flushOutline(ctx: Pick<ExploreWalkCtx, "outDir" | "charter" | "notes" | "goods" | "plan">, now?: string): void {
+  const item = ctx.plan?.items.find((i) => i.status === "now");
+  const nowLine = now ?? item?.title;
+  setPresenceOutline(
+    ctx.outDir,
+    exploreOutlineOf({
+      charter: ctx.charter,
+      ...(nowLine ? { now: nowLine } : {}),
+      notes: ctx.notes,
+      goods: ctx.goods,
+      plan: ctx.plan,
+    }),
+  );
+}
+
 export async function applyExploreStep(
   ctx: ExploreWalkCtx,
   line: string,
@@ -211,13 +230,15 @@ export async function applyExploreStep(
     };
   }
 
-  const check = checkExploreLine(trimmed, view, {
-    stepsUsed: ctx.stepsUsed,
-    charter: ctx.charter,
-    rejected: [...ctx.refused],
-    recent: ctx.recent,
-    pages: ctx.state.model.pages,
-  });
+  const check = opts?.hostFinding
+    ? { ok: true as const }
+    : checkExploreLine(trimmed, view, {
+        stepsUsed: ctx.stepsUsed,
+        charter: ctx.charter,
+        rejected: [...ctx.refused],
+        recent: ctx.recent,
+        pages: ctx.state.model.pages,
+      });
   if (!check.ok) {
     if (check.ban !== false) ctx.refused.add(trimmed);
     const refusedView: View = {
@@ -234,15 +255,7 @@ export async function applyExploreStep(
   }
 
   const currentItem = ctx.plan?.items.find((i) => i.status === "now");
-  setPresenceOutline(
-    ctx.outDir,
-    exploreOutlineOf({
-      charter: ctx.charter,
-      now: [currentItem?.title, note || trimmed].filter(Boolean).join(" — "),
-      notes: ctx.notes,
-      plan: ctx.plan,
-    }),
-  );
+  flushOutline(ctx, [currentItem?.title, note || trimmed].filter(Boolean).join(" — "));
   if (ctx.state.navLogPath) {
     logBrainDecide(ctx.state.navLogPath, { line: trimmed, note, good });
   }
@@ -250,6 +263,11 @@ export async function applyExploreStep(
   if (ctx.state.navMeta) ctx.state.navMeta.mode = mode;
 
   const result = await ctx.exec.runLine(trimmed);
+  if (opts?.severity && result.finding && result.finding.severity !== opts.severity) {
+    result.finding = { ...result.finding, severity: opts.severity };
+    const jsonPath = join(ctx.outDir, "findings", result.finding.id, "finding.json");
+    if (existsSync(jsonPath)) writeFinding(jsonPath, result.finding);
+  }
   ctx.stepsUsed += 1;
   ctx.recent.push(trimmed);
   if (ctx.recent.length > 12) ctx.recent.shift();
@@ -288,15 +306,7 @@ export async function applyExploreStep(
   if (opts?.done && ctx.plan) {
     ctx.plan = completeCurrentPlanItem(ctx.plan, "done");
     const next = ctx.plan.items.find((i) => i.status === "now");
-    setPresenceOutline(
-      ctx.outDir,
-      exploreOutlineOf({
-        charter: ctx.charter,
-        now: next?.title || "plan complete",
-        notes: ctx.notes,
-        plan: ctx.plan,
-      }),
-    );
+    flushOutline(ctx, next?.title || "plan complete");
   }
 
   const nextView = ctx.view ?? result.view;
@@ -362,6 +372,7 @@ export class ExploreSession {
   private runDone?: Promise<void>;
   private visitGate?: ReturnType<typeof onceSettled<ExploreVisit>>;
   private closing = false;
+  private heartbeat?: ReturnType<typeof setInterval>;
 
   static attach(opts: ExploreWalkOpts): ExploreSession {
     const session = new ExploreSession();
@@ -490,13 +501,16 @@ export class ExploreSession {
           ...(opts.skills?.trim() ? { skills: opts.skills.trim() } : {}),
         });
         if (this.closing) {
+          this.stopHeartbeat();
           this.ctx = undefined;
           return;
         }
+        this.startHeartbeat();
         const visit = await this.visit();
         visitGate.resolve(visit);
         await untilRelease;
       } catch (err) {
+        this.stopHeartbeat();
         this.ctx = undefined;
         this.releaseRun?.();
         this.releaseRun = undefined;
@@ -508,6 +522,7 @@ export class ExploreSession {
     }).then(
       () => undefined,
       (err) => {
+        this.stopHeartbeat();
         this.ctx = undefined;
         visitGate.reject(err);
       },
@@ -536,16 +551,7 @@ export class ExploreSession {
   setPlan(plan: UiExplorePlan): void {
     const ctx = this.requireWalk();
     ctx.plan = plan;
-    const now = plan.items.find((i) => i.status === "now");
-    setPresenceOutline(
-      ctx.outDir,
-      exploreOutlineOf({
-        charter: ctx.charter,
-        now: now?.title,
-        notes: ctx.notes,
-        plan,
-      }),
-    );
+    flushOutline(ctx);
   }
 
   advancePlan(status: "done" | "skipped"): void {
@@ -553,31 +559,28 @@ export class ExploreSession {
     if (!ctx.plan) return;
     ctx.plan = completeCurrentPlanItem(ctx.plan, status);
     const now = ctx.plan.items.find((i) => i.status === "now");
-    setPresenceOutline(
-      ctx.outDir,
-      exploreOutlineOf({
-        charter: ctx.charter,
-        now: now?.title || "plan complete",
-        notes: ctx.notes,
-        plan: ctx.plan,
-      }),
-    );
+    flushOutline(ctx, now?.title || "plan complete");
   }
 
   addNote(text: string): void {
     const ctx = this.requireWalk();
     const note = usefulExploreNote(text);
-    if (note) ctx.notes.push(note);
+    if (!note) return;
+    ctx.notes.push(note);
+    flushOutline(ctx);
   }
 
   addGood(text: string): void {
     const ctx = this.requireWalk();
     const good = usefulExploreNote(text);
-    if (good) ctx.goods.push(good);
+    if (!good) return;
+    ctx.goods.push(good);
+    flushOutline(ctx);
   }
 
   async abort(): Promise<void> {
     this.closing = true;
+    this.stopHeartbeat();
     this.visitGate?.reject(new Error("explore session aborted"));
     const outDir = this.ctx?.outDir;
     const done = this.runDone;
@@ -627,6 +630,24 @@ export class ExploreSession {
     return this.ctx;
   }
 
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.heartbeat = setInterval(() => {
+      const live = this.ctx;
+      if (!live) return;
+      touchPresence(live.outDir, live.state.pageId);
+    }, 5_000);
+    this.heartbeat.unref?.();
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeat === undefined) return;
+    clearInterval(this.heartbeat);
+    this.heartbeat = undefined;
+  }
+
   private flush(opts?: { notes?: string[]; goods?: string[] }): ExploreResult {
     const ctx = this.ctx;
     const log: Log = {
@@ -638,6 +659,15 @@ export class ExploreSession {
     };
     const logPath = ctx?.logPath ?? "";
     const sessionPath = ctx?.sessionPath ?? "";
+    if (ctx) {
+      flushOutline({
+        outDir: ctx.outDir,
+        charter: ctx.charter,
+        notes: opts?.notes ?? ctx.notes,
+        goods: opts?.goods ?? ctx.goods,
+        plan: ctx.plan,
+      });
+    }
     if (ctx && logPath) writeLog(logPath, log);
     if (ctx && sessionPath) {
       writeSessionMd({

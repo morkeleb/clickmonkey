@@ -26,8 +26,16 @@ export function keysFromSteps(steps: Step[]): string[] {
   const keys: string[] = [];
   for (const step of steps) {
     if (step.kind === "open") keys.push(readyKey(step.page));
-    else if (step.kind === "click" || step.kind === "fill" || step.kind === "expectInvalid") {
+    else if (
+      step.kind === "click" ||
+      step.kind === "fill" ||
+      step.kind === "expectInvalid" ||
+      step.kind === "expectText" ||
+      step.kind === "expectValue"
+    ) {
       keys.push(widgetKey(step.surface, step.id));
+    } else if (step.kind === "expectVisible" || step.kind === "expectHidden") {
+      keys.push(step.surface);
     }
   }
   return keys;

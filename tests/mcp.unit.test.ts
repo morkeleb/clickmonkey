@@ -1,23 +1,31 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { SAMPLE_MAX_CHARS } from "../src/brains/nasty.js";
 import { saveConfig } from "../src/persist/config.js";
+import { specsDir } from "../src/persist/workspace.js";
 import { writeSessionMd } from "../src/playbooks/explore-session.js";
 import { emptyConfig } from "../src/schema/config.js";
+import { PageModel } from "../src/schema/page-model.js";
 import { formatExploreVisit, type ExploreVisit } from "../src/schema/visit.js";
 import type { ExploreResult, ExploreStepResult } from "../src/playbooks/explore-session.js";
 import {
+  CLICKMONKEY_GUIDE,
   createMcpHost,
+  finishExplore,
+  handleExploreFinding,
+  handleExploreFindings,
   handleExploreFinish,
   handleExploreShot,
   handleExploreStart,
   handleExploreStep,
   handleNastyList,
   handleNastySamples,
+  handleSpecCheck,
+  handleSpecList,
   sessionResourceText,
   type McpHost,
   type McpSession,
@@ -249,9 +257,53 @@ describe("mcp tools", () => {
       const text = textOf(result);
       assert.match(text, /Legal open ids: home/);
       assert.match(text, /sitemap: clickmonkey:\/\/map/);
+      assert.match(text, /guide: clickmonkey:\/\/guide/);
+      assert.match(text, /clickmonkey/);
       assert.match(text, /explore_tester/);
+      assert.match(text, /spec_writer/);
+      assert.match(text, /map is thin \(0 pages\)/);
+      assert.match(text, /clickmonkey map/);
       assert.doesNotMatch(text, /^reach:/m);
       assert.doesNotMatch(text, /sitemap \(open only where via says open\)/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("explore_start does not nudge a map that already has pages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-start-fat-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, {
+        ...emptyConfig("http://127.0.0.1:4173/", "fixture"),
+        map: PageModel.parse({
+          schemaVersion: 1,
+          app: "fixture",
+          generation: 0,
+          pages: [
+            {
+              id: "home",
+              path: "/",
+              params: [],
+              ready: { by: "testId", value: "home" },
+              surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+            },
+            {
+              id: "customers",
+              path: "/customers",
+              params: [],
+              ready: { by: "testId", value: "customers" },
+              surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+            },
+          ],
+        }),
+      });
+      const host: McpHost = {
+        createSession: () => stubSession({ start: async () => visitOf() }),
+      };
+      const result = await handleExploreStart(host, { config: configPath });
+      assert.equal(result.isError, undefined);
+      assert.doesNotMatch(textOf(result), /map is thin/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -356,6 +408,283 @@ describe("mcp tools", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("explore_findings lists persisted folders", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-findings-"));
+    const folder = join(dir, "findings", "fnd_1_httpError");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, "finding.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: "fnd_1_httpError",
+        kind: "httpError",
+        severity: "critical",
+        message: "HTTP 403 GET /applications",
+        tapePath: join(folder, "replay.log"),
+        stepIndex: 1,
+        url: "http://127.0.0.1:3000/applications",
+      })}\n`,
+    );
+    try {
+      const host: McpHost = { session: stubSession({ outDir: dir }) };
+      const result = await handleExploreFindings(host);
+      assert.equal(result.isError, undefined);
+      assert.match(textOf(result), /fnd_1_httpError/);
+      assert.match(textOf(result), /httpError/);
+      assert.match(textOf(result), /\/applications/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("explore_finding files screenshot ui with hostFinding", async () => {
+    const visit = visitOf();
+    let seen: { line?: string; opts?: { hostFinding?: boolean; severity?: string } } = {};
+    const host: McpHost = {
+      session: stubSession({
+        step: async (line, opts) => {
+          seen = { line, opts };
+          return {
+            ok: true,
+            result: {
+              ok: true,
+              view: visit.view,
+              finding: {
+                schemaVersion: 1,
+                id: "fnd_0_uiIssue",
+                kind: "uiIssue",
+                severity: "major",
+                message: "overlap",
+                tapePath: "t",
+                stepIndex: 0,
+              },
+              findingCreated: true,
+            },
+            visit,
+            newProductFinding: true,
+          };
+        },
+      }),
+    };
+    const result = await handleExploreFinding(host, { message: "cards overlap" });
+    assert.equal(result.isError, undefined);
+    assert.match(textOf(result), /finding: fnd_0_uiIssue/);
+    assert.match(seen.line ?? "", /screenshot ui/);
+    assert.equal(seen.opts?.hostFinding, true);
+    assert.equal(seen.opts?.severity, "major");
+  });
+
+  it("finishExplore is not an error when no session is live", async () => {
+    const result = await finishExplore(createMcpHost(), { report: true });
+    assert.equal(result.isError, undefined);
+    assert.match(textOf(result), /not started/);
+  });
+
+  it("explore_finish writes host summary into the report", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-summary-"));
+    const configPath = join(dir, "clickmonkey.json");
+    const outDir = join(dir, "run");
+    mkdirSync(outDir, { recursive: true });
+    saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/"));
+    const sessionPath = join(outDir, "session.md");
+    const logPath = join(outDir, "log.txt");
+    try {
+      const host: McpHost = {
+        session: stubSession({
+          outDir,
+          configPath,
+          config: emptyConfig("http://127.0.0.1:4173/"),
+          finish: async () => {
+            writeSessionMd({
+              path: sessionPath,
+              startedAt: Date.parse("2026-01-02T03:04:05.000Z"),
+              charter: "walk the form",
+              config: emptyConfig("http://127.0.0.1:4173/"),
+              findings: [],
+              notes: [],
+              goods: [],
+            });
+            writeFileSync(logPath, "open home\n");
+            return emptyResult(sessionPath, logPath);
+          },
+        }),
+      };
+      const result = await handleExploreFinish(host, {
+        summary: "Applications 403 is real; customer XSS rows are leftover --nasty.",
+        extra: "Ignored dirty customer names.",
+      });
+      assert.equal(result.isError, undefined);
+      assert.match(textOf(result), /report:/);
+      assert.equal(host.reported, true);
+      const reportLine = textOf(result)
+        .split("\n")
+        .find((l) => l.startsWith("report: "));
+      assert.ok(reportLine);
+      const mdPath = reportLine.slice("report: ".length);
+      const md = readFileSync(mdPath, "utf8");
+      assert.match(md, /Applications 403 is real/);
+      assert.match(md, /Ignored dirty customer names/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("spec_list lists clickmonkey/specs/ paths from the leash directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-speclist-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/", "fixture"));
+      const specs = specsDir(configPath);
+      mkdirSync(specs, { recursive: true });
+      writeFileSync(
+        join(specs, "add-customer.md"),
+        `# Add customer requires a name\n\n\`\`\`clickmonkey\nopen home\nclick page.go\n\`\`\`\n`,
+      );
+      const host = createMcpHost({ config: configPath });
+      const result = await handleSpecList(host);
+      assert.equal(result.isError, undefined);
+      assert.equal(textOf(result), "clickmonkey/specs/add-customer.md");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("spec_check reports a missing id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-speccheck-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, {
+        ...emptyConfig("http://127.0.0.1:4173/", "fixture"),
+        map: PageModel.parse({
+          schemaVersion: 1,
+          app: "fixture",
+          generation: 0,
+          pages: [
+            {
+              id: "home",
+              path: "/",
+              params: [],
+              ready: { by: "testId", value: "home" },
+              surfaces: [
+                {
+                  id: "page",
+                  kind: "page",
+                  fields: [],
+                  actions: [{ id: "go", by: "testId", value: "go", status: "ok" }],
+                },
+              ],
+            },
+          ],
+        }),
+      });
+      const specs = specsDir(configPath);
+      mkdirSync(specs, { recursive: true });
+      writeFileSync(
+        join(specs, "login.md"),
+        `# Login\n\n\`\`\`clickmonkey\nopen home\nclick page.nope\n\`\`\`\n`,
+      );
+      const host = createMcpHost({ config: configPath });
+      const result = await handleSpecCheck(host, { path: "login.md" });
+      assert.equal(result.isError, true);
+      assert.match(textOf(result), /MISS specs\/login\.md  Login  missing: page\.nope/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("spec_check is ok when every cited id is on the map", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-specok-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, {
+        ...emptyConfig("http://127.0.0.1:4173/", "fixture"),
+        map: PageModel.parse({
+          schemaVersion: 1,
+          app: "fixture",
+          generation: 0,
+          pages: [
+            {
+              id: "home",
+              path: "/",
+              params: [],
+              ready: { by: "testId", value: "home" },
+              surfaces: [
+                {
+                  id: "page",
+                  kind: "page",
+                  fields: [],
+                  actions: [{ id: "go", by: "testId", value: "go", status: "ok" }],
+                },
+              ],
+            },
+          ],
+        }),
+      });
+      const specs = specsDir(configPath);
+      mkdirSync(specs, { recursive: true });
+      writeFileSync(join(specs, "ok.md"), `# Go\n\n\`\`\`clickmonkey\nopen home\nclick page.go\n\`\`\`\n`);
+      const host = createMcpHost({ config: configPath });
+      const result = await handleSpecCheck(host, { path: "ok.md" });
+      assert.equal(result.isError, undefined);
+      assert.match(textOf(result), /OK\s+specs\/ok\.md  Go/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("spec_check errors when the spec is missing, the map is empty, or there is no fence", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-specerr-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/", "fixture"));
+      const host = createMcpHost({ config: configPath });
+      const missing = await handleSpecCheck(host, { path: "nope.md" });
+      assert.equal(missing.isError, true);
+      assert.match(textOf(missing), /spec not found: nope\.md/);
+
+      const specs = specsDir(configPath);
+      mkdirSync(specs, { recursive: true });
+      writeFileSync(join(specs, "empty.md"), "# No fence\n\nJust prose.\n");
+      const noMap = await handleSpecCheck(host, { path: "empty.md" });
+      assert.equal(noMap.isError, true);
+      assert.match(textOf(noMap), /map has no pages \(run inspect\)/);
+
+      saveConfig(configPath, {
+        ...emptyConfig("http://127.0.0.1:4173/", "fixture"),
+        map: PageModel.parse({
+          schemaVersion: 1,
+          app: "fixture",
+          generation: 0,
+          pages: [
+            {
+              id: "home",
+              path: "/",
+              params: [],
+              ready: { by: "testId", value: "home" },
+              surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+            },
+          ],
+        }),
+      });
+      const noFence = await handleSpecCheck(host, { path: "empty.md" });
+      assert.equal(noFence.isError, true);
+      assert.match(textOf(noFence), /NONE specs\/empty\.md  \(no clickmonkey fence\)/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("guide names map, unleash, spec, and replay and does not mention spec_run", () => {
+    assert.match(CLICKMONKEY_GUIDE, /clickmonkey map/);
+    assert.match(CLICKMONKEY_GUIDE, /clickmonkey unleash/);
+    assert.match(CLICKMONKEY_GUIDE, /clickmonkey spec/);
+    assert.match(CLICKMONKEY_GUIDE, /clickmonkey replay/);
+    assert.match(CLICKMONKEY_GUIDE, /explore_start/);
+    assert.match(CLICKMONKEY_GUIDE, /spec_writer/);
+    assert.doesNotMatch(CLICKMONKEY_GUIDE, /spec_run/);
+    assert.ok(CLICKMONKEY_GUIDE.split("\n").length <= 40, "guide should stay short");
   });
 
   it("handlers contain no walk logic", () => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -35,6 +35,7 @@ import { formatExplorePlanItemLine } from "../src/schema/ui.js";
 import { PageModel } from "../src/schema/page-model.js";
 import type { ChatMessage } from "../src/brains/chat.js";
 import { saveConfig } from "../src/persist/config.js";
+import { loadPresence, startPresence } from "../src/persist/presence.js";
 import { Config, emptyConfig } from "../src/schema/config.js";
 import type { View } from "../src/schema/view.js";
 import type { RunState } from "../src/executor/run.js";
@@ -470,7 +471,7 @@ describe("default explore pack", () => {
     assert.match(skills, /quality ledger/);
     assert.match(skills, /Sight is context/);
     assert.match(skills, /Never invent widget ids from Sight/);
-    assert.match(skills, /Prefer in-page buttons/);
+    assert.match(skills, /Prefer in-page controls/);
     assert.match(skills, /In list, sample each filter/);
     assert.match(DEFAULT_EXPLORE_CHARTER, /Explore .+ with .+ to discover/);
   });
@@ -1023,7 +1024,7 @@ describe("createExploreBrain", () => {
     });
     const decision = await brain.decide({ view, stepsUsed: 0 });
     assert.match(prompt, /Mode: form/);
-    assert.match(prompt, /finish the form or local button/);
+    assert.match(prompt, /Finish the form before leaving/);
     assert.equal(decision.mode, "form");
     assert.match(exampleExploreLine(view), /^fill createDialog\.name /);
   });
@@ -1251,6 +1252,39 @@ describe("applyExploreStep", () => {
     assert.equal(ran, 0);
     if (!result.ok) assert.match(result.error, /already a screenshot/);
   });
+
+  it("hostFinding skips first-step screenshot ban", async () => {
+    let ran = 0;
+    const ctx = walkCtx(viewOf());
+    ctx.exec = {
+      ...ctx.exec,
+      runLine: async (line: string) => {
+        if (line.startsWith("open")) {
+          return { ok: true, view: viewOf() };
+        }
+        ran += 1;
+        return {
+          ok: true,
+          view: viewOf({ last: { step: 'screenshot ui "bug"', ok: true } }),
+          finding: {
+            schemaVersion: 1 as const,
+            id: "fnd_0_uiIssue",
+            kind: "uiIssue" as const,
+            severity: "suggestion" as const,
+            message: "bug",
+            tapePath: "t",
+            stepIndex: 0,
+          },
+          findingCreated: true,
+        };
+      },
+    };
+    ctx.stepsUsed = 0;
+    const result = await applyExploreStep(ctx, 'screenshot ui "bug"', { hostFinding: true, severity: "major" });
+    assert.equal(result.ok, true);
+    assert.equal(ran, 1);
+    if (result.ok) assert.equal(result.result.finding?.severity, "major");
+  });
 });
 
 describe("withPriorLast", () => {
@@ -1388,8 +1422,8 @@ describe("writeSessionMd", () => {
         charter: "walk the form",
         config: Config.parse({ url: "http://127.0.0.1/", map: homeMap }),
         findings: [],
-        notes: [],
-        goods: [],
+        notes: ["Empty: tried name"],
+        goods: ["create dialog opened"],
         skills: "chrome is the left nav; billing is under settings",
       });
       const body = readFileSync(path, "utf8");
@@ -1398,7 +1432,56 @@ describe("writeSessionMd", () => {
       assert.match(body, /url: http:\/\/127\.0\.0\.1\//);
       assert.match(body, /walk the form/);
       assert.match(body, /chrome is the left nav/);
+      assert.match(body, /Empty: tried name/);
+      assert.match(body, /create dialog opened/);
     } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("ExploreSession outline", () => {
+  it("addNote and addGood flush presence; finish writes session.md before stop", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "cm-explore-outline-"));
+    const outDir = join(tmp, "out");
+    mkdirSync(outDir);
+    const ctx = walkCtx(viewOf());
+    const session = ExploreSession.attach({
+      state: { ...ctx.state, outDir },
+      exec: ctx.exec,
+      charter: "walk the form",
+      startedAt: Date.parse("2026-01-02T03:04:05.000Z"),
+      seedPageId: "home",
+      config: ctx.config,
+      outDir,
+    });
+    try {
+      startPresence(outDir, { pageId: "home", brain: "explore" });
+      session.addNote("Empty: tried name");
+      session.addGood("create dialog opened");
+      const noted = loadPresence(join(outDir, "presence.json"));
+      assert.equal(noted?.outline?.charter, "walk the form");
+      assert.deepEqual(noted?.outline?.notes, ["Empty: tried name"]);
+      session.setPlan({
+        goal: "Walk invoicing",
+        items: [
+          { id: "1", title: "Empty invoice name", status: "now", stepCount: 0, findingIds: [] },
+          { id: "2", title: "Runtime errors", status: "pending", stepCount: 0, findingIds: [] },
+        ],
+      });
+      assert.equal(loadPresence(join(outDir, "presence.json"))?.outline?.now, "Empty invoice name");
+      session.advancePlan("done");
+      assert.equal(loadPresence(join(outDir, "presence.json"))?.outline?.now, "Runtime errors");
+      const result = await session.finish();
+      const body = readFileSync(result.sessionPath, "utf8");
+      assert.match(body, /Empty: tried name/);
+      assert.match(body, /create dialog opened/);
+      const stopped = loadPresence(join(outDir, "presence.json"));
+      assert.ok(stopped?.stoppedAt);
+      assert.deepEqual(stopped?.outline?.notes, ["Empty: tried name"]);
+      assert.equal(stopped?.outline?.now, "Runtime errors");
+    } finally {
+      await session.abort();
       rmSync(tmp, { recursive: true, force: true });
     }
   });

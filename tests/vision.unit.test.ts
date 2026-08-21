@@ -59,7 +59,7 @@ describe("parseVisualReply", () => {
   });
 
   it("tells the model leftover nasty payloads are content, not a rendering defect", () => {
-    assert.match(VISUAL_PROMPT, /test payloads/);
+    assert.match(VISUAL_PROMPT, /XSS payload text/);
     assert.match(VISUAL_PROMPT, /Do report if that text actually overflows/);
   });
 
@@ -178,7 +178,7 @@ describe("parseVisualReply", () => {
     assert.equal(out.issues[0]?.rule, "scanline");
   });
 
-  it("drops a report only when it quotes a --nasty catalog payload, not the word malicious", () => {
+  it("drops a report when it quotes a --nasty catalog payload or paraphrases XSS/SQLi, not the word malicious", () => {
     assert.equal(
       dropPayloadContentVisual({
         rule: "broken",
@@ -189,7 +189,22 @@ describe("parseVisualReply", () => {
     assert.equal(
       dropPayloadContentVisual({
         rule: "broken",
+        message: "Input field displays XSS payload text instead of placeholder or error state.",
+        where: "Tenant Id input field",
+      }),
+      true,
+    );
+    assert.equal(
+      dropPayloadContentVisual({
+        rule: "broken",
         message: "Listing looks malicious and broken",
+      }),
+      false,
+    );
+    assert.equal(
+      dropPayloadContentVisual({
+        rule: "overflow",
+        message: "XSS payload text overflows the Tenant Id field",
       }),
       false,
     );

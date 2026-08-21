@@ -40,16 +40,26 @@ function splitRef(ref: string, lineNo: number): { surface: string; id: string } 
 /** Parse a fill value: "", quoted string, or bare token (including $VAR). */
 export function parseFillValue(raw: string, lineNo: number): string {
   if (raw === '""' || raw === "''") return "";
-  if (
-    (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) ||
-    (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
-  ) {
+  if (raw.startsWith('"')) {
+    try {
+      const v = JSON.parse(raw) as unknown;
+      if (typeof v === "string") return v;
+    } catch {
+      throw new DslParseError(lineNo, `invalid quoted value ${JSON.stringify(raw)}`);
+    }
+    throw new DslParseError(lineNo, `invalid quoted value ${JSON.stringify(raw)}`);
+  }
+  if (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) {
     return raw.slice(1, -1);
   }
   if (raw.includes(" ") && !raw.startsWith("$")) {
     throw new DslParseError(lineNo, `ambiguous fill value ${JSON.stringify(raw)}; quote it`);
   }
   return raw;
+}
+
+function formatFillValue(value: string): string {
+  return value === "" || /\s/.test(value) ? JSON.stringify(value) : value;
 }
 
 export function parseLine(line: string, lineNo = 1): Step | { comment: string } | null {
@@ -86,6 +96,28 @@ export function parseLine(line: string, lineNo = 1): Step | { comment: string } 
   const expectPath = trimmed.match(/^expect\s+path\s+(\S+)$/);
   if (expectPath?.[1]) return { kind: "expectPath", path: expectPath[1] };
 
+  const expectPageText = trimmed.match(/^expect\s+text\s+(.+)$/);
+  if (expectPageText?.[1] !== undefined) {
+    return { kind: "expectPageText", text: parseFillValue(expectPageText[1], lineNo) };
+  }
+
+  const expectText = trimmed.match(/^expect\s+(\S+)\s+text\s+(.+)$/);
+  if (expectText?.[1] && expectText[2] !== undefined) {
+    const { surface, id } = splitRef(expectText[1], lineNo);
+    return { kind: "expectText", surface, id, text: parseFillValue(expectText[2], lineNo) };
+  }
+
+  const expectValue = trimmed.match(/^expect\s+(\S+)\s+value\s+(.+)$/);
+  if (expectValue?.[1] && expectValue[2] !== undefined) {
+    const { surface, id } = splitRef(expectValue[1], lineNo);
+    return { kind: "expectValue", surface, id, value: parseFillValue(expectValue[2], lineNo) };
+  }
+
+  const expectHidden = trimmed.match(/^expect\s+(\S+)\s+hidden$/);
+  if (expectHidden?.[1]) {
+    return { kind: "expectHidden", surface: expectHidden[1] };
+  }
+
   if (trimmed === "screenshot") return { kind: "screenshot" };
   const shotUi = trimmed.match(/^screenshot\s+ui(?:\s+(.+))?$/);
   if (shotUi) {
@@ -111,13 +143,21 @@ export function formatStep(step: Step): string {
     case "click":
       return step.nav ? `click ${step.surface}.${step.id} nav` : `click ${step.surface}.${step.id}`;
     case "fill": {
-      const v = step.value === "" ? '""' : /\s/.test(step.value) ? JSON.stringify(step.value) : step.value;
+      const v = formatFillValue(step.value);
       return `fill ${step.surface}.${step.id} ${v}`;
     }
     case "expectInvalid":
       return `expect ${step.surface}.${step.id} invalid`;
     case "expectVisible":
       return `expect ${step.surface} visible`;
+    case "expectHidden":
+      return `expect ${step.surface} hidden`;
+    case "expectText":
+      return `expect ${step.surface}.${step.id} text ${JSON.stringify(step.text)}`;
+    case "expectValue":
+      return `expect ${step.surface}.${step.id} value ${formatFillValue(step.value)}`;
+    case "expectPageText":
+      return `expect text ${JSON.stringify(step.text)}`;
     case "expectPath":
       return `expect path ${step.path}`;
     case "screenshot": {

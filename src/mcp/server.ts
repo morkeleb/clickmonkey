@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import {
   createMcpHost,
+  finishExplore,
   registerMcpPrompts,
   registerMcpResources,
   registerMcpTools,
@@ -29,9 +30,13 @@ export async function runMcp(opts?: { config?: string }): Promise<void> {
     process.stdin.once("end", stop);
     process.stdin.once("close", stop);
   });
-  if (host.session) {
+  if ((host.session?.started && !host.reported) || (host.pendingReport && !host.reported)) {
     try {
-      await host.session.finish();
+      const result = await finishExplore(host, { report: true });
+      if (result.isError) {
+        const text = result.content.find((c) => c.type === "text");
+        console.error(text && "text" in text ? text.text : "explore finish failed");
+      }
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
     }

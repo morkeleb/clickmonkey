@@ -97,6 +97,14 @@ export {
   hoppedStepIndexes,
   replayableSteps,
   keysFromSteps,
+  listSpecFiles,
+  checkSpecFile,
+  formatCheckReport,
+  runSpecs,
+  formatSpecResults,
+  formatSpecTable,
+  surveyorErrorCount,
+  surveyorShouldFail,
 } from "./playbooks/index.js";
 export type {
   EmptyRequiredResult,
@@ -107,6 +115,10 @@ export type {
   ExploreWalkCtx,
   ExploreWalkOpts,
   ReplayReportResult,
+  SpecCheckCase,
+  SpecCheckFileResult,
+  SpecRunCase,
+  SpecRunResult,
 } from "./playbooks/index.js";
 export { extractClickmonkeyFences, isFindingsReport } from "./reports/fences.js";
 export {
@@ -146,6 +158,7 @@ export {
   inPageActions,
   stayActions,
   isPageHop,
+  isRecordRowAction,
   looksLikeNavWidget,
   sharedChromeIds,
   formSubmitAction,

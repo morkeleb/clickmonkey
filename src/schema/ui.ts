@@ -145,6 +145,7 @@ export const UiExploreOutline = z
     charter: z.string().min(1),
     now: z.string().min(1).optional(),
     notes: z.array(z.string().min(1)).max(12).default([]),
+    goods: z.array(z.string().min(1)).max(12).default([]),
     plan: UiExplorePlan.optional(),
   })
   .strict();

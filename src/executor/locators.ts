@@ -96,22 +96,34 @@ async function isDisabled(el: PwLocator): Promise<boolean> {
     .catch(() => true);
 }
 
-async function isPresentOne(el: PwLocator, page: Page): Promise<boolean> {
+/** Visible, enabled, painted. Below-the-fold is still interactable. */
+async function isInteractable(el: PwLocator): Promise<boolean> {
   if (!(await el.isVisible().catch(() => false))) return false;
   if (await isDisabled(el)) return false;
   const box = await el.boundingBox().catch(() => null);
-  if (!box || box.width < 2 || box.height < 2) return false;
+  return Boolean(box && box.width >= 2 && box.height >= 2);
+}
+
+async function inViewport(el: PwLocator, page: Page): Promise<boolean> {
+  const box = await el.boundingBox().catch(() => null);
   const vp = page.viewportSize();
-  if (!vp) return true;
+  if (!box || !vp) return true;
   return !isOffscreen(box, vp);
 }
 
-async function pickActableNow(loc: PwLocator, page: Page): Promise<PwLocator | undefined> {
+async function pickActableNow(
+  loc: PwLocator,
+  page: Page,
+  scroll: boolean,
+): Promise<PwLocator | undefined> {
   const n = await loc.count().catch(() => 0);
   let covered: PwLocator | undefined;
   for (let i = 0; i < n; i++) {
     const el = loc.nth(i);
-    if (!(await isPresentOne(el, page))) continue;
+    if (!(await isInteractable(el))) continue;
+    if (scroll) await el.scrollIntoViewIfNeeded().catch(() => undefined);
+    if (!(await isInteractable(el))) continue;
+    if (scroll && !(await inViewport(el, page))) continue;
     if (!(await widgetIsCovered(el))) return el;
     covered ??= el;
   }
@@ -119,19 +131,21 @@ async function pickActableNow(loc: PwLocator, page: Page): Promise<PwLocator | u
 }
 
 /**
- * First match that is visible, enabled, and on-screen.
- * Duplicates are allowed — prefer an uncovered hit.
- * Clicks/fills pass timeoutMs so a disabled login button can enable.
+ * First match that is visible and enabled.
+ * Clicks/fills pass `scroll` so a footer below the viewport is brought on-screen
+ * before the coverage check. View listing does not scroll.
+ * `timeoutMs` waits for a disabled control to enable.
  */
 export async function pickActable(
   loc: PwLocator,
   page: Page,
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; scroll?: boolean },
 ): Promise<PwLocator | undefined> {
   const timeoutMs = opts?.timeoutMs ?? 0;
+  const scroll = Boolean(opts?.scroll);
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const hit = await pickActableNow(loc, page);
+    const hit = await pickActableNow(loc, page, scroll);
     if (hit) return hit;
     const remaining = deadline - Date.now();
     if (remaining <= 0) return undefined;
@@ -158,8 +172,10 @@ export async function explainActableMiss(loc: PwLocator, page: Page): Promise<Ac
       reasons.add("tiny");
       continue;
     }
+    await el.scrollIntoViewIfNeeded().catch(() => undefined);
+    const after = await el.boundingBox().catch(() => null);
     const vp = page.viewportSize();
-    if (vp && isOffscreen(box, vp)) reasons.add("offscreen");
+    if (after && vp && isOffscreen(after, vp)) reasons.add("offscreen");
   }
   if (reasons.has("disabled")) return "disabled";
   if (reasons.has("offscreen")) return "offscreen";
@@ -186,13 +202,17 @@ export async function isPresentWidget(loc: PwLocator, page: Page): Promise<boole
   return (await pickActable(loc, page)) !== undefined;
 }
 
-/** At least one present match is not covered. */
+/** Visible and enabled, including below the fold. Does not scroll the page. */
 export async function isLiveWidget(loc: PwLocator, page: Page): Promise<boolean> {
   const n = await loc.count().catch(() => 0);
   for (let i = 0; i < n; i++) {
     const el = loc.nth(i);
-    if (!(await isPresentOne(el, page))) continue;
-    if (!(await widgetIsCovered(el))) return true;
+    if (!(await isInteractable(el))) continue;
+    if (await inViewport(el, page)) {
+      if (!(await widgetIsCovered(el))) return true;
+      continue;
+    }
+    return true;
   }
   return false;
 }

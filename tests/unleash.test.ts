@@ -14,6 +14,7 @@ import {
   isDismissAction,
   isLeaveAction,
   isPageHop,
+  isRecordRowAction,
   isWriteAction,
   looksLikeNavWidget,
   sharedChromeIds,
@@ -245,13 +246,44 @@ describe("unleash brain", () => {
     }
   });
 
-  it("treats role=link and minted link_ ids as navigation, not stay", () => {
-    assert.equal(looksLikeNavWidget({ id: "open_row", role: "link" }), true);
-    assert.equal(looksLikeNavWidget({ id: "link_customers" }), true);
+  it("treats nav landmarks and menu items as chrome, not in-page links", () => {
+    assert.equal(looksLikeNavWidget({ id: "link_new_migration", role: "link" }), false);
+    assert.equal(looksLikeNavWidget({ id: "link_customers" }), false);
+    assert.equal(looksLikeNavWidget({ id: "link_customers", nav: true }), true);
     assert.equal(looksLikeNavWidget({ id: "menuitem_profile" }), true);
+    assert.equal(looksLikeNavWidget({ id: "profile", role: "menuitem" }), true);
     assert.equal(looksLikeNavWidget({ id: "button_save_draft" }), false);
+    assert.equal(isRecordRowAction({ id: "link_row_1" }), true);
+    assert.equal(isRecordRowAction({ id: "customers_row_ab12" }), true);
+    assert.equal(isRecordRowAction({ id: "customer_detail_action_customer_flow_setup" }), false);
     assert.equal(isPageHop({ id: "open_row", opens: "row_1" }, undefined, ["row_1"]), true);
     assert.equal(isPageHop({ id: "open_create", opens: "create" }, undefined, ["home"]), false);
+  });
+
+  it("picks an in-page New migration link hop ahead of sidebar chrome", () => {
+    const view = viewOf({
+      page: "customers_id1",
+      pages: ["customers_id1", "customers_id1_flows_new", "home"],
+      actions: [
+        { id: "link_home", nav: true, role: "link", opens: "home" },
+        {
+          id: "customer_detail_action_customer_flow_setup",
+          label: "New migration",
+          opens: "customers_id1_flows_new",
+        },
+        { id: "link_new_migration", role: "link", label: "New migration" },
+      ],
+    });
+    assert.deepEqual(
+      stayActions(view).map((a) => a.id).sort(),
+      ["customer_detail_action_customer_flow_setup", "link_new_migration"],
+    );
+    for (let i = 0; i < 20; i++) {
+      assert.match(
+        decideUnleash({ view, stepsUsed: i }).line,
+        /customer_detail_action_customer_flow_setup|link_new_migration/,
+      );
+    }
   });
 
   it("with writePolicy allow fills empty fields then submits", () => {

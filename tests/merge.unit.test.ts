@@ -125,6 +125,15 @@ describe("mergePageModel", () => {
     assert.deepEqual(check.missing, ["createDialog.name"]);
   });
 
+  it("offlineIdsExist accepts a bare surface id", () => {
+    const model = loadHome();
+    const check = offlineIdsExist(model, ["createDialog", "page", "home"]);
+    assert.equal(check.ok, true, check.missing.join(","));
+    const missing = offlineIdsExist(model, ["nope"]);
+    assert.equal(missing.ok, false);
+    assert.deepEqual(missing.missing, ["nope"]);
+  });
+
   it("marks leftover label-derived actions as drift and mints a new id for the new name", () => {
     const model = loadHome();
     surface(model, "page").actions.push({

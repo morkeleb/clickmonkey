@@ -131,7 +131,8 @@ export function offlineIdsExist(
 
 function keyExists(model: PageModel, key: string): boolean {
   for (const page of model.pages) {
-    if (key === readyKey(page.id)) return true;
+    if (key === readyKey(page.id) || key === page.id) return true;
+    if (page.surfaces.some((s) => s.id === key)) return true;
   }
   const dot = key.lastIndexOf(".");
   if (dot <= 0 || dot === key.length - 1) return false;

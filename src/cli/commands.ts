@@ -13,7 +13,7 @@ import { replaysDir, workspaceDir } from "../persist/workspace.js";
 import { writeBundle } from "../ui/bundle.js";
 import { isFindingsReport } from "../reports/fences.js";
 import { renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
-import { emptyConfig, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
+import { emptyConfig, requirePageModel, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
 import { inspectAndSaveConfig } from "../surveyor/inspect.js";
@@ -29,6 +29,12 @@ import {
   runExplore,
   ExploreError,
   runUnleash,
+  listSpecFiles,
+  checkSpecFile,
+  formatCheckReport,
+  runSpecs,
+  formatSpecTable,
+  shouldFailOnFindings,
   EXPLORE_DEFAULT_MINUTES,
   EXPLORE_DEFAULT_STEPS,
   MAP_CLI_STEPS,
@@ -459,6 +465,63 @@ export async function cmdReport(opts: {
     process.stdout.write(`${written.mdPath}\n`);
   }
   return written.caseCount > 0 ? EXIT_FINDINGS : EXIT_OK;
+}
+
+export async function cmdSpec(
+  file: string | undefined,
+  opts: {
+    config?: string;
+    url?: string;
+    out?: string;
+    headed?: boolean;
+    timeout?: string;
+    verbose?: boolean;
+    check?: boolean;
+    failOnFindings?: boolean;
+  },
+): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  const config = opts.check
+    ? loadConfigOrExit(configPath)
+    : withUrl(loadConfigOrExit(configPath), opts.url);
+  const files = listSpecFiles(configPath, file);
+  if (files.length === 0) {
+    fail(EXIT_USAGE, file ? `spec not found: ${file}` : "no spec files under clickmonkey/specs/");
+  }
+  if (config.map.pages.length === 0) fail(EXIT_USAGE, "map has no pages (run inspect)");
+  if (opts.check) {
+    try {
+      const model = requirePageModel(config.map);
+      const results = files.map((filePath) => checkSpecFile(model, filePath));
+      process.stdout.write(formatCheckReport(results));
+      const missed = results.some((r) => r.cases.some((c) => c.missing.length > 0));
+      return missed ? EXIT_FINDINGS : EXIT_OK;
+    } catch (err) {
+      fail(EXIT_USAGE, errMessage(err));
+    }
+  }
+  const outDir = resolveOutDir(opts.out, configPath);
+  mkdirSync(outDir, { recursive: true });
+  try {
+    const result = await runSpecs({
+      config,
+      configPath,
+      outDir,
+      files,
+      headed: opts.headed,
+      timeout: parseTimeout(opts.timeout),
+      verbose: opts.verbose,
+    });
+    process.stdout.write(formatSpecTable(result.cases));
+    const failFindings = shouldFailOnFindings(result.ok, result.findingErrors, Boolean(opts.failOnFindings));
+    if (failFindings) {
+      process.stdout.write(`FAIL --fail-on-findings (${result.findingErrors} errors)\n`);
+    }
+    process.stdout.write(`${result.mdPath}\n`);
+    return result.ok && !failFindings ? EXIT_OK : EXIT_FINDINGS;
+  } catch (err) {
+    fail(EXIT_FINDINGS, errMessage(err));
+  }
 }
 
 export async function cmdReplay(

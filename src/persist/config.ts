@@ -4,6 +4,7 @@ import { emptyDraft, PageModelDraft } from "../schema/page-model.js";
 import { applyMissingPageDescriptions } from "../surveyor/describe.js";
 import { mergeTrees } from "../surveyor/merge.js";
 import { withFileLock } from "./lock.js";
+import { applyDevOrigin, readDevOrigin } from "./dev-origin.js";
 import { ensureWorkspace, mapPath } from "./workspace.js";
 
 function writeJson(path: string, value: unknown): void {
@@ -50,13 +51,29 @@ export function loadConfig(path: string): Config {
     map = emptyDraft();
   }
   applyMissingPageDescriptions(map.pages);
-  return Config.parse({ ...leash, map });
+  const url = applyDevOrigin(leash.url, readDevOrigin(path));
+  return Config.parse({ ...leash, url, map });
 }
 
 /** Write the leash. Seeds `clickmonkey/map.json` when that file is missing or empty. */
-export function saveConfig(path: string, config: Config): void {
+export function saveConfig(
+  path: string,
+  config: Config,
+  opts?: { persistUrl?: boolean },
+): void {
   ensureWorkspace(path);
-  writeJson(path, leashPayload(config));
+  let url = config.url;
+  if (!opts?.persistUrl && existsSync(path)) {
+    try {
+      const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+      const diskUrl =
+        raw && typeof raw === "object" && "url" in raw ? (raw as { url: unknown }).url : undefined;
+      if (typeof diskUrl === "string") url = diskUrl;
+    } catch {
+      // keep config.url
+    }
+  }
+  writeJson(path, leashPayload({ ...config, url }));
   const shared = mapPath(path);
   withFileLock(shared, () => {
     if (!existsSync(shared)) {

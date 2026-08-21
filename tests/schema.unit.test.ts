@@ -196,6 +196,41 @@ click page.link_pipelines
     );
   });
 
+  it("round-trips expect text/value/hidden lines", () => {
+    const lines = [
+      'expect text "Saved"',
+      'expect foo.bar text "Hello world"',
+      'expect foo.bar value ""',
+      "expect createDialog hidden",
+    ];
+    for (const line of lines) {
+      const step = parseLine(line, 1);
+      assert.ok(step && !("comment" in step));
+      assert.equal(formatStep(step), line);
+      assert.deepEqual(parseLine(formatStep(step), 1), step);
+    }
+    assert.deepEqual(parseLine('expect text "Saved"', 1), { kind: "expectPageText", text: "Saved" });
+    assert.deepEqual(parseLine('expect foo.bar text "Hello world"', 1), {
+      kind: "expectText",
+      surface: "foo",
+      id: "bar",
+      text: "Hello world",
+    });
+    const quoted = formatStep({ kind: "expectPageText", text: 'Say "hi"' });
+    assert.equal(quoted, String.raw`expect text "Say \"hi\""`);
+    assert.deepEqual(parseLine(quoted, 1), { kind: "expectPageText", text: 'Say "hi"' });
+    assert.deepEqual(parseLine('expect foo.bar value ""', 1), {
+      kind: "expectValue",
+      surface: "foo",
+      id: "bar",
+      value: "",
+    });
+    assert.deepEqual(parseLine("expect createDialog hidden", 1), {
+      kind: "expectHidden",
+      surface: "createDialog",
+    });
+  });
+
   it("round-trips screenshot lines", () => {
     assert.deepEqual(parseLine("screenshot", 1), { kind: "screenshot" });
     assert.equal(formatStep({ kind: "screenshot" }), "screenshot");

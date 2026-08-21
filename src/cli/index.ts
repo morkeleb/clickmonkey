@@ -12,6 +12,7 @@ import {
   cmdPlaybook,
   cmdReport,
   cmdReplay,
+  cmdSpec,
   cmdStep,
   cmdUi,
   cmdUnleash,
@@ -43,6 +44,8 @@ try {
       "quality-full": { type: "boolean" },
       port: { type: "string" },
       "no-open": { type: "boolean" },
+      check: { type: "boolean" },
+      "fail-on-findings": { type: "boolean" },
     },
   });
 
@@ -74,6 +77,8 @@ try {
     qualityFull: Boolean(values["quality-full"]),
     port: typeof values.port === "string" ? values.port : undefined,
     noOpen: Boolean(values["no-open"]),
+    check: Boolean(values.check),
+    failOnFindings: Boolean(values["fail-on-findings"]),
   };
 
   const run = async (): Promise<number> => {
@@ -100,6 +105,8 @@ try {
         return cmdReport(flags);
       case "replay":
         return cmdReplay(positionals[1], flags);
+      case "spec":
+        return cmdSpec(positionals[1], flags);
       case "compact":
         return cmdCompact(positionals[1], { out: flags.out });
       case "bundle":

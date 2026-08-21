@@ -278,6 +278,64 @@ describe("findings report", () => {
     assert.match(md, /\[ \] Reports — never started/);
   });
 
+  it("uses host summary as the Summary body", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: ["r"],
+      },
+      "/tmp/findings.md",
+      undefined,
+      "Empty invoice name is the main risk.",
+    );
+    assert.match(md, /^## Summary\n\nEmpty invoice name is the main risk\./m);
+    assert.doesNotMatch(md, /\d+ findings? from \d+ runs?/);
+  });
+
+  it("renders extra before Appendix", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: ["r"],
+        extra: "Host digest of the walk.",
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /^## Extra$/m);
+    assert.match(md, /Host digest of the walk\./);
+    const extraAt = md.indexOf("## Extra");
+    const appendixAt = md.indexOf("## Appendix");
+    assert.ok(extraAt > 0 && extraAt < appendixAt, "extra before appendix");
+  });
+
+  it("renders positive observations from outline goods", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: ["r"],
+        outlines: [
+          {
+            runId: "r",
+            outline: {
+              charter: "walk invoicing",
+              notes: [],
+              goods: ["required name blocks submit"],
+            },
+          },
+        ],
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /\*\*Positive observations:\*\*/);
+    assert.match(md, /required name blocks submit/);
+  });
+
   it("attaches url and path from hops after the step starts", () => {
     const root = mkdtempSync(join(tmpdir(), "cm-rep-ctx-"));
     const runDir = join(root, "runs", "20260818T000000Z-hop");

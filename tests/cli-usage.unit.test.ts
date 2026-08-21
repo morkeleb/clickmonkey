@@ -35,13 +35,14 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stderr, /Unknown command: xyzzy/);
   });
 
-  it("lists map, unleash, explore and report in usage", () => {
+  it("lists map, unleash, explore, spec and report in usage", () => {
     const result = run([]);
     assert.match(result.stdout, /map/);
     assert.match(result.stdout, /unleash/);
     assert.match(result.stdout, /explore/);
     assert.match(result.stdout, /^\s+mcp\s/m);
     assert.match(result.stdout, /report/);
+    assert.match(result.stdout, /^\s+spec\s/m);
     assert.match(result.stdout, /^\s+ui\s/m);
     assert.match(result.stdout, /^\s+bundle\s/m);
     assert.match(result.stdout, /--verbose/);

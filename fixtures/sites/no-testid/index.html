@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>No testids</title>
+  </head>
+  <body>
+    <main>
+      <h1>Shop</h1>
+      <button type="button">Create</button>
+      <dialog aria-label="Create">
+        <form>
+          <label>Name <input name="item" required /></label>
+          <button type="submit">Submit</button>
+        </form>
+      </dialog>
+    </main>
+    <script>
+      const dialog = document.querySelector("dialog");
+      document.querySelector("button").addEventListener("click", () => {
+        dialog.showModal();
+      });
+      dialog.querySelector("form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        dialog.close();
+      });
+    </script>
+  </body>
+</html>

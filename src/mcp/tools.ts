@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { defaultExploreSkills, EXPLORE_PLAN_SYSTEM, parseExplorePlanReply } from "../brains/explore.js";
@@ -7,6 +7,7 @@ import { listCatalogs, pickNasty, SAMPLE_MAX_CHARS, samplePayloads } from "../br
 import { resolveConfigPath, resolveOutDir } from "../cli/common.js";
 import { loadConfig, saveConfig } from "../persist/config.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
+import { collectFindingCases } from "../persist/runs.js";
 import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
 import { mapPath } from "../persist/workspace.js";
 import {
@@ -16,13 +17,14 @@ import {
   type ExploreStepOpts,
   type ExploreStepResult,
 } from "../playbooks/explore-session.js";
+import { checkSpecFile, formatCheckReport, listSpecFiles } from "../playbooks/spec.js";
 import { renderQualityDigest, writeRunsReport } from "../reports/findings-report.js";
 import type { Config } from "../schema/config.js";
-import { emptyConfig } from "../schema/config.js";
+import { emptyConfig, requirePageModel } from "../schema/config.js";
 import { formatStep } from "../schema/dsl.js";
-import type { Finding } from "../schema/finding.js";
+import type { Finding, FindingSeverity } from "../schema/finding.js";
 import type { Page } from "../schema/page-model.js";
-import { formatExplorePlanItemLine, type UiExplorePlan } from "../schema/ui.js";
+import { formatExplorePlanItemLine, type UiExploreOutline, type UiExplorePlan } from "../schema/ui.js";
 import type { View } from "../schema/view.js";
 import type { ExploreVisit } from "../schema/visit.js";
 import { ledgerOrigin, originOfHref } from "../surveyor/ready.js";
@@ -61,9 +63,68 @@ export type McpHost = {
   configFlag?: string;
   session?: McpSession;
   createSession?: () => McpSession;
+  /** True after this process wrote a findings report for the current session. */
+  reported?: boolean;
+  pendingReport?: {
+    configPath: string;
+    config: Config;
+    outDir: string;
+    summary?: string;
+    extra?: string;
+    outlines?: Array<{ runId: string; outline: UiExploreOutline }>;
+  };
 };
 
-const PROMPT_NAMES = "prompts: explore_tester, explore_plan, explore_report";
+const HOST_TEXT_MAX = 8000;
+const FINDING_SEVERITIES = new Set<FindingSeverity>(["major", "minor", "suggestion"]);
+
+function clipHostText(text: string | undefined): string | undefined {
+  const one = text?.trim();
+  if (!one) return undefined;
+  if (one.length <= HOST_TEXT_MAX) return one;
+  return `${one.slice(0, HOST_TEXT_MAX - 1)}…`;
+}
+
+const PROMPT_NAMES = "prompts: clickmonkey, explore_tester, explore_plan, explore_report, spec_writer";
+
+/** Product menu for MCP hosts. Keep short — not a second README. */
+export const CLICKMONKEY_GUIDE = [
+  "# ClickMonkey",
+  "",
+  "The host LLM walks via MCP. Map, unleash, spec, and replay are CLI.",
+  "Read clickmonkey://map for the sitemap. This text is also prompt `clickmonkey`.",
+  "",
+  "## Modes",
+  "",
+  "- **Map** — CLI `clickmonkey map`. Fog of war, navigate only. Run this when the map is thin (empty or one page). Never fills or submits.",
+  "- **Unleash** — CLI `clickmonkey unleash`. Stochastic click/fill/submit; harvests quality. `--nasty` only on a site you own.",
+  "- **Explore** — MCP `explore_start` … `explore_finish`. Charter-driven. You are the brain. Skills: prompts explore_tester, explore_plan, explore_report.",
+  "- **Spec** — freeze a compact tape into `clickmonkey/specs/*.md` (prompt spec_writer). Validate with spec_check or `clickmonkey spec --check`. Play in CI with CLI `clickmonkey spec`. Not MCP.",
+  "- **Replay** — CLI `clickmonkey replay`. Comparison vs a findings report, not a new walk.",
+  "",
+  "## Leash",
+  "",
+  "- Create with `explore_init` or `clickmonkey init --url …` (clickmonkey.json + clickmonkey/).",
+  "- Fence (stay on-app) and intro (login) live in the leash, not in specs.",
+  "- Commit clickmonkey.json, clickmonkey/map.json, clickmonkey/specs/, clickmonkey/explore-context.md.",
+  "- Ignore clickmonkey/runs/, replays/, reports/, bundle/.",
+  "",
+  "## Explore loop",
+  "",
+  "explore_start (charter) → explore_set_plan from sitemap cards → explore_step / nasty_fill → explore_note / explore_good / explore_finding → explore_finish with summary.",
+  "After a good walk, freeze the tape (spec_writer). Do not invent widget ids.",
+  "MCP does not drive map, unleash, spec, or replay. Shell the CLI, or ask the human.",
+].join("\n");
+
+const SPEC_WRITER_PROMPT = [
+  "Specs live in clickmonkey/specs/*.md next to the leash (clickmonkey.json).",
+  "The playable part is ```clickmonkey fences only. mermaid, photos, and prose stay outside the fence.",
+  "Legal DSL: open <page>, click surface.id, fill surface.id <value>, expect surface.id invalid, expect surface.id text|value \"…\", expect surface visible|hidden, expect path /…, expect text \"…\".",
+  "Ids only from the map (clickmonkey://map). Intro belongs in clickmonkey.json, not the fence.",
+  "Validate with spec_check or `clickmonkey spec --check` before claiming done.",
+  "The host writes the markdown file. Do not invent widget ids.",
+  "After a good MCP explore, freeze the compact tape into a spec.",
+].join("\n");
 
 const NASTY_WARNING =
   "For a site you own (your staging). Do not point it at anyone else's production.";
@@ -134,12 +195,22 @@ function formatVisitText(visit: ExploreVisit, session?: McpSession): string {
   return `${header}\n\n${visit.formatted}`;
 }
 
-function startExtras(visit: ExploreVisit): string {
-  return [
+const THIN_MAP_PAGES = 2;
+
+function startExtras(visit: ExploreVisit, pageCount: number): string {
+  const lines = [
     `Legal open ids: ${visit.legalOpen.join(", ") || "(none)"}`,
     "sitemap: clickmonkey://map",
+    "guide: clickmonkey://guide",
     PROMPT_NAMES,
-  ].join("\n");
+  ];
+  if (pageCount < THIN_MAP_PAGES) {
+    const noun = pageCount === 1 ? "page" : "pages";
+    lines.push(
+      `map is thin (${pageCount} ${noun}). Run \`clickmonkey map\` (CLI) to grow it before exploring.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 function pngContent(path: string): McpContent {
@@ -202,7 +273,9 @@ export async function handleExploreStart(
       skills: args.skills,
       brainName: "mcp",
     });
-    return textResult(`${formatVisitText(visit, session)}\n\n${startExtras(visit)}`);
+    host.reported = false;
+    host.pendingReport = undefined;
+    return textResult(`${formatVisitText(visit, session)}\n\n${startExtras(visit, config.map.pages.length)}`);
   } catch (err) {
     if (session.started) {
       try {
@@ -328,15 +401,119 @@ export async function handleExploreQuality(host: McpHost): Promise<McpToolResult
   return textResult(lines.join("\n") || `no quality ledger for ${path}`);
 }
 
-export async function handleExploreFinish(
+export async function handleExploreFindings(host: McpHost): Promise<McpToolResult> {
+  const session = requireLive(host);
+  if (isToolResult(session)) return session;
+  return textResult(formatFindingsList(session.outDir));
+}
+
+function formatFindingsList(outDir: string | undefined): string {
+  if (!outDir) return "(none)";
+  const cases = collectFindingCases([outDir]);
+  if (cases.length === 0) return "(none)";
+  return cases
+    .map((c) => {
+      const path = pathOfHref(c.url ?? c.finding.url) ?? c.pageId ?? "";
+      const shot = c.screenshotPath
+        ? relative(outDir, c.screenshotPath).split("\\").join("/")
+        : "(none)";
+      const msg = clipLine(c.finding.message, 160);
+      return `${c.finding.id}\t${c.finding.kind}\t${c.severity}\t${path || "(none)"}\t${shot}\t${msg}`;
+    })
+    .join("\n");
+}
+
+function pathOfHref(href: string | undefined): string | undefined {
+  if (!href) return undefined;
+  try {
+    const path = new URL(href).pathname;
+    return path === "" ? "/" : path;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function handleExploreFinding(
   host: McpHost,
-  args: { report?: boolean },
+  args: { message: string; severity?: string },
 ): Promise<McpToolResult> {
   const session = requireLive(host);
   if (isToolResult(session)) return session;
+  const message = args.message.trim();
+  if (!message) return textResult("message is required", true);
+  const severityRaw = args.severity?.trim();
+  const severity =
+    severityRaw && FINDING_SEVERITIES.has(severityRaw as FindingSeverity)
+      ? (severityRaw as FindingSeverity)
+      : "major";
+  if (severityRaw && severityRaw !== severity) {
+    return textResult("severity must be major, minor, or suggestion", true);
+  }
+  const line = formatStep({ kind: "screenshot", ui: true, label: message });
+  let stepped: ExploreStepResult;
+  try {
+    stepped = await session.step(line, { hostFinding: true, severity });
+  } catch (err) {
+    return textResult(errText(err), true);
+  }
+  const visitText = formatVisitText(stepped.visit, session);
+  if (!stepped.ok) return textResult(`${stepped.error}\n\n${visitText}`, true);
+  const id = stepped.result.finding?.id ?? "(none)";
+  return textResult(`finding: ${id}\n${visitText}`);
+}
+
+async function flushPendingReport(host: McpHost): Promise<McpToolResult> {
+  const pending = host.pendingReport;
+  if (!pending) return textResult("explore session is not started", true);
+  try {
+    const written = await writeRunsReport({
+      configPath: pending.configPath,
+      config: pending.config,
+      runDirs: [pending.outDir],
+      ...(pending.summary ? { summary: pending.summary } : {}),
+      ...(pending.extra ? { extra: pending.extra } : {}),
+      ...(pending.outlines ? { outlines: pending.outlines } : {}),
+      onBrainError: (message) => console.error(`brain skipped: ${message}`),
+    });
+    host.reported = true;
+    host.pendingReport = undefined;
+    return textResult(`report: ${written.mdPath}`);
+  } catch (err) {
+    return textResult(errText(err), true);
+  }
+}
+
+/** Finish a live session. No-op (ok) when nothing is started — used on MCP disconnect. */
+export async function finishExplore(
+  host: McpHost,
+  args: { report?: boolean; summary?: string; extra?: string } = {},
+): Promise<McpToolResult> {
+  const session = liveSession(host);
+  if (!session) {
+    if (args.report !== false && host.pendingReport) return flushPendingReport(host);
+    return textResult("explore session is not started");
+  }
   const configPath = session.configPath ?? configPathOf(host);
   const outDir = session.outDir;
   const config = session.config;
+  const runId = runIdOf(session);
+  const charter = session.charter?.trim();
+  const outlines =
+    charter && runId
+      ? [
+          {
+            runId,
+            outline: {
+              charter,
+              notes: [...(session.notes ?? [])],
+              goods: [...(session.goods ?? [])],
+              ...(session.plan ? { plan: session.plan } : {}),
+            },
+          },
+        ]
+      : undefined;
+  const summary = clipHostText(args.summary);
+  const extra = clipHostText(args.extra);
   let result: ExploreResult;
   try {
     result = await session.finish();
@@ -353,19 +530,44 @@ export async function handleExploreFinish(
         return textResult(`${lines.join("\n")}\n${errText(err)}`, true);
       }
     }
+    const pending = {
+      configPath,
+      config: leash,
+      outDir,
+      ...(summary ? { summary } : {}),
+      ...(extra ? { extra } : {}),
+      ...(outlines ? { outlines } : {}),
+    };
     try {
       const written = await writeRunsReport({
-        configPath,
-        config: leash,
-        runDirs: [outDir],
+        configPath: pending.configPath,
+        config: pending.config,
+        runDirs: [pending.outDir],
+        ...(pending.summary ? { summary: pending.summary } : {}),
+        ...(pending.extra ? { extra: pending.extra } : {}),
+        ...(pending.outlines ? { outlines: pending.outlines } : {}),
         onBrainError: (message) => console.error(`brain skipped: ${message}`),
       });
+      host.reported = true;
+      host.pendingReport = undefined;
       lines.push(`report: ${written.mdPath}`);
     } catch (err) {
+      host.pendingReport = pending;
       return textResult(`${lines.join("\n")}\n${errText(err)}`, true);
     }
   }
   return textResult(lines.join("\n"));
+}
+
+export async function handleExploreFinish(
+  host: McpHost,
+  args: { report?: boolean; summary?: string; extra?: string },
+): Promise<McpToolResult> {
+  if (!liveSession(host)) {
+    if (args.report !== false && host.pendingReport) return flushPendingReport(host);
+    return textResult("explore session is not started", true);
+  }
+  return finishExplore(host, args);
 }
 
 export async function handleNastyList(): Promise<McpToolResult> {
@@ -396,6 +598,44 @@ export async function handleNastyFill(host: McpHost, args: { id?: string }): Pro
   }
   const line = formatStep({ kind: "fill", surface: view.surface, id: field.id, value: pickNasty(field.type) });
   return handleExploreStep(host, { line });
+}
+
+export async function handleSpecList(host: McpHost): Promise<McpToolResult> {
+  const configPath = configPathOf(host);
+  const files = listSpecFiles(configPath);
+  if (files.length === 0) return textResult("(none)");
+  const root = dirname(configPath);
+  const lines = files.map((file) => relative(root, file).split("\\").join("/"));
+  return textResult(lines.join("\n"));
+}
+
+export async function handleSpecCheck(
+  host: McpHost,
+  args: { path?: string } = {},
+): Promise<McpToolResult> {
+  const configPath = configPathOf(host);
+  let config: Config;
+  try {
+    config = loadConfig(configPath);
+  } catch (err) {
+    return textResult(errText(err), true);
+  }
+  const files = listSpecFiles(configPath, args.path);
+  if (files.length === 0) {
+    return textResult(
+      args.path ? `spec not found: ${args.path}` : "no spec files under clickmonkey/specs/",
+      true,
+    );
+  }
+  if (config.map.pages.length === 0) return textResult("map has no pages (run inspect)", true);
+  try {
+    const model = requirePageModel(config.map);
+    const results = files.map((filePath) => checkSpecFile(model, filePath));
+    const missed = results.some((r) => r.cases.some((c) => c.missing.length > 0));
+    return textResult(formatCheckReport(results), missed);
+  } catch (err) {
+    return textResult(errText(err), true);
+  }
 }
 
 export function registerMcpTools(server: McpServer, host: McpHost): void {
@@ -509,14 +749,55 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
     async () => handleExploreQuality(host),
   );
   server.registerTool(
+    "explore_findings",
+    {
+      description: "List findings already persisted for this live run (id, kind, severity, path, shot, message).",
+      inputSchema: z.object({}),
+    },
+    async () => handleExploreFindings(host),
+  );
+  server.registerTool(
+    "explore_finding",
+    {
+      description:
+        "File a host-observed product bug with a screenshot (same as screenshot ui). Resets to the seed page. Default severity major.",
+      inputSchema: z.object({
+        message: z.string().min(1),
+        severity: z.enum(["major", "minor", "suggestion"]).optional(),
+      }),
+    },
+    async (args) => handleExploreFinding(host, args),
+  );
+  server.registerTool(
     "explore_finish",
     {
-      description: "End the run, write session.md, and (default) a findings report for this run.",
+      description:
+        "End the run, write session.md, and (default) a findings report. summary is the report lead (Grok's story). extra is optional appendix markdown.",
       inputSchema: z.object({
         report: z.boolean().optional(),
+        summary: z.string().min(1).optional(),
+        extra: z.string().min(1).optional(),
       }),
     },
     async (args) => handleExploreFinish(host, args),
+  );
+  server.registerTool(
+    "spec_list",
+    {
+      description: "List markdown specs under clickmonkey/specs/ (no live session).",
+      inputSchema: z.object({}),
+    },
+    async () => handleSpecList(host),
+  );
+  server.registerTool(
+    "spec_check",
+    {
+      description: "Validate spec fence ids against the map (same as clickmonkey spec --check).",
+      inputSchema: z.object({
+        path: z.string().min(1).optional(),
+      }),
+    },
+    async (args) => handleSpecCheck(host, args),
   );
   server.registerTool(
     "nasty_list",
@@ -554,6 +835,11 @@ function promptResult(text: string) {
 
 export function registerMcpPrompts(server: McpServer): void {
   server.registerPrompt(
+    "clickmonkey",
+    { description: "What ClickMonkey is for: map, unleash, explore, spec, replay." },
+    () => promptResult(CLICKMONKEY_GUIDE),
+  );
+  server.registerPrompt(
     "explore_tester",
     { description: "RST exploratory testing skills (oracles, good, next, done)." },
     () => promptResult(defaultExploreSkills()),
@@ -567,6 +853,11 @@ export function registerMcpPrompts(server: McpServer): void {
     "explore_report",
     { description: "Write a digest from visits, notes, goods, and shot paths." },
     () => promptResult(EXPLORE_REPORT_PROMPT),
+  );
+  server.registerPrompt(
+    "spec_writer",
+    { description: "Write a replayable markdown spec from a compact tape." },
+    () => promptResult(SPEC_WRITER_PROMPT),
   );
 }
 
@@ -599,13 +890,24 @@ function liveSessionSummary(session: McpSession): string {
     "## Positive observations",
     goods.length > 0 ? goods.map((n) => `- ${n}`).join("\n") : "(none)",
     "## Findings",
-    findings.length > 0 ? findings.map((f) => `- ${f.id}: ${f.message}`).join("\n") : "(none)",
+    (() => {
+      const listed = formatFindingsList(session.outDir);
+      if (listed !== "(none)") return listed;
+      if (findings.length > 0) return findings.map((f) => `- ${f.id}: ${f.message}`).join("\n");
+      return "(none)";
+    })(),
     "session.md is written on explore_finish",
     "",
   ].join("\n");
 }
 
 export function registerMcpResources(server: McpServer, host: McpHost): void {
+  server.registerResource(
+    "guide",
+    "clickmonkey://guide",
+    { title: "ClickMonkey modes (map, unleash, explore, spec, replay)", mimeType: "text/markdown" },
+    async (uri) => ({ contents: [{ uri: uri.href, text: `${CLICKMONKEY_GUIDE}\n` }] }),
+  );
   server.registerResource(
     "oracles",
     "clickmonkey://oracles",

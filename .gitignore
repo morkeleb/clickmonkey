@@ -13,6 +13,7 @@ runs/
 clickmonkey/runs/
 clickmonkey/runs/*/verbose/
 clickmonkey/replays/
+clickmonkey/dev-origin
 auth.json
 playwright-report/
 *.json.lock

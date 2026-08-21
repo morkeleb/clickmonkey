@@ -37,11 +37,13 @@ export type StepFailure = {
 export { locatorOf as widgetLocator } from "../schema/locator.js";
 export { readyKey, widgetKey } from "../schema/refs.js";
 
-export function findPage(state: RunState, pageId = state.pageId): PageDef | undefined {
+type ModelState = Pick<RunState, "model" | "pageId">;
+
+export function findPage(state: ModelState, pageId = state.pageId): PageDef | undefined {
   return state.model.pages.find((p) => p.id === pageId);
 }
 
-export function findSurface(state: RunState, surfaceId: string): Surface | undefined {
+export function findSurface(state: ModelState, surfaceId: string): Surface | undefined {
   const current = findPage(state);
   const fromCurrent = current?.surfaces.find((s) => s.id === surfaceId);
   if (fromCurrent) return fromCurrent;
@@ -212,7 +214,7 @@ async function performClick(
   const actable = requireActable(state, surfaceId, id);
   if (!actable.ok) return actable.failure;
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
-  const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS });
+  const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS, scroll: true });
   if (!pw) {
     return {
       kind: "expectFailed",
@@ -262,7 +264,7 @@ async function performFill(
   if (!actable.ok) return actable.failure;
   const resolved = await resolveSecretAsync(value);
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
-  const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS });
+  const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS, scroll: true });
   if (!pw) {
     return {
       kind: "expectFailed",
@@ -315,23 +317,172 @@ async function performExpectInvalid(
   };
 }
 
+export function locatorForSurface(
+  state: ModelState,
+  surfaceId: string,
+): { ok: true; loc: Locator } | { ok: false; failure: StepFailure } {
+  const surface = findSurface(state, surfaceId);
+  if (surface?.locator) return { ok: true, loc: surface.locator };
+  const namedPage = findPage(state, surfaceId);
+  if (namedPage?.ready) return { ok: true, loc: namedPage.ready };
+  if (surface) {
+    const owner =
+      state.model.pages.find((p) => p.id === state.pageId && p.surfaces.some((s) => s.id === surfaceId)) ??
+      state.model.pages.find((p) => p.surfaces.some((s) => s.id === surfaceId));
+    if (owner?.ready) return { ok: true, loc: owner.ready };
+  }
+  return {
+    ok: false,
+    failure: { kind: "unknownId", message: `unknown surface ${surfaceId}`, widgetRef: surfaceId },
+  };
+}
+
 async function performExpectVisible(
   state: RunState,
   surfaceId: string,
 ): Promise<StepFailure | undefined> {
-  const surface = findSurface(state, surfaceId);
-  const pageDef = findPage(state, surfaceId) ?? findPage(state);
-  let loc: Locator | undefined = surface?.locator;
-  if (!loc && pageDef) loc = pageDef.ready;
-  if (!loc) {
-    return { kind: "unknownId", message: `unknown surface ${surfaceId}`, widgetRef: surfaceId };
-  }
-  const visible = await toPlaywrightLocator(state.page, loc).isVisible().catch(() => false);
+  const found = locatorForSurface(state, surfaceId);
+  if (!found.ok) return found.failure;
+  const visible = await toPlaywrightLocator(state.page, found.loc).isVisible().catch(() => false);
   if (visible) return undefined;
   return {
     kind: "expectFailed",
     message: `expected ${surfaceId} visible`,
     widgetRef: surfaceId,
+  };
+}
+
+async function performExpectHidden(
+  state: RunState,
+  surfaceId: string,
+): Promise<StepFailure | undefined> {
+  const found = locatorForSurface(state, surfaceId);
+  if (!found.ok) return found.failure;
+  const visible = await toPlaywrightLocator(state.page, found.loc).isVisible().catch(() => false);
+  if (!visible) return undefined;
+  return {
+    kind: "expectFailed",
+    message: `expected ${surfaceId} hidden`,
+    widgetRef: surfaceId,
+  };
+}
+
+function collapseWs(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** Browser-side accessible name. Closure-free for locator.evaluate. */
+function readAccessibleName(el: {
+  id: string;
+  innerText: string;
+  getAttribute(name: string): string | null;
+  closest(sel: string): { innerText: string } | null;
+}): string {
+  const g = globalThis as unknown as {
+    document: {
+      getElementById(id: string): { innerText: string } | null;
+      querySelector(sel: string): { innerText: string } | null;
+    };
+    CSS?: { escape(s: string): string };
+  };
+  const aria = el.getAttribute("aria-label");
+  if (aria?.trim()) return aria.trim();
+  const labelledBy = el.getAttribute("aria-labelledby");
+  if (labelledBy) {
+    const text = labelledBy
+      .split(/\s+/)
+      .map((id) => g.document.getElementById(id)?.innerText ?? "")
+      .join(" ")
+      .trim();
+    if (text) return text;
+  }
+  if (el.id) {
+    const escaped = g.CSS?.escape(el.id) ?? el.id;
+    const t = g.document.querySelector(`label[for="${escaped}"]`)?.innerText.trim() ?? "";
+    if (t) return t;
+  }
+  const wrap = el.closest("label")?.innerText.trim() ?? "";
+  if (wrap) return wrap;
+  return (el.innerText ?? "").trim();
+}
+
+async function firstVisible(raw: ReturnType<Page["locator"]>) {
+  const n = await raw.count().catch(() => 0);
+  for (let i = 0; i < n; i++) {
+    const el = raw.nth(i);
+    if (await el.isVisible().catch(() => false)) return el;
+  }
+  return undefined;
+}
+
+async function performExpectText(
+  state: RunState,
+  surfaceId: string,
+  id: string,
+  text: string,
+): Promise<StepFailure | undefined> {
+  const actable = requireActable(state, surfaceId, id);
+  if (!actable.ok) return actable.failure;
+  const ref = widgetKey(surfaceId, id);
+  const raw = widgetLocator(state.page, actable.surface, actable.locator);
+  const needle = collapseWs(text);
+  const n = await raw.count().catch(() => 0);
+  for (let i = 0; i < n; i++) {
+    const el = raw.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const inner = collapseWs((await el.innerText().catch(() => "")) ?? "");
+    const acc = collapseWs((await el.evaluate(readAccessibleName).catch(() => "")) ?? "");
+    if (inner.includes(needle) || acc.includes(needle)) return undefined;
+  }
+  return {
+    kind: "expectFailed",
+    message: `expected ${ref} text ${JSON.stringify(text)}`,
+    widgetRef: ref,
+  };
+}
+
+async function performExpectValue(
+  state: RunState,
+  surfaceId: string,
+  id: string,
+  value: string,
+): Promise<StepFailure | undefined> {
+  const actable = requireActable(state, surfaceId, id);
+  if (!actable.ok) return actable.failure;
+  const ref = widgetKey(surfaceId, id);
+  const pw = await firstVisible(widgetLocator(state.page, actable.surface, actable.locator));
+  if (!pw) {
+    return {
+      kind: "expectFailed",
+      message: `expected ${ref} value ${JSON.stringify(value)}`,
+      widgetRef: ref,
+    };
+  }
+  const field = isField(actable.widget) ? actable.widget : undefined;
+  if (field?.type === "checkbox") {
+    const checked = await pw.isChecked().catch(() => false);
+    const wantChecked = value !== "" && value !== "false";
+    if (checked === wantChecked) return undefined;
+  } else {
+    const actual = await pw.inputValue().catch(() => "");
+    if (actual === value) return undefined;
+  }
+  return {
+    kind: "expectFailed",
+    message: `expected ${ref} value ${JSON.stringify(value)}`,
+    widgetRef: ref,
+  };
+}
+
+async function performExpectPageText(state: RunState, text: string): Promise<StepFailure | undefined> {
+  const loc = state.page.getByText(text);
+  const n = await loc.count().catch(() => 0);
+  for (let i = 0; i < n; i++) {
+    if (await loc.nth(i).isVisible().catch(() => false)) return undefined;
+  }
+  return {
+    kind: "expectFailed",
+    message: `expected text ${JSON.stringify(text)}`,
   };
 }
 
@@ -405,6 +556,14 @@ export async function performStep(state: RunState, step: Step): Promise<StepFail
       return performExpectInvalid(state, step.surface, step.id);
     case "expectVisible":
       return performExpectVisible(state, step.surface);
+    case "expectHidden":
+      return performExpectHidden(state, step.surface);
+    case "expectText":
+      return performExpectText(state, step.surface, step.id, step.text);
+    case "expectValue":
+      return performExpectValue(state, step.surface, step.id, step.value);
+    case "expectPageText":
+      return performExpectPageText(state, step.text);
     case "expectPath":
       return performExpectPath(state, step.path);
     case "screenshot":

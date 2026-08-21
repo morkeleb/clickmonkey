@@ -81,16 +81,37 @@ function IssueList({ issues }: { issues: TestabilityIssue[] }) {
   );
 }
 
+function QualityIssueCards({ items }: { items: Array<QualityIssue | QualityRuntimeEvent> }) {
+  return (
+    <ul className="flex flex-col gap-2">
+      {items.map((issue, i) => (
+        <li key={`${issue.source}-${issue.rule}-${i}`} className="min-w-0 rounded-md border border-border px-3 py-2 text-sm">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Badge variant={issue.severity === "error" ? "destructive" : "secondary"}>{issue.severity}</Badge>
+            <code className="max-w-full text-xs break-all">{issue.rule}</code>
+            {"confidence" in issue && issue.confidence ? (
+              <span className="text-xs text-muted-foreground">{issue.confidence}</span>
+            ) : null}
+            {issue.count > 1 ? <span className="text-xs text-muted-foreground">×{issue.count}</span> : null}
+          </div>
+          <p className="mt-1 text-xs break-words text-muted-foreground">{issue.message}</p>
+          {"where" in issue && issue.where ? (
+            <p className="mt-0.5 text-[11px] break-all text-muted-foreground">Where: {issue.where}</p>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function QualityGroup({
   title,
   items,
-  empty,
 }: {
   title: string;
   items: Array<QualityIssue | QualityRuntimeEvent>;
-  empty?: string;
 }) {
-  if (items.length === 0 && !empty) return null;
+  if (items.length === 0) return null;
   return (
     <Collapsible defaultOpen>
       <CollapsibleTrigger className="flex w-full items-center gap-2 py-1 text-left text-sm font-medium">
@@ -99,31 +120,16 @@ function QualityGroup({
         <span className="text-xs text-muted-foreground">{items.length}</span>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        {items.length > 0 ? (
-          <ul className="mb-3 flex flex-col gap-2">
-            {items.map((issue, i) => (
-              <li key={`${issue.source}-${issue.rule}-${i}`} className="min-w-0 rounded-md border border-border px-3 py-2 text-sm">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge variant={issue.severity === "error" ? "destructive" : "secondary"}>{issue.severity}</Badge>
-                  <code className="max-w-full text-xs break-all">{issue.rule}</code>
-                  {"confidence" in issue && issue.confidence ? (
-                    <span className="text-xs text-muted-foreground">{issue.confidence}</span>
-                  ) : null}
-                  {issue.count > 1 ? <span className="text-xs text-muted-foreground">×{issue.count}</span> : null}
-                </div>
-                <p className="mt-1 text-xs break-words text-muted-foreground">{issue.message}</p>
-                {"where" in issue && issue.where ? (
-                  <p className="mt-0.5 text-[11px] break-all text-muted-foreground">Where: {issue.where}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mb-3 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">{empty}</p>
-        )}
+        <div className="mb-3">
+          <QualityIssueCards items={items} />
+        </div>
       </CollapsibleContent>
     </Collapsible>
   );
+}
+
+function qualityScannerCount(page: QualityPage): number {
+  return page.html.length + page.a11y.length + (page.seo ?? []).length + page.runtime.length;
 }
 
 export function NodeSheet({
@@ -213,28 +219,25 @@ export function NodeSheet({
               </section>
               <section>
                 <h3 className="mb-2 text-sm font-medium">Quality</h3>
-                {ledger.quality ? (
+                {ledger.quality && qualityScannerCount(ledger.quality) > 0 ? (
                   <div>
                     <QualityGroup title="HTML" items={ledger.quality.html} />
                     <QualityGroup title="Accessibility" items={ledger.quality.a11y} />
                     <QualityGroup title="SEO" items={ledger.quality.seo ?? []} />
-                    <QualityGroup
-                      title="Visual"
-                      items={ledger.quality.visual}
-                      empty={ledger.quality.visualHash ? "Scanned, no extras." : undefined}
-                    />
                     <QualityGroup title="Runtime" items={ledger.quality.runtime} />
-                    {ledger.quality.html.length +
-                      ledger.quality.a11y.length +
-                      (ledger.quality.seo ?? []).length +
-                      ledger.quality.visual.length +
-                      ledger.quality.runtime.length ===
-                      0 && !ledger.quality.visualHash ? (
-                      <p className="text-sm text-muted-foreground">No quality issues.</p>
-                    ) : null}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">No quality issues.</p>
+                )}
+              </section>
+              <section>
+                <h3 className="mb-2 text-sm font-medium">Visual</h3>
+                {ledger.quality && ledger.quality.visual.length > 0 ? (
+                  <QualityIssueCards items={ledger.quality.visual} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {ledger.quality?.visualHash ? "Scanned, no extras." : "No visual extras."}
+                  </p>
                 )}
               </section>
               {here && here.length > 0 ? (

@@ -28,6 +28,7 @@ Commands:
   mcp         Exploratory testing over MCP (stdio)
   report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
   replay      Replay a log file or a findings-report markdown file
+  spec        Markdown specs under clickmonkey/specs/ [--check] [--fail-on-findings]
   compact     Shorten a log to the last open or nav click + following lines
   bundle      Static dashboard folder (open without the CLI)
   ui          Local-only dashboard (map, runs, findings)
@@ -74,7 +75,7 @@ export function withUrl(config: Config, url?: string): Config {
 
 export function persistUrl(configPath: string, config: Config, url?: string): Config {
   const next = withUrl(config, url);
-  if (url) saveConfig(configPath, next);
+  if (url) saveConfig(configPath, next, { persistUrl: true });
   return next;
 }
 

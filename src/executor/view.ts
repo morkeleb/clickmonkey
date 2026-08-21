@@ -9,7 +9,7 @@ import {
 import type { Fence } from "../schema/config.js";
 import { auditVisible } from "../surveyor/audit.js";
 import { detectWalkerMode } from "../brains/walker-mode.js";
-import { isLeaveAction, isPageHop, looksLikeNavWidget, matchesSkip } from "../brains/unleash.js";
+import { isLeaveAction, isRecordRowAction, looksLikeNavWidget, matchesSkip } from "../brains/unleash.js";
 import { pageNotesFromModel } from "../surveyor/describe.js";
 import { hoppablePages } from "./hop.js";
 import { formatFont, lookIsEmpty, readLook } from "./look.js";
@@ -320,10 +320,10 @@ function formatPagesLines(view: View): string[] {
   ];
 }
 
-/** Stay-on-page first, then hops, then landmark chrome — explore reads this list in order. */
-function actionListRank(action: ShownAction, hopIds?: readonly string[]): number {
-  if (action.nav) return 2;
-  if (looksLikeNavWidget(action) || isPageHop(action, undefined, hopIds)) return 1;
+/** In-page (including link CTAs) first, then record rows, then landmark chrome. */
+function actionListRank(action: ShownAction): number {
+  if (action.nav || looksLikeNavWidget(action)) return 2;
+  if (isRecordRowAction(action)) return 1;
   return 0;
 }
 
@@ -344,7 +344,7 @@ export function formatView(view: View): string {
     lines.push(field.label ? `${withFlags}  ${field.label}` : withFlags);
   }
   lines.push("actions:");
-  const listed = [...view.actions].sort((a, b) => actionListRank(a, view.pages) - actionListRank(b, view.pages));
+  const listed = [...view.actions].sort((a, b) => actionListRank(a) - actionListRank(b));
   for (const action of listed) {
     const base = action.opens ? `  ${action.id} → ${action.opens}` : `  ${action.id}`;
     const withLabel = action.label ? `${base}  ${action.label}` : base;
