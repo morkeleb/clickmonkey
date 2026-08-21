@@ -192,6 +192,51 @@ describe("formatView", () => {
     });
     assert.doesNotMatch(formatView(unset), /^mode:/m);
   });
+
+  it("prints native select options next to the field", () => {
+    const view = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [
+        {
+          id: "addressType",
+          value: "",
+          type: "select",
+          label: "Address type",
+          options: [
+            { value: "", label: "Select type" },
+            { value: "mailing", label: "Mailing" },
+            { value: "remittance", label: "Remittance" },
+            { value: "physical", label: "Physical" },
+          ],
+        },
+      ],
+      actions: [],
+    });
+    assert.match(
+      formatView(view),
+      /addressType: ""  \[select\]  Address type  Select type \/ Mailing \/ Remittance \/ Physical/,
+    );
+  });
+
+  it("prints live min/max/length on shown fields", () => {
+    const view = View.parse({
+      page: "home",
+      surface: "page",
+      stack: ["page"],
+      shown: [
+        {
+          id: "qty",
+          value: "",
+          type: "number",
+          constraints: { min: "1", max: "10", htmlType: "number" },
+        },
+      ],
+      actions: [],
+    });
+    assert.match(formatView(view), /qty: ""  \[number, min=1, max=10\]/);
+  });
 });
 
 describe("includeWalkAction", () => {
@@ -478,6 +523,59 @@ describe("buildView", () => {
       const projectsNone = none.actions.find((a) => a.id === "projects");
       assert.ok(projectsNone);
       assert.equal(projectsNone.nav, true);
+    });
+  });
+
+  it("harvests min/max/length and autocomplete onto shown fields", async () => {
+    await withRun({}, async ({ page }) => {
+      await page.setContent(`<!doctype html>
+        <html><body>
+        <main data-testid="home">
+          <input data-testid="qty" name="qty" type="number" min="2" max="9" step="1" />
+          <input data-testid="bio" name="bio" maxlength="20" minlength="3" />
+          <input data-testid="contact" name="contact" type="email" autocomplete="email" />
+        </main>
+        </body></html>`);
+      const model = PageModel.parse({
+        schemaVersion: 1,
+        app: "constraints",
+        generation: 0,
+        pages: [
+          {
+            id: "home",
+            path: "/",
+            params: [],
+            ready: { by: "testId", value: "home" },
+            surfaces: [
+              {
+                id: "page",
+                kind: "page",
+                fields: [
+                  { id: "qty", required: false, type: "number", by: "testId", value: "qty", status: "ok" },
+                  { id: "bio", required: false, type: "text", by: "testId", value: "bio", status: "ok" },
+                  { id: "contact", required: false, type: "email", by: "testId", value: "contact", status: "ok" },
+                ],
+                actions: [],
+              },
+            ],
+          },
+        ],
+      });
+      const view = await buildView({ page, pageId: "home", surfaceStack: ["page"], model });
+      assert.deepEqual(
+        view.shown.map((f) => f.id).sort(),
+        ["bio", "contact", "qty"],
+      );
+      assert.deepEqual(view.shown.find((f) => f.id === "qty")?.constraints, {
+        min: "2",
+        max: "9",
+        step: "1",
+        htmlType: "number",
+      });
+      assert.equal(view.shown.find((f) => f.id === "bio")?.constraints?.maxLength, 20);
+      assert.equal(view.shown.find((f) => f.id === "bio")?.constraints?.minLength, 3);
+      assert.equal(view.shown.find((f) => f.id === "contact")?.constraints?.autocomplete, "email");
+      assert.equal(view.shown.find((f) => f.id === "contact")?.constraints?.htmlType, "email");
     });
   });
 });

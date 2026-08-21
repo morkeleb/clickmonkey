@@ -2,6 +2,30 @@ import { z } from "zod";
 import { FieldType } from "./page-model.js";
 import { TestabilityIssue } from "./testability.js";
 
+export const ShownFieldOption = z
+  .object({
+    value: z.string(),
+    label: z.string(),
+  })
+  .strict();
+export type ShownFieldOption = z.infer<typeof ShownFieldOption>;
+
+/** Live HTML constraints. Not stored on the map. */
+export const ShownFieldConstraints = z
+  .object({
+    min: z.string().min(1).optional(),
+    max: z.string().min(1).optional(),
+    minLength: z.number().int().nonnegative().optional(),
+    maxLength: z.number().int().positive().optional(),
+    step: z.string().min(1).optional(),
+    pattern: z.string().min(1).optional(),
+    autocomplete: z.string().min(1).optional(),
+    inputMode: z.string().min(1).optional(),
+    htmlType: z.string().min(1).optional(),
+  })
+  .strict();
+export type ShownFieldConstraints = z.infer<typeof ShownFieldConstraints>;
+
 export const ShownField = z
   .object({
     id: z.string().min(1),
@@ -9,6 +33,9 @@ export const ShownField = z
     required: z.boolean().optional(),
     type: FieldType.optional(),
     label: z.string().min(1).optional(),
+    /** Live `<option>` list on a native select. Not stored on the map. */
+    options: z.array(ShownFieldOption).optional(),
+    constraints: ShownFieldConstraints.optional(),
   })
   .strict();
 export type ShownField = z.infer<typeof ShownField>;

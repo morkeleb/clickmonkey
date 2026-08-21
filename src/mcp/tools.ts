@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { defaultExploreSkills, EXPLORE_PLAN_SYSTEM, parseExplorePlanReply } from "../brains/explore.js";
-import { listCatalogs, pickNasty, SAMPLE_MAX_CHARS, samplePayloads } from "../brains/nasty.js";
+import { listCatalogs, pickNastyFill, SAMPLE_MAX_CHARS, samplePayloads } from "../brains/nasty.js";
 import { resolveConfigPath, resolveOutDir } from "../cli/common.js";
 import { loadConfig, saveConfig } from "../persist/config.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
@@ -596,7 +596,7 @@ export async function handleNastyFill(host: McpHost, args: { id?: string }): Pro
     const ids = view.shown.map((f) => f.id).join(", ") || "(none)";
     return textResult(`no mapped field on current visit (shown: ${ids})`, true);
   }
-  const line = formatStep({ kind: "fill", surface: view.surface, id: field.id, value: pickNasty(field.type) });
+  const line = formatStep({ kind: "fill", surface: view.surface, id: field.id, value: pickNastyFill(field) });
   return handleExploreStep(host, { line });
 }
 

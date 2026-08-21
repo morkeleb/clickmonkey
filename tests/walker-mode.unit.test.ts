@@ -76,6 +76,31 @@ describe("walker modes", () => {
     assert.doesNotMatch(text, /click /);
   });
 
+  it("does not treat Create your first as submit, and does not fill search then click it", () => {
+    const empty = viewOf({
+      page: "fees_and_cost_fee_entries",
+      shown: [{ id: "search", value: "", type: "text", label: "Search" }],
+      actions: [
+        { id: "button_create_your_first_fee_entry", label: "Create your first fee entry" },
+        { id: "button_new_fee_entry", label: "New fee entry" },
+        { id: "button_add_filter", label: "Add filter" },
+      ],
+      pages: ["home", "fees_and_cost_fee_entries"],
+    });
+    assert.notEqual(detectWalkerMode({ view: empty, stepsUsed: 0, writePolicy: "allow" }).name, "form");
+    const first = decideUnleash({ view: empty, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    const firstText = (first.lines ?? [first.line]).join("\n");
+    assert.doesNotMatch(firstText, /fill page\.search/);
+
+    const filtered = viewOf({
+      ...empty,
+      shown: [{ id: "search", value: "aeger", type: "text", label: "Search" }],
+    });
+    const after = decideUnleash({ view: filtered, stepsUsed: 1, writePolicy: "allow" }, () => 0.5);
+    const afterText = (after.lines ?? [after.line]).join("\n");
+    assert.doesNotMatch(afterText, /button_create_your_first_fee_entry/);
+  });
+
   it("detects nav on a page with a search field and an Add customer opener", () => {
     const view = viewOf({
       shown: [{ id: "q", value: "", type: "text" }],
@@ -306,7 +331,8 @@ describe("walker modes", () => {
       const d = decideUnleash({ view, stepsUsed: i });
       assert.equal(d.mode, "nav");
       const text = (d.lines ?? [d.line]).join("\n");
-      assert.doesNotMatch(text, /click .*(submit|create|button_add_customer)/);
+      assert.doesNotMatch(text, /fill page\.q/);
+      assert.doesNotMatch(text, /click page\.submit/);
       assert.doesNotMatch(text, /^open /);
     }
   });

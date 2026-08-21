@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { applyDuplicateTitles, issuesFromMeta, scanSeo, seoIsPrivate, type PageMeta } from "../src/surveyor/seo.js";
+import {
+  applyDuplicateTitles,
+  issuesFromMeta,
+  metaFromHtml,
+  scanSeo,
+  scanSeoHtml,
+  seoIsPrivate,
+  type PageMeta,
+} from "../src/surveyor/seo.js";
 
 function meta(partial: Partial<PageMeta> = {}): PageMeta {
   return {
@@ -159,11 +167,46 @@ describe("applyDuplicateTitles", () => {
   });
 });
 
+describe("metaFromHtml", () => {
+  it("reads title, description, og, and canonical from a head snapshot", () => {
+    const html = `<!DOCTYPE html><html><head>
+      <title>About us</title>
+      <meta name="description" content="We build tools for legal teams who migrate data.">
+      <meta property="og:title" content="About us">
+      <meta property="og:description" content="We build tools for legal teams who migrate data.">
+      <meta property="og:image" content="https://example.com/og.png">
+      <meta content="https://example.com/about" property="og:url">
+      <link rel="canonical" href="https://example.com/about">
+    </head><body></body></html>`;
+    const meta = metaFromHtml(html);
+    assert.equal(meta.title, "About us");
+    assert.equal(meta.description, "We build tools for legal teams who migrate data.");
+    assert.equal(meta.ogUrl, "https://example.com/about");
+    assert.equal(meta.canonical, "https://example.com/about");
+    assert.equal(scanSeoHtml(html, "https://example.com/about").length, 0);
+  });
+
+  it("accepts name= og tags and reversed attributes", () => {
+    const meta = metaFromHtml(`<head>
+      <title>Hello</title>
+      <meta content="A description that is long enough." name="description">
+      <meta name="og:title" content="Hello">
+      <meta name="og:description" content="A description that is long enough.">
+      <meta name="og:image" content="https://example.com/og.png">
+      <meta name="og:url" content="https://example.com/about">
+      <link href="https://example.com/about" rel="canonical">
+    </head>`);
+    assert.equal(meta.description, "A description that is long enough.");
+    assert.equal(meta.ogTitle, "Hello");
+    assert.equal(meta.canonical, "https://example.com/about");
+  });
+});
+
 describe("scanSeo", () => {
-  it("returns undefined when the meta read fails, not an empty clean page", async () => {
+  it("returns undefined when the snapshot fails, not an empty clean page", async () => {
     const page = {
       url: () => "https://example.com/about",
-      evaluate: async () => {
+      content: async () => {
         throw new Error("execution context destroyed");
       },
     };

@@ -53,7 +53,7 @@ export {
 export type { ParsedVisualReply, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
 export { validateHtml } from "./surveyor/html.js";
 export { scanA11y } from "./surveyor/a11y.js";
-export { scanSeo, seoIsPrivate, issuesFromMeta, applyDuplicateTitles } from "./surveyor/seo.js";
+export { scanSeo, scanSeoHtml, seoIsPrivate, issuesFromMeta, metaFromHtml, applyDuplicateTitles } from "./surveyor/seo.js";
 export type { PageMeta } from "./surveyor/seo.js";
 export { auditVisible, formatTestabilityLine } from "./surveyor/audit.js";
 export type { InspectResult, SurveyorContext } from "./surveyor/inspect.js";
@@ -128,7 +128,7 @@ export {
   writeRunsReport,
 } from "./reports/findings-report.js";
 export { identityFromRunId, pickDistinctHue, HUE_SLOTS } from "./ui/identity.js";
-export { buildUiGraph, badgeCounts, hopsFromNavLog } from "./ui/graph.js";
+export { buildUiGraph, badgeCounts, findingOnPage, hopsFromNavLog } from "./ui/graph.js";
 export { buildUiSnapshot } from "./ui/snapshot.js";
 export { buildRunDetail } from "./ui/run-detail.js";
 export { startUiServer, UI_DEFAULT_PORT, resolveUiRoot } from "./ui/server.js";
@@ -160,13 +160,22 @@ export {
   isPageHop,
   isRecordRowAction,
   looksLikeNavWidget,
+  looksLikeSearchField,
+  isEmptyStateAction,
   sharedChromeIds,
   formSubmitAction,
+  formSubmitActions,
   formDismissAction,
   decideForm,
+  pickSelectOption,
+  plausibleFill,
   formatClick,
   rememberClick,
   freshClicks,
+  withoutNoops,
+  usableClicks,
+  viewWidgetSig,
+  clickWasNoop,
   clickKey,
   isListChrome,
   listModeScore,
@@ -180,7 +189,8 @@ export {
 export { detectWalkerMode, UNLEASH_MODES } from "./brains/walker-mode.js";
 export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";
 export { decisionLines } from "./brains/types.js";
-export { pickNasty, decideUnleashNasty, listCatalogs, samplePayloads, textContainsNastyPayload } from "./brains/nasty.js";
+export { fakerFill, fillRuleId } from "./brains/faker-fill.js";
+export { pickNasty, pickNastyFill, decideUnleashNasty, listCatalogs, samplePayloads, textContainsNastyPayload } from "./brains/nasty.js";
 export type { NastyCatalogInfo } from "./brains/nasty.js";
 export {
   createExploreBrain,

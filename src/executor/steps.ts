@@ -26,6 +26,12 @@ import {
 import type { RunState } from "./run.js";
 import { resolveSecretAsync } from "./secrets.js";
 import { isPotentialWrite } from "./write-policy.js";
+import {
+  formatSelectOptionList,
+  matchSelectOption,
+  readSelectOptions,
+  selectOptionQuery,
+} from "./select-options.js";
 
 export type StepFailure = {
   kind: FindingKind;
@@ -244,7 +250,7 @@ async function performClick(
     const opened = findSurface(state, actable.widget.opens);
     if (opened?.locator) {
       await toPlaywrightLocator(state.page, opened.locator)
-        .waitFor({ state: "visible" })
+        .waitFor({ state: "visible", timeout: 2_000 })
         .catch(() => undefined);
     }
     if (!state.surfaceStack.includes(actable.widget.opens)) {
@@ -280,7 +286,16 @@ async function performFill(
     return undefined;
   }
   if (field?.type === "select") {
-    await pw.selectOption(resolved);
+    const options = await readSelectOptions(pw);
+    const match = matchSelectOption(options, resolved);
+    if (!match) {
+      return {
+        kind: "expectFailed",
+        message: `select ${actable.key} has no option ${JSON.stringify(resolved)} (options: ${formatSelectOptionList(options)})`,
+        widgetRef: actable.key,
+      };
+    }
+    await pw.selectOption(selectOptionQuery(match), { timeout: 2_000 });
     return undefined;
   }
   await pw.fill("");

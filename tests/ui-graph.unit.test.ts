@@ -101,53 +101,35 @@ describe("buildUiGraph", () => {
 });
 
 describe("badgeCounts", () => {
-  it("splits blocks/errors to red and warns to yellow", () => {
-    const counts = badgeCounts({
-      path: "/",
-      testability: {
-        schemaVersion: 1,
-        pages: [
-          {
-            path: "/",
-            foundAt: "t",
-            insufficient: true,
-            issues: [
-              { code: "opaqueControl", severity: "block", tag: "button" },
-              { code: "noMain", severity: "warn", tag: "document" },
-            ],
-          },
-        ],
+  it("counts finding folders, not html-validate or axe rows", () => {
+    const findings = [
+      {
+        pageId: "home",
+        severity: "critical",
+        finding: { url: "http://127.0.0.1/login" },
       },
-      quality: {
-        schemaVersion: 1,
-        pages: [
-          {
-            path: "/",
-            foundAt: "t",
-            html: [{ source: "html", rule: "no-dup-id", severity: "error", message: "dup", count: 1 }],
-            a11y: [],
-            visual: [{ source: "visual", rule: "overlap", severity: "error", message: "overlap", count: 1 }],
-            runtime: [
-              {
-                source: "console",
-                rule: "console.warning",
-                severity: "warning",
-                message: "w",
-                count: 1,
-                firstSeen: "t",
-                lastSeen: "t",
-              },
-            ],
-          },
-        ],
+      {
+        pageId: "home",
+        severity: "suggestion",
+        finding: { url: "http://127.0.0.1/" },
       },
-    });
-    assert.equal(counts.red, 3);
-    assert.equal(counts.yellow, 2);
+      {
+        pageId: "login",
+        severity: "major",
+        finding: { url: "http://127.0.0.1/login" },
+      },
+    ];
+    const home = badgeCounts({ pageId: "home", path: "/", findings });
+    assert.equal(home.red, 1);
+    assert.equal(home.yellow, 1);
+    const login = badgeCounts({ pageId: "login", path: "/login", findings });
+    assert.equal(login.red, 1);
+    assert.equal(login.yellow, 0);
   });
 
   it("does not paint url-less findings on every page", () => {
     const counts = badgeCounts({
+      pageId: "home",
       path: "/",
       findings: [
         {
@@ -171,5 +153,19 @@ describe("badgeCounts", () => {
     });
     assert.equal(counts.red, 0);
     assert.equal(counts.yellow, 0);
+  });
+
+  it("matches a finding URL onto a templated map path", () => {
+    const counts = badgeCounts({
+      pageId: "customer",
+      path: "/customers/:id1/profile",
+      findings: [
+        {
+          severity: "critical",
+          url: "http://127.0.0.1/customers/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/profile",
+        },
+      ],
+    });
+    assert.equal(counts.red, 1);
   });
 });

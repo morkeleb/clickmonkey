@@ -75,6 +75,10 @@ export function App() {
           onOpenChange={(open) => {
             if (!open) setNodeId(null);
           }}
+          onOpenRun={(runId) => {
+            setNodeId(null);
+            setView({ kind: "run", id: runId });
+          }}
         />
         </div>
       </div>

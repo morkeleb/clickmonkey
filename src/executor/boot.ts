@@ -56,6 +56,8 @@ export function attachInspectAfterStep(state: RunState): void {
           seo: s.config.seo,
           path: s.model.pages.find((p) => p.id === s.pageId)?.path,
           outDir: s.outDir,
+          html: s.stepHtml,
+          skipQuality: Boolean(s.stepHtml),
         });
       }
     } else {

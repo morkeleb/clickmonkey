@@ -67,6 +67,23 @@ export const UiRunFinding = z
   .strict();
 export type UiRunFinding = z.infer<typeof UiRunFinding>;
 
+/** Map-node badge + sheet: one finding folder, with the run that owns it. */
+export const UiMapFinding = z
+  .object({
+    id: z.string().min(1),
+    runId: z.string().min(1),
+    kind: z.string().min(1),
+    severity: z.string().min(1),
+    message: z.string().min(1),
+    url: z.string().min(1).optional(),
+    pageId: z.string().min(1).optional(),
+    /** `ledgerPath` of the finding URL so the sheet matches graph badges. */
+    path: z.string().min(1).optional(),
+    screenshotUrl: z.string().min(1).optional(),
+  })
+  .strict();
+export type UiMapFinding = z.infer<typeof UiMapFinding>;
+
 export const UiRunStep = z
   .object({
     index: z.number().int().nonnegative(),
@@ -249,6 +266,7 @@ export const UiSnapshot = z
     testability: TestabilityReport,
     quality: QualityReport,
     runs: z.array(UiRun),
+    findings: z.array(UiMapFinding).default([]),
     reports: z.array(UiReport).default([]),
     notice: UiNotice.optional(),
   })

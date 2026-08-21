@@ -5,6 +5,7 @@ import {
   listCatalogs,
   loadPayloads,
   pickNasty,
+  pickNastyFill,
   samplePayloads,
   textContainsNastyPayload,
 } from "../src/brains/nasty.js";
@@ -76,6 +77,34 @@ describe("nasty payloads", () => {
         assert.ok(pool.includes(parsed.value), parsed.value);
       }
     }
+  });
+
+  it("picks a listed select option instead of a catalog payload", () => {
+    const field = {
+      id: "addressType",
+      value: "",
+      type: "select" as const,
+      options: [
+        { value: "mailing", label: "Mailing" },
+        { value: "remittance", label: "Remittance" },
+        { value: "physical", label: "Physical" },
+      ],
+    };
+    assert.equal(pickNastyFill(field, () => 0), "mailing");
+    const catalog = loadPayloads();
+    const pool = [
+      ...(catalog.xss ?? []),
+      ...(catalog.sqli ?? []),
+      ...(catalog.format ?? []),
+      ...(catalog.overlong ?? []),
+    ];
+    assert.equal(pool.includes("mailing"), false);
+    const view = viewOf({ shown: [field] });
+    const decision = decideUnleashNasty({ view, stepsUsed: 0 }, () => 0);
+    const parsed = parseLine(decision.line);
+    assert.ok(parsed && !("comment" in parsed), decision.line);
+    assert.equal(parsed.kind, "fill");
+    if (parsed.kind === "fill") assert.equal(parsed.value, "mailing");
   });
 
   it("hops when the view is empty instead of reopening the same page", () => {

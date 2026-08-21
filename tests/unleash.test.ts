@@ -101,7 +101,6 @@ describe("unleash brain", () => {
       actions: [{ id: "submit" }, { id: "open_create" }],
     });
     const legal = new Set(["name", "qty", "email", "submit", "open_create"]);
-    const fills = new Set(["", "x", "1", "user@example.com"]);
     for (let i = 0; i < 80; i++) {
       const decision = decideUnleash({ view, stepsUsed: i });
       const parsed = parseLine(decision.line);
@@ -112,7 +111,7 @@ describe("unleash brain", () => {
       } else if (parsed.kind === "fill") {
         assert.equal(parsed.surface, "page");
         assert.ok(legal.has(parsed.id), parsed.id);
-        assert.ok(fills.has(parsed.value), parsed.value);
+        assert.equal(typeof parsed.value, "string");
       } else {
         assert.fail(`unexpected step ${decision.line}`);
       }
@@ -296,12 +295,20 @@ describe("unleash brain", () => {
     });
     const first = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
     assert.equal(first.mode, "form");
-    assert.deepEqual(first.lines, [
-      "fill page.name x",
-      "fill page.email user@example.com",
-      "click page.submit",
-    ]);
-    assert.equal(first.line, "fill page.name x");
+    assert.equal(first.lines?.length, 3);
+    assert.match(first.lines?.[0] ?? "", /^fill page\.name /);
+    assert.match(first.lines?.[1] ?? "", /^fill page\.email /);
+    assert.equal(first.lines?.[2], "click page.submit");
+    const nameStep = parseLine(first.lines![0]!);
+    const emailStep = parseLine(first.lines![1]!);
+    assert.ok(nameStep && !("comment" in nameStep) && nameStep.kind === "fill");
+    assert.ok(emailStep && !("comment" in emailStep) && emailStep.kind === "fill");
+    if (nameStep.kind === "fill") {
+      assert.ok(nameStep.value.length > 0);
+      assert.notEqual(nameStep.value, "x");
+    }
+    if (emailStep.kind === "fill") assert.match(emailStep.value, /@example\./);
+    assert.equal(first.line, first.lines![0]);
     assert.deepEqual(decisionLines(first), first.lines);
     const mid = viewOf({
       shown: [
@@ -311,7 +318,9 @@ describe("unleash brain", () => {
       actions: [{ id: "submit" }],
     });
     const midD = decideUnleash({ view: mid, stepsUsed: 1, writePolicy: "allow" });
-    assert.deepEqual(midD.lines, ["fill page.email user@example.com", "click page.submit"]);
+    assert.equal(midD.lines?.length, 2);
+    assert.match(midD.lines?.[0] ?? "", /^fill page\.email /);
+    assert.equal(midD.lines?.[1], "click page.submit");
     const ready = viewOf({
       shown: [
         { id: "name", value: "x", type: "text" },
@@ -322,8 +331,9 @@ describe("unleash brain", () => {
     assert.equal(decideUnleash({ view: ready, stepsUsed: 2, writePolicy: "allow" }).line, "click page.submit");
   });
 
-  it("treats Add/Create as form submit without blocking map from opening them", () => {
-    assert.equal(formSubmitAction([{ id: "button_add_customer" }])?.id, "button_add_customer");
+  it("treats Create as form submit without blocking map from opening Add", () => {
+    assert.equal(formSubmitAction([{ id: "button_add_customer" }]), undefined);
+    assert.equal(formSubmitAction([{ id: "add_bank_account", label: "Add bank account" }]), undefined);
     assert.equal(formSubmitAction([{ id: "create", label: "Create pipeline" }])?.id, "create");
     assert.equal(formSubmitAction([{ id: "open_create", opens: "create" }]), undefined);
     assert.equal(

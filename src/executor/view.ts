@@ -13,6 +13,8 @@ import { isLeaveAction, isRecordRowAction, looksLikeNavWidget, matchesSkip } fro
 import { pageNotesFromModel } from "../surveyor/describe.js";
 import { hoppablePages } from "./hop.js";
 import { formatFont, lookIsEmpty, readLook } from "./look.js";
+import { readFieldConstraints } from "./field-constraints.js";
+import { formatSelectOptionList, readSelectOptions } from "./select-options.js";
 import {
   toPlaywrightLocator,
   widgetLocator,
@@ -213,12 +215,16 @@ export async function buildView(state: {
       if (!includeWalkAction({ inNav: ctx.inNav, inMain: ctx.inMain, ...walkOpts })) continue;
       const value = await liveFieldValue(state.page, surface, field);
       const label = await liveLabel(state.page, surface, field);
+      const options = field.type === "select" ? await readSelectOptions(loc) : [];
+      const constraints = await readFieldConstraints(loc);
       shown.push({
         id: field.id,
         value,
         required: field.required,
         type: field.type,
         ...(label ? { label } : {}),
+        ...(options.length > 0 ? { options } : {}),
+        ...(constraints ? { constraints } : {}),
       });
     }
     for (const action of surface.actions) {
@@ -320,6 +326,28 @@ function formatPagesLines(view: View): string[] {
   ];
 }
 
+function constraintFlags(c: ShownField["constraints"]): string[] {
+  if (!c) return [];
+  const out: string[] = [];
+  if (c.min !== undefined) out.push(`min=${c.min}`);
+  if (c.max !== undefined) out.push(`max=${c.max}`);
+  if (c.minLength !== undefined) out.push(`minlen=${c.minLength}`);
+  if (c.maxLength !== undefined) out.push(`maxlen=${c.maxLength}`);
+  if (c.step !== undefined) out.push(`step=${c.step}`);
+  if (c.pattern) out.push("pattern");
+  if (c.autocomplete) out.push(`ac=${c.autocomplete}`);
+  return out;
+}
+
+const SHOWN_OPTIONS_MAX = 12;
+
+function formatShownSelectOptions(options: NonNullable<ShownField["options"]>): string {
+  const all = formatSelectOptionList(options);
+  if (options.length <= SHOWN_OPTIONS_MAX) return all;
+  const head = formatSelectOptionList(options.slice(0, SHOWN_OPTIONS_MAX));
+  return `${head} / …${options.length - SHOWN_OPTIONS_MAX}`;
+}
+
 /** In-page (including link CTAs) first, then record rows, then landmark chrome. */
 function actionListRank(action: ShownAction): number {
   if (action.nav || looksLikeNavWidget(action)) return 2;
@@ -338,10 +366,21 @@ export function formatView(view: View): string {
     "shown:",
   ];
   for (const field of view.shown) {
-    const flags = [field.required ? "required" : undefined, field.type].filter(Boolean).join(", ");
+    const flags = [
+      field.required ? "required" : undefined,
+      field.type,
+      ...constraintFlags(field.constraints),
+    ]
+      .filter(Boolean)
+      .join(", ");
     const rendered = `  ${field.id}: ${JSON.stringify(field.value)}`;
     const withFlags = flags ? `${rendered}  [${flags}]` : rendered;
-    lines.push(field.label ? `${withFlags}  ${field.label}` : withFlags);
+    const withLabel = field.label ? `${withFlags}  ${field.label}` : withFlags;
+    const optionList =
+      field.options && field.options.length > 0
+        ? formatShownSelectOptions(field.options)
+        : "";
+    lines.push(optionList ? `${withLabel}  ${optionList}` : withLabel);
   }
   lines.push("actions:");
   const listed = [...view.actions].sort((a, b) => actionListRank(a) - actionListRank(b));

@@ -59,7 +59,9 @@ export function parseFillValue(raw: string, lineNo: number): string {
 }
 
 function formatFillValue(value: string): string {
-  return value === "" || /\s/.test(value) ? JSON.stringify(value) : value;
+  if (/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(value)) return value;
+  if (value === "" || !/^[A-Za-z0-9._@+-]+$/.test(value)) return JSON.stringify(value);
+  return value;
 }
 
 export function parseLine(line: string, lineNo = 1): Step | { comment: string } | null {

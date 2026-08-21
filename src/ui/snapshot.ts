@@ -9,7 +9,7 @@ import { collectFindingCases, listRuns } from "../persist/runs.js";
 import { loadCombinedTestability } from "../persist/testability.js";
 import { runsDir } from "../persist/workspace.js";
 import type { Config } from "../schema/config.js";
-import { UiLeash, UiRun, UiSnapshot, type UiRunStep } from "../schema/ui.js";
+import { UiLeash, UiMapFinding, UiRun, UiSnapshot, type UiRunStep } from "../schema/ui.js";
 import { buildUiGraph } from "./graph.js";
 import { identityFromRunId } from "./identity.js";
 import {
@@ -20,6 +20,7 @@ import {
   stepsFromNavLog,
 } from "./run-detail.js";
 import { originOfHref } from "../surveyor/ready.js";
+import { ledgerPath } from "../surveyor/path-template.js";
 
 function withNav(run: UiRun, dir: string): UiRun {
   const nav = join(dir, "nav.jsonl");
@@ -133,7 +134,30 @@ export function buildUiSnapshot(configPath: string): UiSnapshot {
     pages: config.map.pages,
     appOrigin: originOfHref(config.url),
   });
-  const graph = buildUiGraph(config.map, { testability, quality, findings, hops });
+  const mapFindings = findings.map((c) => {
+    const href = c.url ?? c.finding.url;
+    let path: string | undefined;
+    if (href) {
+      try {
+        const raw = new URL(href).pathname;
+        path = ledgerPath(raw === "" ? "/" : raw);
+      } catch {
+        path = undefined;
+      }
+    }
+    return UiMapFinding.parse({
+      id: c.id,
+      runId: c.runId,
+      kind: c.finding.kind,
+      severity: c.severity,
+      message: c.finding.message,
+      ...(href ? { url: href } : {}),
+      ...(c.pageId ? { pageId: c.pageId } : {}),
+      ...(path ? { path } : {}),
+      ...(c.screenshotPath ? { screenshotUrl: runFileUrl(c.runId, `findings/${c.id}/screenshot.png`) } : {}),
+    });
+  });
+  const graph = buildUiGraph(config.map, { findings, hops });
   if (shots.size > 0) {
     graph.nodes = graph.nodes.map((node) => {
       if (node.kind !== "page") return node;
@@ -149,6 +173,7 @@ export function buildUiSnapshot(configPath: string): UiSnapshot {
     testability,
     quality,
     runs: collectUiRuns(configPath),
+    findings: mapFindings,
     reports: listReports(configPath).map((r) => ({
       id: r.id,
       title: r.title,

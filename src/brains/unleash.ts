@@ -1,6 +1,7 @@
 import { formatStep } from "../schema/dsl.js";
 import type { Page } from "../schema/page-model.js";
 import type { ShownAction, ShownField, View } from "../schema/view.js";
+import { fakerFill } from "./faker-fill.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
 import { detectWalkerMode } from "./walker-mode.js";
 
@@ -143,8 +144,10 @@ export function looksLikeNavWidget(action: ShownAction): boolean {
 /** In-page actions minus dismiss while a form is on screen. */
 export function legalUnleashActions(view: View, pages?: readonly Page[]): ShownAction[] {
   const actions = inPageActions(view, pages);
-  if (view.shown.length === 0) return actions;
-  return actions.filter((a) => !isDismissAction(a) && !isLeaveAction(a));
+  const live =
+    view.shown.length === 0 ? actions : actions.filter((a) => !isDismissAction(a) && !isLeaveAction(a));
+  if (!searchIsActive(view)) return live;
+  return live.filter((a) => !isEmptyStateAction(a));
 }
 
 /**
@@ -182,9 +185,25 @@ export function isListChrome(action: ShownAction): boolean {
 
 export function looksLikeSearchField(field: ShownField): boolean {
   const id = field.id.toLowerCase();
-  if (/^(q|query|search)$/.test(id)) return true;
-  const blob = `${id} ${field.label ?? ""}`.toLowerCase();
+  if (/(^|_)(q|query|search|filter|find)(_|$)/.test(id)) return true;
+  const words = field.id.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+  const blob = `${words} ${field.label ?? ""}`.toLowerCase();
   return /\b(search|query|filter|find)\b/.test(blob);
+}
+
+/** Empty-list CTA (“Create your first …”). Hidden once a filter/search has a value. */
+export function isEmptyStateAction(action: ShownAction): boolean {
+  const id = action.id.toLowerCase();
+  const label = (action.label ?? "").toLowerCase();
+  if (id.includes("your_first") || id.includes("create_your_first") || id.includes("add_your_first")) {
+    return true;
+  }
+  if (/\byour first\b/.test(label) || /\bget started\b/.test(label)) return true;
+  return false;
+}
+
+export function searchIsActive(view: View): boolean {
+  return view.shown.some((f) => looksLikeSearchField(f) && f.value.trim() !== "" && f.value !== "••••");
 }
 
 /** In-page list chrome; landmark dropdowns and row links do not count. */
@@ -244,28 +263,42 @@ export function hopPage(view: View, rng: () => number): BrainDecision {
   return { line: formatStep({ kind: "screenshot" }), note: "no hoppable pages" };
 }
 
+/** Pick a real `<option>` value (or label if value is empty). Skips the placeholder `value=""`. */
+export function pickSelectOption(
+  options: readonly { value: string; label: string }[] | undefined,
+  rng: () => number,
+): string | undefined {
+  if (!options || options.length === 0) return undefined;
+  const real = options.filter((o) => o.value.trim() !== "");
+  const pool = real.length > 0 ? real : options.filter((o) => o.label.trim() !== "");
+  if (pool.length === 0) return undefined;
+  const chosen = pool[Math.floor(rng() * pool.length)]!;
+  return chosen.value.trim() !== "" ? chosen.value : chosen.label;
+}
+
+export type FillFn = (field: ShownField) => string;
+
 /** Short fill. Empty is legal under validationOnly; `allow` fills a value so submit can fire. */
 export function plausibleFill(
-  type: ShownField["type"],
+  field: ShownField,
   rng: () => number = Math.random,
   emptyOk = true,
 ): string {
-  if (emptyOk && rng() < 0.5) return "";
-  switch (type) {
-    case "number":
-      return "1";
-    case "email":
-      return "user@example.com";
-    default:
-      return "x";
+  if (field.type === "select") {
+    const hasEmpty = field.options?.some((o) => o.value === "") ?? false;
+    if (emptyOk && hasEmpty && rng() < 0.5) return "";
+    return pickSelectOption(field.options, rng) ?? "";
   }
+  if (field.type === "checkbox") return rng() < 0.5 ? "true" : "false";
+  if (emptyOk && rng() < 0.5) return "";
+  return fakerFill(field, rng);
 }
 
 const DESTRUCTIVE = /delete|remove|destroy/i;
-/** Ids like button_add_customer, create_invoice — not "address". */
-const SUBMIT_ID = /(^|_)(submit|save|create|apply|publish|send|update|confirm|run|next|continue|done|finish|ok|add)(_|$)/i;
+/** Commit verb is the last id segment (`button_save`, not `create_client_…_add_row`). */
+const SUBMIT_ID = /(^|_)(submit|save|create|apply|publish|send|update|confirm|run|next|continue|done|finish|ok)$/i;
 const SUBMIT_LABEL =
-  /\b(submit|save|create|apply|publish|send|update|confirm|run|next|continue|done|finish|add)\b|^ok$/i;
+  /\b(submit|save|create|apply|publish|send|update|confirm|run|next|continue|done|finish)\b|^ok$/i;
 
 export const FORM_BURST_MAX = 12;
 /** After filling, click Cancel/Close this often; otherwise submit. Cancel rarely finds bugs. */
@@ -323,6 +356,38 @@ export function freshClicks(
   });
 }
 
+export function withoutNoops(
+  actions: readonly ShownAction[],
+  noopIds: readonly string[] | undefined,
+): ShownAction[] {
+  if (!noopIds || noopIds.length === 0) return [...actions];
+  const dead = new Set(noopIds.map(clickKey));
+  return actions.filter((a) => !dead.has(clickKey(a.id)));
+}
+
+/** Every walker click pick goes through here so a loop cannot sit on one widget. */
+export function usableClicks(
+  actions: readonly ShownAction[],
+  ctx: Pick<BrainContext, "recentClicks" | "noopIds"> | undefined,
+  limit = RECENT_CLICK_LIMIT,
+): ShownAction[] {
+  return freshClicks(withoutNoops(actions, ctx?.noopIds), ctx?.recentClicks, limit);
+}
+
+/** Page + stack + widget ids. Values ignored — a snackbar is not a new surface. */
+export function viewWidgetSig(view: View): string {
+  const shown = view.shown.map((f) => f.id).sort().join(",");
+  const actions = view.actions.map((a) => a.id).sort().join(",");
+  return `${view.page}\0${view.stack.join(">")}\0${shown}\0${actions}`;
+}
+
+export function clickWasNoop(
+  before: { url: string; sig: string },
+  after: { url: string; sig: string },
+): boolean {
+  return before.url === after.url && before.sig === after.sig;
+}
+
 /** `opens` that points at this surface is a mis-stamp, not a hop. */
 export function isSelfOpen(action: { opens?: string }, surface?: string): boolean {
   return Boolean(surface && action.opens === surface);
@@ -347,25 +412,53 @@ function skipPaginationSubmit(actions: readonly ShownAction[], view?: View): boo
   return comboOrSort && hasPagerPair(actions);
 }
 
-/** Submit/save/create/add on this surface — not a page hop and not a delete. */
+function isFormSubmit(
+  a: ShownAction,
+  surface: string | undefined,
+  listPager: boolean,
+): boolean {
+  if (a.opens && !isSelfOpen(a, surface)) return false;
+  if (isDismissAction(a) || isLeaveAction(a)) return false;
+  if (isSortToggleAction(a)) return false;
+  if (isPaginationAction(a) && listPager) return false;
+  if (/(^|_)add_(row|filter|item|line)(_|$)/i.test(a.id)) return false;
+  if (isEmptyStateAction(a)) return false;
+  const blob = `${a.id} ${a.label ?? ""}`;
+  if (DESTRUCTIVE.test(blob)) return false;
+  if (isWriteAction(a)) return true;
+  if (SUBMIT_ID.test(a.id)) return true;
+  if (a.label && SUBMIT_LABEL.test(a.label)) return true;
+  return false;
+}
+
+/** Lower is a stronger commit. Prefer Save/Create over Apply/Next. */
+function submitRank(a: ShownAction): number {
+  const blob = `${a.id} ${a.label ?? ""}`.toLowerCase();
+  if (/(^|_)(save|create|submit|publish)(_|$)/.test(a.id) || /\b(save|create|submit|publish)\b/.test(blob)) {
+    return 0;
+  }
+  if (/(^|_)(apply|update|confirm|send)(_|$)/.test(a.id) || /\b(apply|update|confirm|send)\b/.test(blob)) {
+    return 1;
+  }
+  return 2;
+}
+
+/** Submit/save/create on this surface — not a page hop and not a delete. */
+export function formSubmitActions(
+  actions: readonly ShownAction[],
+  surface?: string,
+  view?: View,
+): ShownAction[] {
+  const listPager = skipPaginationSubmit(actions, view);
+  return actions.filter((a) => isFormSubmit(a, surface, listPager)).sort((a, b) => submitRank(a) - submitRank(b));
+}
+
 export function formSubmitAction(
   actions: readonly ShownAction[],
   surface?: string,
   view?: View,
 ): ShownAction | undefined {
-  const listPager = skipPaginationSubmit(actions, view);
-  return actions.find((a) => {
-    if (a.opens && !isSelfOpen(a, surface)) return false;
-    if (isDismissAction(a) || isLeaveAction(a)) return false;
-    if (isSortToggleAction(a)) return false;
-    if (isPaginationAction(a) && listPager) return false;
-    const blob = `${a.id} ${a.label ?? ""}`;
-    if (DESTRUCTIVE.test(blob)) return false;
-    if (isWriteAction(a)) return true;
-    if (SUBMIT_ID.test(a.id)) return true;
-    if (a.label && SUBMIT_LABEL.test(a.label)) return true;
-    return false;
-  });
+  return formSubmitActions(actions, surface, view)[0];
 }
 
 export function formDismissAction(actions: readonly ShownAction[]): ShownAction | undefined {
@@ -376,28 +469,35 @@ export function decideForm(
   view: View,
   actions: ShownAction[],
   rng: () => number,
-  fill: (type: ShownField["type"]) => string,
+  fill: FillFn,
+  ctx?: Pick<BrainContext, "recentClicks" | "noopIds">,
 ): BrainDecision | undefined {
   const fields = view.shown;
-  const submit = formSubmitAction(actions, view.surface, view);
-  if (fields.length === 0 || !submit) return undefined;
-  const empty = fields.filter((f) => !f.value.trim() || f.value === "••••");
-  const toFill = empty.slice(0, FORM_BURST_MAX);
+  const submits = formSubmitActions(actions, view.surface, view);
+  if (fields.length === 0 || submits.length === 0) return undefined;
+  const submitFresh = usableClicks(submits, ctx);
+  if (submitFresh.length === 0) return undefined;
+  const empty = fields.filter((f) => f.type === "checkbox" || !f.value.trim() || f.value === "••••");
+  const formFields = empty.filter((f) => !looksLikeSearchField(f));
+  const toFill = formFields.slice(0, FORM_BURST_MAX);
   const lines: string[] = toFill.map((field) =>
     formatStep({
       kind: "fill",
       surface: view.surface,
       id: field.id,
-      value: fill(field.type),
+      value: fill(field),
     }),
   );
   const dismiss = formDismissAction(view.actions);
-  const finish = dismiss && rng() < FORM_DISMISS_RATE ? dismiss : submit;
+  const dismissOk = Boolean(
+    dismiss && rng() < FORM_DISMISS_RATE && withoutNoops([dismiss], ctx?.noopIds).length > 0,
+  );
+  const finish = dismissOk && dismiss ? dismiss : submitFresh[0]!;
   lines.push(formatClick(view.surface, finish));
   return {
     line: lines[0]!,
     lines,
-    note: finish === dismiss ? "form dismiss" : toFill.length > 0 ? "form" : "form submit",
+    note: finish.id === dismiss?.id ? "form dismiss" : toFill.length > 0 ? "form" : "form submit",
   };
 }
 
@@ -409,7 +509,7 @@ function inDialog(view: View): boolean {
 export function decideUnleashWork(
   ctx: BrainContext,
   rng: () => number,
-  fill: (type: ShownField["type"]) => string,
+  fill: FillFn,
 ): BrainDecision {
   const mode = detectWalkerMode(ctx);
   const decision = mode.decide(ctx, rng, fill);
@@ -417,15 +517,15 @@ export function decideUnleashWork(
 }
 
 export function decideUnleash(ctx: BrainContext, rng: () => number = Math.random): BrainDecision {
-  return decideUnleashWork(ctx, rng, (type) =>
-    plausibleFill(type, rng, ctx.writePolicy === "allow" || inDialog(ctx.view) ? false : true),
+  return decideUnleashWork(ctx, rng, (field) =>
+    plausibleFill(field, rng, ctx.writePolicy === "allow" || inDialog(ctx.view) ? false : true),
   );
 }
 
 /** Click links and other non-write actions. Never fill. Hop to a known page when stuck. */
 export function decideMap(ctx: BrainContext, rng: () => number = Math.random): BrainDecision {
   const { view } = ctx;
-  const nav = navigateActions(view);
+  const nav = usableClicks(navigateActions(view), ctx);
   if (nav.length === 0) return hopPage(view, rng);
   const action = pickAction(nav, rng, "nav");
   return { line: formatClick(view.surface, action) };

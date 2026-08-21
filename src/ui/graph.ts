@@ -1,9 +1,7 @@
-import { sameLedgerPage } from "../schema/testability.js";
 import type { PageModelDraft } from "../schema/page-model.js";
-import { qualityLedgerItems, type QualityReport } from "../schema/quality.js";
-import type { TestabilityReport } from "../schema/testability.js";
 import type { FindingCase } from "../persist/runs.js";
 import type { UiGraph, UiGraphEdge, UiGraphNode } from "../schema/ui.js";
+import { ledgerPath } from "../surveyor/path-template.js";
 import { prettyPageLabel } from "./graph-labels.js";
 
 function pathOfHref(url: string | undefined): string | undefined {
@@ -21,33 +19,28 @@ function nodeLabel(page: { id: string; path: string }): string {
   return pretty.kicker ? `${pretty.kicker} / ${pretty.title}` : pretty.title;
 }
 
+export function findingOnPage(
+  finding: { pageId?: string; url?: string; finding?: { url?: string } },
+  page: { id: string; path: string },
+): boolean {
+  if (finding.pageId) return finding.pageId === page.id;
+  const href = finding.url ?? finding.finding?.url;
+  const findingPath = pathOfHref(href);
+  if (!findingPath) return false;
+  return ledgerPath(findingPath) === ledgerPath(page.path);
+}
+
+/** Red/yellow pills are finding folders, same objects as the sidebar run list. */
 export function badgeCounts(opts: {
+  pageId: string;
   path: string;
-  origin?: string;
-  testability?: TestabilityReport;
-  quality?: QualityReport;
-  findings?: FindingCase[];
+  findings?: Array<{ pageId?: string; url?: string; finding?: { url?: string }; severity: string }>;
 }): { red: number; yellow: number } {
   let red = 0;
   let yellow = 0;
-  const key = { path: opts.path, origin: opts.origin };
-  const t = opts.testability?.pages.find((p) => sameLedgerPage(p, key));
-  if (t) {
-    for (const i of t.issues) {
-      if (i.severity === "block") red += 1;
-      else yellow += 1;
-    }
-  }
-  const q = opts.quality?.pages.find((p) => sameLedgerPage(p, key));
-  if (q) {
-    for (const i of qualityLedgerItems(q)) {
-      if (i.severity === "error") red += 1;
-      else yellow += 1;
-    }
-  }
+  const page = { id: opts.pageId, path: opts.path };
   for (const c of opts.findings ?? []) {
-    const findingPath = pathOfHref(c.finding.url);
-    if (!findingPath || findingPath !== opts.path) continue;
+    if (!findingOnPage(c, page)) continue;
     if (c.severity === "critical" || c.severity === "major") red += 1;
     else yellow += 1;
   }
@@ -111,8 +104,6 @@ function attachOrphans(map: PageModelDraft, edges: UiGraphEdge[]): void {
 export function buildUiGraph(
   map: PageModelDraft,
   opts?: {
-    testability?: TestabilityReport;
-    quality?: QualityReport;
     findings?: FindingCase[];
     hops?: Array<{ from: string; to: string; label?: string }>;
   },
@@ -130,10 +121,8 @@ export function buildUiGraph(
 
   for (const page of map.pages) {
     const badges = badgeCounts({
+      pageId: page.id,
       path: page.path,
-      origin: page.origin,
-      testability: opts?.testability,
-      quality: opts?.quality,
       findings: opts?.findings,
     });
     nodes.push({

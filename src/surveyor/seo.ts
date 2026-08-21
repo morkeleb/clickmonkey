@@ -222,39 +222,88 @@ function applyInstanceTitles(report: QualityReport): QualityReport {
   };
 }
 
-const READ_META_SRC = `
-var attr = function (sel, name) {
-  var el = document.head ? document.head.querySelector(sel) : null;
-  var v = el ? el.getAttribute(name) : "";
-  return (v || "").trim();
-};
-var og = function (property) {
-  return attr('meta[property="' + property + '"]', "content") || attr('meta[name="' + property + '"]', "content");
-};
-var robots = [attr('meta[name="robots"]', "content"), attr('meta[name="googlebot"]', "content")]
-  .filter(Boolean)
-  .join(", ");
-return {
-  title: document.title || "",
-  description: attr('meta[name="description"]', "content"),
-  robots: robots,
-  ogTitle: og("og:title"),
-  ogDescription: og("og:description"),
-  ogImage: og("og:image"),
-  ogUrl: og("og:url"),
-  canonical: attr('link[rel="canonical"]', "href")
-};
-`;
-
-async function readMeta(page: Page): Promise<PageMeta> {
-  return page.evaluate((src) => new Function(src)(), READ_META_SRC) as Promise<PageMeta>;
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-/** `undefined` means the meta read failed — not “this page is clean.” */
+function parseAttrs(openTag: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const start = openTag.search(/\s/);
+  if (start < 0) return attrs;
+  const re = /([^\s"'>=/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/gi;
+  re.lastIndex = start;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(openTag))) {
+    attrs[m[1]!.toLowerCase()] = decodeEntities(m[2] ?? m[3] ?? m[4] ?? "");
+  }
+  return attrs;
+}
+
+function headChunk(html: string): string {
+  const m = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
+  return m?.[1] ?? html.slice(0, 80_000);
+}
+
+/** Same fields as a live `document.head` read, from a `page.content()` snapshot. */
+export function metaFromHtml(html: string): PageMeta {
+  const head = headChunk(html);
+  const titleM = head.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  let description = "";
+  let robots = "";
+  let googlebot = "";
+  let ogTitle = "";
+  let ogDescription = "";
+  let ogImage = "";
+  let ogUrl = "";
+  let canonical = "";
+  for (const m of head.matchAll(/<meta\b[^>]*>/gi)) {
+    const a = parseAttrs(m[0]!);
+    const name = (a.name ?? "").toLowerCase();
+    const property = (a.property ?? "").toLowerCase();
+    const content = a.content ?? "";
+    if (name === "description" && !description) description = content;
+    if (name === "robots" && !robots) robots = content;
+    if (name === "googlebot" && !googlebot) googlebot = content;
+    const key = property || name;
+    if (key === "og:title" && !ogTitle) ogTitle = content;
+    if (key === "og:description" && !ogDescription) ogDescription = content;
+    if (key === "og:image" && !ogImage) ogImage = content;
+    if (key === "og:url" && !ogUrl) ogUrl = content;
+  }
+  for (const m of head.matchAll(/<link\b[^>]*>/gi)) {
+    const a = parseAttrs(m[0]!);
+    if ((a.rel ?? "").toLowerCase() === "canonical" && !canonical) canonical = a.href ?? "";
+  }
+  return {
+    title: decodeEntities(titleM?.[1] ?? ""),
+    description,
+    robots: [robots, googlebot].filter(Boolean).join(", "),
+    ogTitle,
+    ogDescription,
+    ogImage,
+    ogUrl,
+    canonical,
+  };
+}
+
+export function scanSeoHtml(html: string, pageUrl: string): QualityIssue[] {
+  return issuesFromMeta(metaFromHtml(html), pageUrl);
+}
+
+/** `undefined` means the snapshot failed — not “this page is clean.” */
 export async function scanSeo(page: Page): Promise<QualityIssue[] | undefined> {
   try {
-    const meta = await readMeta(page);
-    return issuesFromMeta(meta, page.url());
+    return scanSeoHtml(await page.content(), page.url());
   } catch {
     return undefined;
   }

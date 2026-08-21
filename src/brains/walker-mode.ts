@@ -1,12 +1,11 @@
 import { formatStep } from "../schema/dsl.js";
-import type { ShownField, View } from "../schema/view.js";
+import type { View } from "../schema/view.js";
 import type { BrainContext, BrainDecision } from "./types.js";
 import {
   decideForm,
   FORM_BURST_MAX,
   formatClick,
   formSubmitAction,
-  freshClicks,
   hopPage,
   legalUnleashActions,
   isListChrome,
@@ -15,7 +14,12 @@ import {
   listModeScore,
   listRowActions,
   pickAction,
+  isEmptyStateAction,
+  looksLikeSearchField,
+  searchIsActive,
   stayActions,
+  usableClicks,
+  type FillFn,
 } from "./unleash.js";
 
 export type WalkerModeName = "form" | "list" | "nav";
@@ -26,7 +30,7 @@ export interface WalkerMode {
   decide(
     ctx: BrainContext,
     rng: () => number,
-    fill: (type: ShownField["type"]) => string,
+    fill: FillFn,
   ): BrainDecision;
 }
 
@@ -43,11 +47,10 @@ function hasSurfaceSubmit(ctx: BrainContext): boolean {
   );
 }
 
-function fillEmptyBurst(
-  view: View,
-  fill: (type: ShownField["type"]) => string,
-): BrainDecision | undefined {
-  const empty = view.shown.filter((f) => !f.value.trim() || f.value === "••••");
+function fillEmptyBurst(view: View, fill: FillFn): BrainDecision | undefined {
+  const empty = view.shown.filter(
+    (f) => !looksLikeSearchField(f) && (!f.value.trim() || f.value === "••••"),
+  );
   if (empty.length === 0) return undefined;
   const toFill = empty.slice(0, FORM_BURST_MAX);
   const lines = toFill.map((field) =>
@@ -55,96 +58,88 @@ function fillEmptyBurst(
       kind: "fill",
       surface: view.surface,
       id: field.id,
-      value: fill(field.type),
+      value: fill(field),
     }),
   );
   return { line: lines[0]!, lines, note: "form" };
 }
 
-function hopOrChromeFallback(view: View, rng: () => number): BrainDecision {
+function hopOrChromeFallback(view: View, rng: () => number, ctx?: BrainContext): BrainDecision {
   const hop = hopPage(view, rng);
   if (!hop.line.startsWith("screenshot") || view.actions.length === 0) return hop;
-  return { line: formatClick(view.surface, pickAction(view.actions, rng, "nav")) };
+  const actions = searchIsActive(view)
+    ? view.actions.filter((a) => !isEmptyStateAction(a))
+    : view.actions;
+  const pool = usableClicks(actions, ctx);
+  if (pool.length === 0) return hop;
+  return { line: formatClick(view.surface, pickAction(pool, rng, "nav")) };
 }
 
-function decideNav(
-  ctx: BrainContext,
-  rng: () => number,
-  fill: (type: ShownField["type"]) => string,
-): BrainDecision {
+function decideNav(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDecision {
   const { view } = ctx;
   const legal = legalUnleashActions(view, ctx.pages);
   const stay = stayActions(view, ctx.pages);
   const fields = view.shown;
 
-  if (legal.length === 0 && fields.length === 0) return hopOrChromeFallback(view, rng);
+  if (legal.length === 0 && fields.length === 0) return hopOrChromeFallback(view, rng, ctx);
 
   const leftover = fillEmptyBurst(view, fill);
   if (leftover) return leftover;
 
-  const recent = ctx.recentClicks ?? [];
-  const stayFresh = freshClicks(stay, recent);
-  const legalFresh = freshClicks(legal, recent);
+  const stayFresh = usableClicks(stay, ctx);
+  const legalFresh = usableClicks(legal, ctx);
   const pool = stayFresh.length > 0 ? stayFresh : legalFresh;
   if (pool.length > 0) {
     return { line: formatClick(view.surface, pick(pool, rng)) };
   }
-  return hopOrChromeFallback(view, rng);
+  return hopOrChromeFallback(view, rng, ctx);
 }
 
-function decideFormMode(
-  ctx: BrainContext,
-  rng: () => number,
-  fill: (type: ShownField["type"]) => string,
-): BrainDecision {
+function decideFormMode(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDecision {
   const { view } = ctx;
   const legal = legalUnleashActions(view, ctx.pages);
   const commit = ctx.writePolicy === "allow" || view.stack.length > 1;
   if (commit) {
-    const form = decideForm(view, legal, rng, fill);
+    const form = decideForm(view, legal, rng, fill, ctx);
     if (form) return form;
+    return hopOrChromeFallback(view, rng, ctx);
   }
   return fillEmptyBurst(view, fill) ?? decideNav(ctx, rng, fill);
 }
 
-function decideList(
-  ctx: BrainContext,
-  rng: () => number,
-  fill: (type: ShownField["type"]) => string,
-): BrainDecision {
+function decideList(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDecision {
   const { view } = ctx;
   const leftover = fillEmptyBurst(view, fill);
   if (leftover) return { ...leftover, note: "list" };
 
-  const recent = ctx.recentClicks ?? [];
   const stay = stayActions(view, ctx.pages);
-  const chrome = freshClicks(listChromeActions(stay), recent, LIST_CHROME_LIMIT);
+  const chrome = usableClicks(listChromeActions(stay), ctx, LIST_CHROME_LIMIT);
   if (chrome.length > 0) {
     return { line: formatClick(view.surface, pick(chrome, rng)), note: "list chrome" };
   }
 
-  const rows = freshClicks(listRowActions(view, ctx.pages), recent);
+  const rows = usableClicks(listRowActions(view, ctx.pages), ctx);
   if (rows.length > 0) {
     return { line: formatClick(view.surface, pick(rows, rng)), note: "list row" };
   }
 
-  const other = freshClicks(
+  const other = usableClicks(
     stay.filter((a) => !isListChrome(a)),
-    recent,
+    ctx,
   );
   if (other.length > 0) {
     return { line: formatClick(view.surface, pick(other, rng)), note: "list stay" };
   }
 
-  const legal = freshClicks(
+  const legal = usableClicks(
     legalUnleashActions(view, ctx.pages).filter((a) => !isListChrome(a)),
-    recent,
+    ctx,
   );
   if (legal.length > 0) {
     return { line: formatClick(view.surface, pick(legal, rng)), note: "list stay" };
   }
 
-  return hopOrChromeFallback(view, rng);
+  return hopOrChromeFallback(view, rng, ctx);
 }
 
 const formMode: WalkerMode = {

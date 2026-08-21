@@ -36,6 +36,8 @@ Fence bounce (`/logout`, off-app URL) is leash control, not a product finding.
 
 `--nasty` leftover text in a field is content, not a visual bug, unless that text overflows or clips.
 
+Native `<select>` only accepts its `<option>` list. Unleash (and `--nasty`) pick one of those values. Catalog junk still goes into text, textarea, and type-in comboboxes — `selectOption("x")` is not an XSS test, it is Playwright waiting for an option that does not exist. A spec fill that is not in the list fails immediately and names the options.
+
 ### Forms (empty-required)
 
 After inspect, `clickmonkey playbook empty-required` walks every mapped surface that has a submit and **required** fields (HTML `required`). For each required field:
@@ -51,6 +53,8 @@ expect <surface>.<field> invalid
 Invalid means `aria-invalid="true"` or a visible `{id}-error` node. Silent accept of a blank required field is a finding. A pass is not.
 
 Unleash and explore **prefer empty then invalid then a plausible value**. That is opportunistic: they do not assert `invalid` unless this playbook or a spec does.
+
+Unleash fills with Faker, scored from field id/label, HTML `type` / `autocomplete` / `inputmode`, and live `min` / `max` / `minlength` / `maxlength` / `step` / `pattern`. Native `<select>` still uses the option list. `--nasty` still uses catalog junk on type-in fields.
 
 Not automatic:
 

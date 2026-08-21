@@ -1,7 +1,14 @@
 import { join } from "node:path";
 import { chat } from "../brains/chat.js";
 import { decideUnleashNasty } from "../brains/nasty.js";
-import { rememberClick, mapBrain, unleashBrain } from "../brains/unleash.js";
+import {
+  clickWasNoop,
+  formSubmitActions,
+  rememberClick,
+  mapBrain,
+  unleashBrain,
+  viewWidgetSig,
+} from "../brains/unleash.js";
 import { decisionLines, type Brain } from "../brains/types.js";
 import { parseLine } from "../schema/dsl.js";
 import { bootRun } from "../executor/boot.js";
@@ -100,6 +107,7 @@ export async function runUnleash(opts: {
 
     let stepsUsed = 0;
     const clicksByPage = new Map<string, string[]>();
+    const noopsByPage = new Map<string, string[]>();
     while (stepsUsed < steps) {
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
@@ -112,6 +120,7 @@ export async function runUnleash(opts: {
         pages: state.model.pages,
         writePolicy: state.config.writePolicy,
         recentClicks: clicksByPage.get(onPage) ?? [],
+        noopIds: noopsByPage.get(onPage) ?? [],
       });
       if (state.navMeta) {
         if (decision.mode) state.navMeta.mode = decision.mode;
@@ -119,12 +128,30 @@ export async function runUnleash(opts: {
       }
       for (const line of decisionLines(decision)) {
         if (stepsUsed >= steps) break;
+        const parsed = parseLine(line);
+        const beforeClick =
+          parsed && !("comment" in parsed) && parsed.kind === "click"
+            ? { url: state.page.url(), sig: viewWidgetSig(view) }
+            : undefined;
+        const submitIds =
+          parsed && !("comment" in parsed) && parsed.kind === "click"
+            ? new Set(formSubmitActions(view.actions, view.surface, view).map((a) => a.id))
+            : undefined;
         const result = await exec.runLine(line);
         view = result.view;
         stepsUsed += 1;
-        const parsed = parseLine(line);
         if (parsed && !("comment" in parsed) && parsed.kind === "click") {
           clicksByPage.set(onPage, rememberClick(clicksByPage.get(onPage) ?? [], parsed.id));
+          if (
+            beforeClick &&
+            result.ok &&
+            !result.bounced &&
+            !submitIds?.has(parsed.id) &&
+            clickWasNoop(beforeClick, { url: state.page.url(), sig: viewWidgetSig(view) })
+          ) {
+            const dead = noopsByPage.get(onPage) ?? [];
+            if (!dead.includes(parsed.id)) noopsByPage.set(onPage, [...dead, parsed.id]);
+          }
         }
         if (result.finding && shouldPersistFinding(result.finding.kind)) {
           findings.push(result.finding);

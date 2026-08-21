@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import type { Page } from "@schema/page-model";
 import type { QualityIssue, QualityPage, QualityRuntimeEvent } from "@schema/quality";
 import type { TestabilityIssue, TestabilityPage } from "@schema/testability";
-import type { UiGraphNode, UiRun, UiSnapshot } from "@schema/ui";
+import type { UiGraphNode, UiMapFinding, UiRun, UiSnapshot } from "@schema/ui";
 import { Shot, ShotPreview } from "@/components/shot";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -132,14 +132,23 @@ function qualityScannerCount(page: QualityPage): number {
   return page.html.length + page.a11y.length + (page.seo ?? []).length + page.runtime.length;
 }
 
+function findingOnNode(finding: UiMapFinding, node: UiGraphNode): boolean {
+  if (node.kind !== "page") return false;
+  if (finding.pageId) return finding.pageId === node.pageId;
+  if (finding.path) return finding.path === node.path;
+  return false;
+}
+
 export function NodeSheet({
   snapshot,
   nodeId,
   onOpenChange,
+  onOpenRun,
 }: {
   snapshot: UiSnapshot;
   nodeId: string | null;
   onOpenChange: (open: boolean) => void;
+  onOpenRun?: (runId: string) => void;
 }) {
   const node = snapshot.graph.nodes.find((n) => n.id === nodeId);
   const page = node ? findPage(snapshot, node.pageId) : undefined;
@@ -148,6 +157,9 @@ export function NodeSheet({
   const here =
     node &&
     snapshot.runs.filter((run) => run.live && run.pageId === node.id);
+  const pageFindings = node
+    ? (snapshot.findings ?? []).filter((f) => findingOnNode(f, node))
+    : [];
   const blurb = page?.description ?? node?.blurb;
   const describedBy = page?.describedBy ?? node?.describedBy;
   const [preview, setPreview] = useState<string | null>(null);
@@ -213,6 +225,41 @@ export function NodeSheet({
                   </div>
                 </InfoStat>
               </div>
+              <section>
+                <h3 className="mb-2 text-sm font-medium">Findings {pageFindings.length}</h3>
+                {pageFindings.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No finding folders on this page.</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {pageFindings.map((finding) => (
+                      <li key={`${finding.runId}/${finding.id}`}>
+                        <button
+                          type="button"
+                          className="w-full min-w-0 rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-muted/40"
+                          onClick={() => onOpenRun?.(finding.runId)}
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Badge
+                              variant={
+                                finding.severity === "critical" || finding.severity === "major"
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {finding.severity}
+                            </Badge>
+                            <span className="min-w-0 truncate font-medium">{finding.kind}</span>
+                            <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
+                              {finding.runId}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs break-words text-muted-foreground">{finding.message}</p>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
               <section>
                 <h3 className="mb-2 text-sm font-medium">Testability</h3>
                 <IssueList issues={ledger.testability?.issues ?? []} />

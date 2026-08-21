@@ -196,6 +196,25 @@ click page.link_pipelines
     );
   });
 
+  it("quotes fill values that are not bare tokens", () => {
+    assert.equal(
+      formatStep({ kind: "fill", surface: "page", id: "name", value: "Ada Lovelace" }),
+      'fill page.name "Ada Lovelace"',
+    );
+    assert.equal(
+      formatStep({ kind: "fill", surface: "page", id: "phone", value: "(555) 010-1234" }),
+      'fill page.phone "(555) 010-1234"',
+    );
+    assert.equal(
+      formatStep({ kind: "fill", surface: "page", id: "email", value: "user@example.com" }),
+      "fill page.email user@example.com",
+    );
+    assert.equal(
+      formatStep({ kind: "fill", surface: "page", id: "user", value: "$CLICKMONKEY_USER" }),
+      "fill page.user $CLICKMONKEY_USER",
+    );
+  });
+
   it("round-trips expect text/value/hidden lines", () => {
     const lines = [
       'expect text "Saved"',

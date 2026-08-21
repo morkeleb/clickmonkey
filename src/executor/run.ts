@@ -5,7 +5,7 @@ import { chat } from "../brains/chat.js";
 import { persistFinding, persistVisualIssueFindings, shouldPersistFinding } from "../persist/finding.js";
 import { touchPresence } from "../persist/presence.js";
 import { persistSharedMap } from "../persist/config.js";
-import { lastVisualHash, persistQualityRuntime, persistQualityVisual } from "../persist/quality.js";
+import { lastQualityPage, lastVisualHash, persistQualityRuntime, persistQualityVisual } from "../persist/quality.js";
 import { normalizeQualityMessage } from "../schema/quality.js";
 import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { parseLine, formatLog, formatStep } from "../schema/dsl.js";
@@ -29,7 +29,10 @@ import {
   writePageStill,
   type StepFailure,
 } from "./steps.js";
+import { scanA11y } from "../surveyor/a11y.js";
+import { hashHtml, persistQualityFromHtml, qualityFromHtml } from "../surveyor/record.js";
 import { ledgerOrigin, originOfHref, pathnameOf } from "../surveyor/ready.js";
+import { seoIsPrivate } from "../surveyor/seo.js";
 import { hoppablePages, hopContextOf } from "./hop.js";
 import { logLand, logSight, logStepDone, logStepStart, type NavMeta } from "./nav-log.js";
 import { dumpVerboseState } from "./verbose.js";
@@ -54,6 +57,8 @@ export interface RunState {
   configPath?: string;
   lastAction?: { surface: string; id: string; opens?: string; fromPage?: string };
   lastScreenshotPath?: string;
+  /** `page.content()` for this step; quality checks read this, not the live page. */
+  stepHtml?: string;
   lastSight?: string;
   lastSightByPage?: Record<string, string>;
   /** PNG hash we already asked for a map blurb on, per page. */
@@ -228,27 +233,34 @@ function applyPageSight(state: RunState, pageKey: string): void {
   state.lastSight = state.lastSightByPage?.[pageKey];
 }
 
-async function scanStepVision(
-  state: RunState,
-  step: Step,
-  bounced: boolean,
-  shotPath: string | undefined,
-): Promise<void> {
+function livePageLoc(state: RunState): { path: string; origin?: string; href: string } {
+  const href = state.page.url();
   let path = "/";
   try {
     path = pathnameOf(state.page);
   } catch {
     path = "/";
   }
-  const origin = ledgerOrigin(state.page.url(), originOfHref(state.config.url));
+  return { path, href, origin: ledgerOrigin(href, originOfHref(state.config.url)) };
+}
+
+/** PNG + HTTP only. Do not touch `page` — finish() overlaps this with inspect/axe. */
+async function scanStepVision(
+  state: RunState,
+  step: Step,
+  bounced: boolean,
+  shotPath: string | undefined,
+  loc: { path: string; origin?: string; href: string },
+): Promise<string | undefined> {
+  const { path, origin, href } = loc;
   const pageKey = sightPageKey(path, origin);
   applyPageSight(state, pageKey);
-  if (state.replay || bounced) return;
-  if (!shotPath || !existsSync(shotPath)) return;
-  if (step.kind === "screenshot" && step.ui) return;
+  if (state.replay || bounced) return undefined;
+  if (!shotPath || !existsSync(shotPath)) return undefined;
+  if (step.kind === "screenshot" && step.ui) return undefined;
   try {
     const vision = resolveVision(state.config.vision, state.config.brain);
-    if (!vision || (!vision.issues && !vision.assist)) return;
+    if (!vision || (!vision.issues && !vision.assist)) return undefined;
     const key = { path, ...(origin ? { origin } : {}) };
     const needSight = Boolean(vision.assist && !state.lastSightByPage?.[pageKey]);
     const onPageSurface = state.surfaceStack.length <= 1;
@@ -276,7 +288,7 @@ async function scanStepVision(
         state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: shotHash };
       }
       applyPageSight(state, pageKey);
-      return;
+      return undefined;
     }
     if (vision.issues && result.persist) {
       if (state.configPath) {
@@ -294,7 +306,7 @@ async function scanStepVision(
       if (result.issues.some((i) => i.confidence === "high")) {
         persistVisualIssueFindings(state.outDir, result.issues, {
           stepIndex: state.log.steps.length,
-          url: state.page.url(),
+          url: href,
           screenshotPath: shotPath,
           tapePath: join(state.outDir, "replay.log"),
           replayLog: compactTape(state, step, "visual issue"),
@@ -307,18 +319,27 @@ async function scanStepVision(
         logSight(state.navLogPath, { line: formatStep(step), sight: result.sight });
       }
     }
+    applyPageSight(state, pageKey);
     if (needBlurb) {
       state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: result.hash };
-      if (result.blurb && mapPage && state.configPath && applyVisionBlurb(mapPage, result.blurb)) {
-        const saved = persistSharedMap(state.configPath, state.model);
-        state.config = saved;
-        state.model = saved.map;
-      }
+      return result.blurb;
     }
-    applyPageSight(state, pageKey);
+    return undefined;
   } catch {
     applyPageSight(state, pageKey);
+    return undefined;
   }
+}
+
+function commitVisionBlurb(state: RunState, blurb: string): void {
+  if (!state.configPath) return;
+  const onPageSurface = state.surfaceStack.length <= 1;
+  const mapPage = onPageSurface ? state.model.pages.find((p) => p.id === state.pageId) : undefined;
+  if (!mapPage || mapPage.describedBy === "vision") return;
+  if (!applyVisionBlurb(mapPage, blurb)) return;
+  const saved = persistSharedMap(state.configPath, state.model);
+  state.config = saved;
+  state.model = saved.map;
 }
 
 function lastActionFromStep(state: RunState, step: Step): RunState["lastAction"] {
@@ -417,14 +438,13 @@ async function finish(
   const bounced = fenceHit !== "ok";
 
   let finding: Finding | undefined;
+  let runInspect = false;
   if (bounced) {
     // Left the leash. Recover without treating it as a website finding.
   } else if (await isNotFoundPage(state.page)) {
     finding = await captureNotFoundFinding(state, step, href);
   } else {
-    await state.afterStep?.(state);
-    syncPageFromUrl(state);
-    if (state.outDir) touchPresence(state.outDir, state.pageId);
+    runInspect = true;
     if (stepFailure && stepFailure.kind !== "fenceViolation") {
       finding = await screenshotFinding(state, stepFailure, step);
     } else if (state.pendingFindings[0]) {
@@ -454,7 +474,66 @@ async function finish(
   if (shotPath && !bounced && finding?.kind !== "notFound") {
     writePageStill(state, shotPath);
   }
-  await scanStepVision(state, step, bounced, shotPath);
+  // Playwright Page is not concurrent-safe; only inspect then axe may use it.
+  const loc = livePageLoc(state);
+  let html: string | undefined;
+  if (runInspect && !state.replay) {
+    html = await state.page.content().catch(() => undefined);
+  }
+  state.stepHtml = html;
+  const scanPublicMeta = Boolean(html) && !seoIsPrivate(loc.path, state.config.seo);
+  const qualityKey = { path: loc.path, ...(loc.origin ? { origin: loc.origin } : {}) };
+  const prev =
+    html && state.configPath ? lastQualityPage(state.configPath, qualityKey, state.outDir) : undefined;
+  const hashHit = Boolean(html && prev && prev.htmlHash === hashHtml(html));
+  const [blurb, markup, a11y] = await Promise.all([
+    scanStepVision(state, step, bounced, shotPath, loc),
+    html && !hashHit
+      ? qualityFromHtml(html, loc.href, scanPublicMeta).catch(() => undefined)
+      : Promise.resolve(undefined),
+    runInspect
+      ? (async () => {
+          await state.afterStep?.(state);
+          syncPageFromUrl(state);
+          if (state.outDir) touchPresence(state.outDir, state.pageId);
+          if (!html || state.replay) return undefined;
+          if (hashHit) return prev?.a11y ?? [];
+          try {
+            return await scanA11y(state.page);
+          } catch {
+            return undefined;
+          }
+        })()
+      : Promise.resolve(undefined),
+  ]);
+  state.stepHtml = undefined;
+  if (html && runInspect && state.configPath && !state.replay) {
+    try {
+      const livePath = (() => {
+        try {
+          return pathnameOf(state.page);
+        } catch {
+          return loc.path;
+        }
+      })();
+      const path = state.model.pages.find((p) => p.id === state.pageId)?.path ?? loc.path;
+      await persistQualityFromHtml(state.configPath, {
+        html,
+        href: loc.href,
+        path,
+        livePath,
+        origin: loc.origin,
+        seo: state.config.seo,
+        outDir: state.outDir,
+        ...(a11y !== undefined ? { a11y } : {}),
+        ...(a11y === undefined && !hashHit ? { omitHtmlHash: true } : {}),
+        ...(markup ? { htmlIssues: markup.html, seoIssues: markup.seo } : {}),
+      });
+    } catch {
+      // scanners must not stall a walk
+    }
+  }
+  if (blurb) commitVisionBlurb(state, blurb);
 
   state.log.steps.push(step);
 

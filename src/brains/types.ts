@@ -30,6 +30,8 @@ export interface BrainContext {
   recent?: string[];
   /** Last clicks on this page (oldest → newest). Unleash skips a click key after two appearances. */
   recentClicks?: readonly string[];
+  /** Click ids that did nothing on this page (same URL, stack, widgets). Never pick again here. */
+  noopIds?: readonly string[];
   plan?: UiExplorePlan;
   pages?: readonly Page[];
   /** Last vision assist note. Context only — never a command or widget id. */
