@@ -38,6 +38,8 @@ export interface BrainContext {
   formHits?: Readonly<Record<string, number>>;
   /** Form hunt target (`page/surface`) the walker is walking toward. */
   huntTarget?: string;
+  /** Remaining local steps after a submit that changed page. Hunt waits. */
+  lootSteps?: number;
   plan?: UiExplorePlan;
   pages?: readonly Page[];
   /** Last vision assist note. Context only — never a command or widget id. */

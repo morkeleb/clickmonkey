@@ -87,6 +87,7 @@ function huntOrLocal(
   rng: () => number,
   local: () => BrainDecision,
 ): BrainDecision {
+  if ((ctx.lootSteps ?? 0) > 0) return local();
   const hunt = decideFormHunt(ctx, rng);
   if (hunt && rng() >= FORM_HUNT_STAY_RATE) return hunt;
   return local();

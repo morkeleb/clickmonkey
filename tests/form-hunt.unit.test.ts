@@ -278,6 +278,11 @@ describe("huntScore", () => {
   it("prefers an untested form over a nearby one already filled", () => {
     assert.ok(huntScore(0, 2) > huntScore(3, 0));
   });
+
+  it("prefers the closer form when hunger is equal", () => {
+    assert.ok(huntScore(0, 0) > huntScore(0, 1));
+    assert.ok(huntScore(1, 1) > huntScore(1, 4));
+  });
 });
 
 describe("decideUnleash form hunt", () => {
@@ -294,6 +299,23 @@ describe("decideUnleash form hunt", () => {
     );
     assert.equal(d.note, "form hunt");
     assert.match(d.line, /^open (customers|invoices)$/);
+  });
+
+  it("stays on a new entity while lootSteps remain, even if hunt would fire", () => {
+    const view = viewOf({
+      page: "customer_123",
+      pages: ["home", "customers", "invoices"],
+      actions: [
+        { id: "button_edit" },
+        { id: "link_home", nav: true, opens: "home" },
+      ],
+    });
+    const d = decideUnleash(
+      { view, stepsUsed: 8, pages: [home, customers, invoices], lootSteps: 4 },
+      () => 0.5,
+    );
+    assert.notEqual(d.note, "form hunt");
+    assert.equal(d.line, "click page.button_edit");
   });
 
   it("still samples list chrome when rng stays local", () => {

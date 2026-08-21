@@ -8,6 +8,8 @@ import { formatClick, formSubmitAction, looksLikeSearchField, usableClicks } fro
 export const FORM_HUNT_STAY_RATE = 0.2;
 /** Chance to drop the current hunt target and pick again. */
 export const FORM_HUNT_RETHINK = 0.15;
+/** Local clicks after a submit that landed on a new page (inspect the record). */
+export const LOOT_EXPLORE_STEPS = 5;
 
 export type FormGoal = {
   pageId: string;

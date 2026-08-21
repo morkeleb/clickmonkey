@@ -222,6 +222,7 @@ export {
   mapFormGoals,
   FORM_HUNT_STAY_RATE,
   FORM_HUNT_RETHINK,
+  LOOT_EXPLORE_STEPS,
 } from "./brains/form-hunt.js";
 export type { FormGoal, HuntEdge, HuntNode, HuntReach } from "./brains/form-hunt.js";
 export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";

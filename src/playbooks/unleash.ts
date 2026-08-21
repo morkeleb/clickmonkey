@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { chat } from "../brains/chat.js";
 import { decideUnleashNasty } from "../brains/nasty.js";
+import { LOOT_EXPLORE_STEPS } from "../brains/form-hunt.js";
 import {
   clickWasNoop,
   formSubmitActions,
@@ -110,6 +111,7 @@ export async function runUnleash(opts: {
     const noopsByPage = new Map<string, string[]>();
     const formHits: Record<string, number> = {};
     let huntTarget: string | undefined;
+    let lootSteps = 0;
     while (stepsUsed < steps) {
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
@@ -125,6 +127,7 @@ export async function runUnleash(opts: {
         noopIds: noopsByPage.get(onPage) ?? [],
         formHits,
         ...(huntTarget ? { huntTarget } : {}),
+        ...(lootSteps > 0 ? { lootSteps } : {}),
       });
       if (state.navMeta) {
         if (decision.mode) state.navMeta.mode = decision.mode;
@@ -170,16 +173,28 @@ export async function runUnleash(opts: {
           findings.push(result.finding);
           view = await resetToSeed(exec, state, seedPageId);
           huntTarget = undefined;
+          lootSteps = 0;
+          formOk = false;
           break;
         }
         if (result.bounced || !result.ok) {
           if (result.bounced) view = await resetToSeed(exec, state, seedPageId);
           huntTarget = undefined;
+          lootSteps = 0;
+          formOk = false;
           break;
         }
         formOk = true;
       }
       if (filledForm && formOk) formHits[formKey] = (formHits[formKey] ?? 0) + 1;
+      const submitted =
+        decision.note === "form" || decision.note === "form submit";
+      if (submitted && formOk && view.page !== onPage) {
+        lootSteps = LOOT_EXPLORE_STEPS;
+        huntTarget = undefined;
+      } else if (lootSteps > 0) {
+        lootSteps -= 1;
+      }
     }
 
     const log: Log = {
