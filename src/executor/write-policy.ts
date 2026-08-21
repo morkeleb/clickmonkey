@@ -1,3 +1,6 @@
+import { formSubmitIsListPager, isFormSubmit } from "../brains/unleash.js";
+import type { ShownAction } from "../schema/view.js";
+
 export function isPotentialWrite(
   action: { id: string; name?: string; by: string },
   inputType?: string,
@@ -8,23 +11,30 @@ export function isPotentialWrite(
   return false;
 }
 
-const COMMIT_ID = /(^|_)(submit|save|create|apply|publish|send|update|confirm)$/i;
-const NEXT_ID = /(^|_)(next|continue)$/i;
-const PREV_ID = /(^|_)(previous|prev)$/i;
-const ADD_ROW_ID = /(^|_)add_(row|filter|item|line)(_|$)/i;
+function asShown(action: {
+  id: string;
+  name?: string;
+  label?: string;
+  opens?: string;
+  nav?: boolean;
+  role?: string;
+}): ShownAction {
+  const label = action.label ?? action.name;
+  return {
+    id: action.id,
+    ...(action.opens ? { opens: action.opens } : {}),
+    ...(label ? { label } : {}),
+    ...(action.nav ? { nav: true } : {}),
+    ...(action.role ? { role: action.role } : {}),
+  };
+}
 
-/** Commit click for the after-fill validation oracle. Skips openers and list pagers. */
+/** Same classifier unleash uses for form submit (wizard Next vs list pager). */
 export function looksLikeSubmitClick(
-  action: { id: string; name?: string; by: string; opens?: string },
-  siblings?: readonly { id: string }[],
+  action: { id: string; name?: string; by: string; opens?: string; nav?: boolean; role?: string },
+  siblings?: readonly { id: string; name?: string; opens?: string; nav?: boolean; role?: string }[],
 ): boolean {
-  if (action.opens) return false;
-  if (ADD_ROW_ID.test(action.id)) return false;
-  if (isPotentialWrite(action)) return true;
-  if (COMMIT_ID.test(action.id)) return true;
-  if (NEXT_ID.test(action.id)) {
-    if (siblings?.some((a) => PREV_ID.test(a.id))) return false;
-    return true;
-  }
-  return false;
+  const shown = asShown(action);
+  const sibs = (siblings ?? []).map(asShown);
+  return isFormSubmit(shown, undefined, formSubmitIsListPager(sibs));
 }

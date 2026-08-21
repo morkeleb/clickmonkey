@@ -107,6 +107,7 @@ describe("fillCtxForPageError", () => {
     assert.equal(ctx?.field, "page.from_date");
     assert.equal(ctx?.value, "%00%00%00%00");
     assert.equal(ctx?.markedInvalid, undefined);
+    assert.equal(ctx?.shouldInvalid, true);
   });
 
   it("after a click, names the last junk fill", () => {
@@ -127,6 +128,20 @@ describe("fillCtxForPageError", () => {
     const ctx = fillCtxForPageError(fills, { kind: "click", surface: "page", id: "save" });
     assert.equal(ctx?.field, "page.from_date");
     assert.equal(ctx?.markedInvalid, false);
+    assert.equal(ctx?.shouldInvalid, true);
+  });
+
+  it("does not treat a plausible fill as junk on a later click", () => {
+    const fills = upsertTrackedFill(undefined, {
+      surface: "page",
+      id: "name",
+      value: "Ada",
+      shouldInvalid: false,
+      validity: valid,
+    });
+    const ctx = fillCtxForPageError(fills, { kind: "click", surface: "page", id: "save" });
+    assert.equal(ctx?.field, "page.name");
+    assert.equal(ctx?.shouldInvalid, false);
   });
 
   it("uses the in-flight fill value, not a prior fill of the same field", () => {
@@ -166,14 +181,24 @@ describe("validationMissExplanation", () => {
 });
 
 describe("looksLikeSubmitClick", () => {
-  it("skips openers, add_row, and pager next when previous exists", () => {
+  it("matches unleash: skip openers and add_row, keep wizard Next, skip list pagers", () => {
     assert.equal(looksLikeSubmitClick({ id: "create", by: "role", opens: "dialog" }), false);
     assert.equal(looksLikeSubmitClick({ id: "add_row", by: "css" }), false);
     assert.equal(
       looksLikeSubmitClick({ id: "next", by: "role" }, [{ id: "previous" }, { id: "next" }]),
+      true,
+    );
+    assert.equal(
+      looksLikeSubmitClick({ id: "next", by: "role" }, [
+        { id: "previous" },
+        { id: "next" },
+        { id: "combobox_status", role: "combobox" },
+        { id: "sorted_ascending" },
+      ]),
       false,
     );
     assert.equal(looksLikeSubmitClick({ id: "save", by: "role" }), true);
+    assert.equal(looksLikeSubmitClick({ id: "done", by: "role" }), true);
     assert.equal(looksLikeSubmitClick({ id: "next", by: "role" }), true);
     assert.equal(looksLikeSubmitClick({ id: "submit", by: "css" }), true);
   });

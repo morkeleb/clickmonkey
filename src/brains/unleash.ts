@@ -401,7 +401,7 @@ function hasPagerPair(actions: readonly ShownAction[]): boolean {
 }
 
 /** Wizard Next stays submit; a Previous+Next pair with other list chrome is pagination. */
-function skipPaginationSubmit(actions: readonly ShownAction[], view?: View): boolean {
+export function formSubmitIsListPager(actions: readonly ShownAction[], view?: View): boolean {
   if (view) {
     const n = nonPagerListKinds(view);
     return n >= 2 || (n >= 1 && hasPagerPair(view.actions));
@@ -412,7 +412,7 @@ function skipPaginationSubmit(actions: readonly ShownAction[], view?: View): boo
   return comboOrSort && hasPagerPair(actions);
 }
 
-function isFormSubmit(
+export function isFormSubmit(
   a: ShownAction,
   surface: string | undefined,
   listPager: boolean,
@@ -449,7 +449,7 @@ export function formSubmitActions(
   surface?: string,
   view?: View,
 ): ShownAction[] {
-  const listPager = skipPaginationSubmit(actions, view);
+  const listPager = formSubmitIsListPager(actions, view);
   return actions.filter((a) => isFormSubmit(a, surface, listPager)).sort((a, b) => submitRank(a) - submitRank(b));
 }
 

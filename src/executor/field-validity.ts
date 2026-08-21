@@ -142,6 +142,7 @@ function latestTrackedFill(fills: TrackedFill[] | undefined, preferShouldInvalid
     for (let i = fills.length - 1; i >= 0; i--) {
       if (fills[i]?.shouldInvalid) return fills[i];
     }
+    return undefined;
   }
   return fills[fills.length - 1];
 }
@@ -154,16 +155,25 @@ export function fillCtxForPageError(
     step?.kind === "fill" && step.surface && step.id
       ? { surface: step.surface, id: step.id, value: step.value ?? "" }
       : undefined;
+  const junk = latestTrackedFill(fills, true);
+  const last = latestTrackedFill(fills, false);
   const match = fromStep
     ? fills?.find((f) => f.surface === fromStep.surface && f.id === fromStep.id)
-    : latestTrackedFill(fills, true);
+    : (junk ?? last);
   const surface = fromStep?.surface ?? match?.surface;
   const id = fromStep?.id ?? match?.id;
   if (!surface || !id) return undefined;
+  const value = fromStep?.value ?? match?.value ?? "";
   const sameValue = Boolean(fromStep && match && match.value === fromStep.value);
+  const shouldInvalid = fromStep
+    ? sameValue
+      ? Boolean(match?.shouldInvalid)
+      : fillShouldLookInvalid({ id: fromStep.id }, fromStep.value)
+    : Boolean(match?.shouldInvalid);
   return {
     field: `${surface}.${id}`,
-    value: clipFillValue(fromStep?.value ?? match?.value ?? ""),
+    value: clipFillValue(value),
     markedInvalid: match && (!fromStep || sameValue) ? fieldLooksInvalid(match.validity) : undefined,
+    shouldInvalid,
   };
 }

@@ -408,6 +408,7 @@ describe("findings report", () => {
       field: "page.from_date",
       value: "%00%00%00%00",
       markedInvalid: false,
+      shouldInvalid: true,
     });
     assert.match(body, /uncaught JavaScript error/);
     assert.match(body, /the page crashed/i);
@@ -425,6 +426,14 @@ describe("findings report", () => {
     assert.match(generic, /uncaught JavaScript error/);
     assert.doesNotMatch(generic, /validation is missing/);
     assert.doesNotMatch(generic, /ClickMonkey had just filled/);
+    const afterValid = pageErrorExplanation("Ga(...) is not a function", {
+      field: "page.name",
+      value: "Ada",
+      shouldInvalid: false,
+    });
+    assert.match(afterValid, /page\.name/);
+    assert.doesNotMatch(afterValid, /validation is missing/);
+    assert.doesNotMatch(afterValid, /junk value that crashes/);
   });
 
   it("renders a silent-accept finding as missing validation, not a raw expect", () => {

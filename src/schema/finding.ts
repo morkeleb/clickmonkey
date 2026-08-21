@@ -62,6 +62,7 @@ export type PageErrorFillCtx = {
   field?: string;
   value?: string;
   markedInvalid?: boolean;
+  shouldInvalid?: boolean;
 };
 
 /** Strip a wrapper we may have already applied at persist time. */
@@ -103,6 +104,7 @@ function fillFromStoredExplanation(message: string): PageErrorFillCtx | undefine
     field: m[1],
     ...(value !== undefined ? { value } : {}),
     ...(/was not marked invalid/.test(message) ? { markedInvalid: false } : {}),
+    shouldInvalid: /validation is missing|junk value that crashes/i.test(message),
   };
 }
 
@@ -116,12 +118,16 @@ export function pageErrorExplanation(message: string, fill?: PageErrorFillCtx): 
   if (ctx?.field) {
     const shown = ctx.value !== undefined ? ` with ${JSON.stringify(ctx.value)}` : "";
     lines.push(`ClickMonkey had just filled \`${ctx.field}\`${shown}.`);
-    if (ctx.markedInvalid === false) {
-      lines.push("The field was not marked invalid (`aria-invalid`, visible error, or HTML5 constraint validation).");
+    if (ctx.shouldInvalid) {
+      if (ctx.markedInvalid === false) {
+        lines.push("The field was not marked invalid (`aria-invalid`, visible error, or HTML5 constraint validation).");
+      }
+      lines.push(
+        "The page threw an uncaught JS error instead of rejecting the input. That means validation is missing or does not wrap parsing. A junk value that crashes the page is a product bug, not an expected reaction to bad input.",
+      );
+    } else {
+      lines.push(`Uncaught JS error: \`${detail}\`. The exception escaped page JavaScript.`);
     }
-    lines.push(
-      "The page threw an uncaught JS error instead of rejecting the input. That means validation is missing or does not wrap parsing. A junk value that crashes the page is a product bug, not an expected reaction to bad input.",
-    );
   } else {
     lines.push(`Uncaught JS error: \`${detail}\`. The exception escaped page JavaScript.`);
   }

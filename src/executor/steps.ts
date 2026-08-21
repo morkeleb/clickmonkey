@@ -234,6 +234,7 @@ async function readFieldValiditySettled(
   const started = Date.now();
   let validity = await readFieldValidity(live, state.page, fieldId);
   while (!fieldLooksInvalid(validity) && Date.now() - started < INVALID_SETTLE_MS) {
+    if (state.pendingFindings.some((f) => f.kind === "pageError")) return validity;
     await state.page.waitForTimeout(100);
     validity = await readFieldValidity(live, state.page, fieldId);
   }
@@ -252,9 +253,16 @@ async function checkTrackedFillsAfterSubmit(state: RunState): Promise<StepFailur
     const live = await pickActable(loc, state.page);
     if (!live) continue;
     const validity = await readFieldValiditySettled(state, live, last.id);
-    rememberTrackedFill(state, { ...last, validity });
-    if (!fieldLooksInvalid(validity)) stillOk.push({ ...last, validity });
+    if (state.pendingFindings.some((f) => f.kind === "pageError")) return undefined;
+    const liveValue = await live.inputValue().catch(() => last.value);
+    const stillJunk =
+      liveValue === last.value
+        ? last.shouldInvalid
+        : fillShouldLookInvalid({ id: last.id }, liveValue);
+    rememberTrackedFill(state, { ...last, value: liveValue, shouldInvalid: stillJunk, validity });
+    if (stillJunk && !fieldLooksInvalid(validity)) stillOk.push({ ...last, value: liveValue, validity });
   }
+  if (state.pendingFindings.some((f) => f.kind === "pageError")) return undefined;
   if (stillOk.length === 0) return undefined;
   const first = stillOk[0]!;
   return {
@@ -367,6 +375,7 @@ async function performFill(
   }).catch(() => undefined);
   const constraints = await readFieldConstraints(pw);
   const validity = await readFieldValidity(pw, state.page, id);
+  const liveValue = await pw.inputValue().catch(() => resolved);
   const shouldInvalid = fillShouldLookInvalid(
     {
       id,
@@ -375,27 +384,17 @@ async function performFill(
       label: field?.name ?? field?.previousLabel,
       constraints,
     },
-    resolved,
+    liveValue,
   );
-  rememberTrackedFill(state, { surface: surfaceId, id, value: resolved, shouldInvalid, validity });
+  rememberTrackedFill(state, { surface: surfaceId, id, value: liveValue, shouldInvalid, validity });
   return undefined;
 }
 
-function trackedFillFor(state: RunState, surfaceId: string, id: string): TrackedFill | undefined {
-  return (
-    state.lastFills?.find((f) => f.surface === surfaceId && f.id === id) ??
-    (state.lastFill?.surface === surfaceId && state.lastFill.id === id ? state.lastFill : undefined)
-  );
-}
-
-function invalidExpectFailure(state: RunState, surfaceId: string, id: string): StepFailure {
+function invalidExpectFailure(_state: RunState, surfaceId: string, id: string): StepFailure {
   const key = widgetKey(surfaceId, id);
-  const last = trackedFillFor(state, surfaceId, id);
   return {
     kind: "expectFailed",
-    message: last
-      ? validationMissExplanation([{ field: key, value: clipFillValue(last.value) }])
-      : `expected ${key} invalid`,
+    message: `expected ${key} invalid`,
     widgetRef: key,
   };
 }
