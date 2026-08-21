@@ -1,7 +1,8 @@
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { UiFault, UiNotice } from "@schema/ui";
+import { publicUrl } from "@/lib/paths";
 
 function CopyBlock({ text }: { text: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
@@ -34,6 +35,52 @@ function noticeCopy(notice: UiNotice): string {
   return [notice.title, notice.message, notice.hint, notice.detail].filter(Boolean).join("\n\n");
 }
 
+async function waitForUi(): Promise<boolean> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => window.setTimeout(r, 400));
+    try {
+      const res = await fetch(publicUrl("api/snapshot"), { cache: "no-store" });
+      if (res.ok || res.status === 503) return true;
+    } catch {
+      /* still down */
+    }
+  }
+  return false;
+}
+
+export function RestartUiButton() {
+  const [state, setState] = useState<"idle" | "working" | "waiting" | "failed">("idle");
+  return (
+    <Button
+      type="button"
+      size="sm"
+      title="Restart the clickmonkey ui process"
+      disabled={state === "working" || state === "waiting"}
+      onClick={() => {
+        void (async () => {
+          setState("working");
+          try {
+            await fetch(publicUrl("api/restart"), { method: "POST" });
+          } catch {
+            /* connection drop is expected once the process exits */
+          }
+          setState("waiting");
+          const up = await waitForUi();
+          if (up) {
+            window.location.reload();
+            return;
+          }
+          setState("failed");
+        })();
+      }}
+    >
+      <RotateCw />
+      {state === "waiting" ? "Waiting…" : state === "failed" ? "Restart failed" : "Restart UI"}
+    </Button>
+  );
+}
+
 export function FaultPanel({ fault }: { fault: UiFault }) {
   return (
     <div className="mx-auto flex h-svh max-w-2xl flex-col justify-center gap-4 bg-background p-6 text-foreground">
@@ -49,7 +96,8 @@ export function FaultPanel({ fault }: { fault: UiFault }) {
           {fault.detail}
         </pre>
       ) : null}
-      <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <RestartUiButton />
         <CopyBlock text={fault.copy} />
       </div>
     </div>
@@ -70,7 +118,10 @@ export function NoticeBanner({ notice }: { notice: UiNotice }) {
           <pre className="mt-2 whitespace-pre-wrap font-mono text-[11px] opacity-90">{notice.hint}</pre>
         ) : null}
       </div>
-      <CopyBlock text={noticeCopy(notice)} />
+      <div className="flex shrink-0 items-center gap-2">
+        {notice.action === "restart" ? <RestartUiButton /> : null}
+        <CopyBlock text={noticeCopy(notice)} />
+      </div>
     </div>
   );
 }

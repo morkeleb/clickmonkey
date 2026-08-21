@@ -58,18 +58,29 @@ playbook should pass there and write no findings.
 `clickmonkey step 'click page.open_create'` runs one line against the live
 page and appends it to `clickmonkey/runs/<id>/log.txt`.
 
-The map is fog of war. Three walkers lift or poke it:
+The map is fog of war. Walkers have jobs — they are not the same random clicker:
 
 ```bash
-clickmonkey map --steps 80          # navigate only — grow pages/surfaces
-clickmonkey unleash --steps 200     # click + fill + submit
-clickmonkey explore --charter "…"   # LLM, needs brain in clickmonkey.json
-clickmonkey mcp                     # host LLM walks via stdio (no config.brain)
+clickmonkey map --steps 80               # scout — grow pages/surfaces, never fill
+clickmonkey unleash --steps 200          # NPC — hunt mapped forms, fill, submit
+clickmonkey unleash --nasty --steps 200  # rogue — junk in those forms (site you own)
+clickmonkey explore --charter "…"        # paladin — do the job in the charter (needs brain)
+clickmonkey mcp                          # same paladin, host LLM via stdio
 ```
 
-`map` never fills and never clicks submit/save/delete. It follows links and
-dialog openers, then `open`s a known page when the current surface has nothing
-left to walk. After it, `unleash` and `explore` see more legal ids.
+**Map** is the scout. It clicks around so the sitemap exists: pages, dialogs,
+openers. It never fills and never clicks submit/save/delete. After it, the
+others have legal ids.
+
+**Unleash** is an NPC on that map. It pathfinds toward forms (fields + submit),
+fills them, and watches what happens. Forms already filled this run drop in
+priority but stay in the pool. A little local chrome still gets a poke.
+`--nasty` is the rogue version of the same hunt: XSS/SQLi/overlong junk and
+missed validation, only on a site you own.
+
+**Explore** is the paladin. A charter (ticket, `git log`) says what “doing the
+job” means; the model walks legal ids toward that, not toward random forms.
+MCP is the same role with the host LLM as the brain.
 
 Explore pings `brain` before it opens a browser. If the model is unreachable
 or the API key is missing, it exits 2 instead of walking blind. It will not
@@ -106,6 +117,7 @@ clickmonkey/replays/
 clickmonkey/bundle/
 clickmonkey/reports/
 clickmonkey/dev-origin
+clickmonkey/ui.pid
 clickmonkey/**/*.json.lock
 clickmonkey/**/*.json.tmp
 ```
@@ -198,9 +210,10 @@ clickmonkey spec [file.md] [--check] [--fail-on-findings]
 clickmonkey compact <log> [--out <file>]
 clickmonkey bundle [--config] [--out]
 clickmonkey ui
+clickmonkey ui --stop
 ```
 
-`clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists. A report page has **Copy** (markdown + inlined screenshots for pasting into a model) next to **Print**.
+`clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists. If the banner says the UI is stale, use **Restart UI** in that banner, or `clickmonkey ui --stop` then `clickmonkey ui`. A report page has **Copy** (markdown + inlined screenshots for pasting into a model) next to **Print**.
 
 `clickmonkey bundle` writes a static copy of that dashboard (default `clickmonkey/bundle/`). It does not need the CLI to view: serve the folder (`python3 -m http.server 4174`) or upload it to GitLab Pages. Do not open `index.html` as `file://` — fetch is blocked. A GitLab job example is `examples/gitlab-ci.yml`.
 

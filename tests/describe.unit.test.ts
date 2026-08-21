@@ -5,6 +5,7 @@ import {
   applyMissingPageDescriptions,
   applyPageDescription,
   applyVisionBlurb,
+  visionMayDescribe,
   describeKeyOf,
   mechanicalDescription,
   polishPageDescription,
@@ -202,6 +203,39 @@ describe("applyVisionBlurb", () => {
     assert.equal(applyVisionBlurb(page, "click page.go"), false);
     assert.equal(page.description, before);
     assert.equal(page.describedBy, "inspect");
+  });
+
+  it("does not stamp a loading-frame caption as the page blurb", () => {
+    const page = pageOf({ id: "ledger", path: "/finance/ledger" });
+    applyPageDescription(page);
+    const before = page.description;
+    assert.equal(
+      applyVisionBlurb(page, "Loading screen for Filevine Finance app; waits for content to appear."),
+      false,
+    );
+    assert.equal(page.description, before);
+    assert.equal(page.describedBy, "inspect");
+  });
+
+  it("replaces a loading-frame vision blurb with a real caption", () => {
+    const page = pageOf({ id: "ledger", path: "/finance/ledger" });
+    page.description = "Loading screen for Filevine Finance app; waits for content to appear.";
+    page.describedBy = "vision";
+    assert.equal(visionMayDescribe(page), true);
+    assert.equal(
+      applyVisionBlurb(page, "Ledger configuration with Active and Draft ledger cards."),
+      true,
+    );
+    assert.equal(page.describedBy, "vision");
+    assert.match(page.description ?? "", /Ledger configuration/);
+  });
+
+  it("does not replace a real vision blurb", () => {
+    const page = pageOf({ id: "ledger", path: "/finance/ledger" });
+    applyVisionBlurb(page, "Ledger configuration with Active and Draft ledger cards.");
+    assert.equal(visionMayDescribe(page), false);
+    assert.equal(applyVisionBlurb(page, "Something else entirely with KPI cards."), false);
+    assert.match(page.description ?? "", /Ledger configuration/);
   });
 
   it("replaces an explore blurb", () => {

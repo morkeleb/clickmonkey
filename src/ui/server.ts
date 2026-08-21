@@ -13,6 +13,7 @@ import { runsDir, workspaceDir, WORKSPACE_DIR } from "../persist/workspace.js";
 import type { UiEvent, UiEventType } from "../schema/ui.js";
 import { isSafeReportId, readReport } from "../persist/reports.js";
 import { formatUiFault, snapshotFailNotice, sourceNewerThanStarted, staleUiNotice } from "./fault.js";
+import { clearUiPid, spawnDetachedUi, writeUiPid } from "./pid.js";
 import { buildRunDetail, isSafeRunId } from "./run-detail.js";
 import { buildUiSnapshot } from "./snapshot.js";
 import { UiSnapshot, type UiSnapshot as UiSnapshotT } from "../schema/ui.js";
@@ -45,11 +46,14 @@ export interface UiServerOpts {
   configPath: string;
   port?: number;
   open?: boolean;
+  spawnRestart?: (opts: { configPath: string; port: number }) => void;
 }
 
 export interface UiServer {
   url: string;
   close(): Promise<void>;
+  /** Resolves when the server stops (SIGINT, --stop, or Restart UI). */
+  stopped: Promise<void>;
 }
 
 function packageRoot(): string {
@@ -227,11 +231,10 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
     handle(req, res);
   });
 
+  let boundPort = port;
+  let closeServer: () => Promise<void> = async () => undefined;
+
   function handle(req: IncomingMessage, res: ServerResponse): void {
-    if (req.method && req.method !== "GET" && req.method !== "HEAD") {
-      send(res, 405, "Method not allowed", "text/plain; charset=utf-8");
-      return;
-    }
     let url: URL;
     try {
       url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -244,6 +247,24 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
       pathname = decodeURIComponent(url.pathname);
     } catch {
       send(res, 400, "Bad request", "text/plain; charset=utf-8");
+      return;
+    }
+
+    if (pathname === "/api/restart") {
+      if (req.method !== "POST") {
+        send(res, 405, "Method not allowed", "text/plain; charset=utf-8");
+        return;
+      }
+      send(res, 202, `${JSON.stringify({ ok: true, restarting: true })}\n`, "application/json; charset=utf-8");
+      void closeServer().then(() => {
+        const spawn = opts.spawnRestart ?? spawnDetachedUi;
+        spawn({ configPath, port: boundPort });
+      });
+      return;
+    }
+
+    if (req.method && req.method !== "GET" && req.method !== "HEAD") {
+      send(res, 405, "Method not allowed", "text/plain; charset=utf-8");
       return;
     }
 
@@ -367,7 +388,11 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
     const onError = (err: Error) => {
       const code = "code" in err ? String(err.code) : "";
       if (code === "EADDRINUSE") {
-        reject(new Error(`port ${port} is already in use (another clickmonkey ui?). Stop that process and retry.`));
+        reject(
+          new Error(
+            `port ${port} is already in use (another clickmonkey ui?). Run clickmonkey ui --stop and retry.`,
+          ),
+        );
         return;
       }
       reject(err);
@@ -383,23 +408,39 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
   if (address === null || typeof address === "string") {
     throw new Error("expected a TCP listen address");
   }
-  const url = `http://127.0.0.1:${address.port}/`;
+  boundPort = address.port;
+  const url = `http://127.0.0.1:${boundPort}/`;
+  writeUiPid(configPath, { pid: process.pid, port: boundPort });
   process.stdout.write(`${url}\n`);
   if (opts.open) openBrowser(url);
 
   const poll = setInterval(() => schedule("run"), 1000);
   poll.unref();
 
-  return {
-    url,
-    close: () =>
-      new Promise<void>((resolveClose, reject) => {
-        clearInterval(poll);
-        if (debounce) clearTimeout(debounce);
-        for (const watcher of watchers) watcher.close();
-        for (const client of clients) client.end();
-        clients.clear();
-        server.close((err) => (err ? reject(err) : resolveClose()));
-      }),
+  let settleStopped: () => void = () => undefined;
+  const stopped = new Promise<void>((resolve) => {
+    settleStopped = resolve;
+  });
+  let closing: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    if (closing) return closing;
+    closing = new Promise<void>((resolveClose, reject) => {
+      clearInterval(poll);
+      if (debounce) clearTimeout(debounce);
+      for (const watcher of watchers) watcher.close();
+      for (const client of clients) client.end();
+      clients.clear();
+      clearUiPid(configPath);
+      server.closeAllConnections();
+      server.close((err) => {
+        settleStopped();
+        if (err) reject(err);
+        else resolveClose();
+      });
+    });
+    return closing;
   };
+
+  closeServer = close;
+  return { url, close, stopped };
 }

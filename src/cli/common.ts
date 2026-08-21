@@ -22,16 +22,16 @@ Commands:
   view        Print the compact view of the current surface
   step        Run one DSL line and append it to the log
   playbook    Run a named playbook (empty-required)
-  map         Navigate-only random walk — lift fog of war, no fill/submit
-  unleash     Random-walk legal map ids, including fill/submit [--nasty]
-  explore     Charter-driven LLM walk of legal map ids
+  map         Scout: navigate-only walk — grow the sitemap, no fill/submit
+  unleash     NPC: hunt mapped forms, fill and submit [--nasty rogue payloads]
+  explore     Paladin: charter-driven LLM walk of legal map ids
   mcp         Exploratory testing over MCP (stdio)
   report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
   replay      Replay a log file or a findings-report markdown file
   spec        Markdown specs under clickmonkey/specs/ [--check] [--fail-on-findings]
   compact     Shorten a log to the last open or nav click + following lines
   bundle      Static dashboard folder (open without the CLI)
-  ui          Local-only dashboard (map, runs, findings)
+  ui          Local-only dashboard (map, runs, findings) [--stop]
 
 Options:
   --verbose   Write per-step HTML + view dumps under <run>/verbose/

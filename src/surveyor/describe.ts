@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ChatMessage } from "../brains/chat.js";
 import type { Page } from "../schema/page-model.js";
+import { blurbLooksLikeLoading } from "./loading.js";
 
 export const DESCRIPTION_MAX = 200;
 
@@ -174,13 +175,21 @@ export async function polishPageDescription(
 function usableBlurb(raw: string): string | undefined {
   const line = clipDescription(raw.split(/\r?\n/).map((s) => s.trim()).find((s) => s.length > 0) ?? "");
   if (line.length < 12 || line.includes("{") || /^click |^fill |^open /i.test(line)) return undefined;
+  if (blurbLooksLikeLoading(line)) return undefined;
   return line;
+}
+
+/** True unless a non-loading vision blurb is already held. */
+export function visionMayDescribe(page: Page): boolean {
+  if (page.describedBy !== "vision") return true;
+  return blurbLooksLikeLoading(page.description ?? "");
 }
 
 /** VLM one-liner from a screenshot. Keeps mechanical on junk. */
 export function applyVisionBlurb(page: Page, raw: string): boolean {
   const line = usableBlurb(raw);
   if (!line) return false;
+  if (!visionMayDescribe(page)) return false;
   page.description = line;
   page.describedBy = "vision";
   page.describeKey = describeKeyOf(page);

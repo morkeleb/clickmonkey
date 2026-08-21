@@ -56,11 +56,15 @@ describe("parseVisualReply", () => {
     assert.match(VISUAL_BLURB_PROMPT, /primary action/);
     assert.match(VISUAL_BLURB_PROMPT, /sidebar or top nav/);
     assert.match(VISUAL_BLURB_PROMPT, /Do not: colors/);
+    assert.match(VISUAL_BLURB_PROMPT, /not a loading screen/);
+    assert.match(VISUAL_BLURB_PROMPT, /mapped widgets lists fields or actions/i);
   });
 
   it("tells the model leftover nasty payloads are content, not a rendering defect", () => {
     assert.match(VISUAL_PROMPT, /XSS payload text/);
-    assert.match(VISUAL_PROMPT, /Do report if that text actually overflows/);
+    assert.match(VISUAL_PROMPT, /you MUST file clip\/scanline\/overflow/);
+    assert.match(VISUAL_PROMPT, /column wall that shears a word/);
+    assert.match(VISUAL_PROMPT, /Must-check: every visible table/);
   });
 
   it("tells the model an open dropdown covering the page is expected stacking", () => {
@@ -206,6 +210,14 @@ describe("parseVisualReply", () => {
         rule: "broken",
         message: "Input fields contain malformed SVG code instead of text",
         where: "Billing Split",
+      }),
+      true,
+    );
+    assert.equal(
+      dropPayloadContentVisual({
+        rule: "broken",
+        message: `Contains malformed text: '"<svg onload=alert(1)>"' instead of expected attorney name.`,
+        where: "Originating Split * Attorney input field",
       }),
       true,
     );

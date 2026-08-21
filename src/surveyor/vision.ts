@@ -50,7 +50,9 @@ const VISUAL_SYSTEM =
 export const VISUAL_BLURB_PROMPT = [
   "blurb (always fill; testers read this on a sitemap they have not seen):",
   "Look at the screenshot first. Caption the MAIN pane, not the sidebar or top nav.",
-  "First words = screen type: dashboard, list, table, detail, form, wizard, settings, empty state, login, report, or mixed.",
+  "First words = screen type: dashboard, list, table, detail, form, wizard, settings, empty state, login, report, loading, or mixed.",
+  "A loading frame is ONLY a spinner, skeleton, splash, or \"Loading…\" occupying the MAIN pane with no heading+content. A heading plus cards, table, form, or list is not a loading screen — even with an open dropdown or empty region. If mapped widgets lists fields or actions, it is not loading.",
+  "If the shot is a loading frame: start blurb with \"loading\" and leave issues empty.",
   "Then the job of that pane (who it is for / what you do here).",
   "If you can read them: the form's purpose and submit label; what a table/list/KPI cards are of; the one most prominent primary action.",
   "One or two sentences, max 200 characters.",
@@ -63,19 +65,21 @@ export const VISUAL_PROMPT = [
   "Look at the screenshot first. Then list only defects you can point to in the pixels.",
   "",
   "Report these rules only:",
-  "- overlap: two components or text runs occupy the same pixels (borders crossing, labels on labels)",
+  "- overlap: two components or text runs occupy the same pixels (borders crossing, labels on labels, value colliding with a trailing icon)",
   "- overflow: content leaking outside a card, modal, table, or the viewport",
-  "- clip: text or a control cut off mid-glyph or mid-icon, not a clean ellipsis",
+  "- clip: text or a control cut off mid-glyph or mid-icon, not a clean ellipsis (…). A table column wall that shears a word (\"Expert Witness Servic\") is clip. A field whose value runs into a calendar/search icon is clip.",
   "- zIndex: a control, menu, or dialog is visibly covered so a user cannot read or use it",
   "- align: a single row or column is clearly broken (not a 1px taste difference)",
-  "- scanline: a list, table, or repeating set of similar items whose icons, titles, or trailing actions do not share a vertical or horizontal edge, so the eye has to hunt instead of scanning down or across",
+  "- scanline: a list, table, or repeating set of similar items whose icons, titles, numbers, or trailing actions do not share a vertical or horizontal edge, so the eye has to hunt instead of scanning down or across. Collapsed gutters between table columns count. A toolbar of filters that do not share a baseline counts.",
   "- contrast: text is unreadable on its background in this image",
   "- broken: missing image, empty icon hole, or obvious placeholder instead of content",
   "- other: a user-visible rendering defect that does not fit the list",
   "",
-  "Do not report: sticky headers/nav, expected page scroll, clean ellipsis truncation, brand or typography taste, missing features, hover/focus you cannot see, WCAG math, inventing that a control is unclickable, masonry or intentionally staggered cards, or a center-aligned hero title.",
-  "Do not report an open dropdown, select, combobox, popover, or menu covering the page behind it — that is expected stacking. Do report those only if the overlay itself is clipped, off-screen, or two overlays collide.",
-  "Do not report that a field, cell, or URL contains XSS / SQL-injection / overlong junk (including paraphrases like \"XSS payload text\"). That is leftover --nasty test data, not a rendering defect. Do report if that text actually overflows, clips, overlaps, or breaks a shared list edge.",
+  "Must-check: every visible table and every filter/search toolbar, even when cells contain leftover test junk. Looking down a column, can you draw one vertical line along the titles or numbers? If text is sheared mid-word with no …, that is clip, not \"ellipsis truncation\".",
+  "",
+  "Do not report: sticky headers/nav, expected page scroll, clean ellipsis truncation (a real …), brand or typography taste, missing features, hover/focus you cannot see, WCAG math, inventing that a control is unclickable, masonry or intentionally staggered cards, or a center-aligned hero title.",
+  "Do not report an open dropdown, select, combobox, popover, or menu covering the page behind it — that is expected stacking. Do report those only if the overlay itself is clipped, off-screen, or two overlays collide. An open menu does not hide clip or scanline in the table beside it.",
+  "Do not report that a field, cell, or URL contains XSS / SQL-injection / overlong junk (including paraphrases like \"XSS payload text\"). That is leftover --nasty test data, not a rendering defect. After ignoring the junk as content, still report layout: if that text overflows, clips, overlaps an icon, or breaks a shared list edge, you MUST file clip/scanline/overflow. Empty issues is wrong when a column shears names.",
   "",
   "confidence: high = two named regions clearly collide, cut, or break a shared list edge in this image; medium = likely but could be intentional chrome; low = a guess — omit low from issues.",
   "where: name the visible regions (e.g. \"filter chip on table header\"). Do not invent widget ids.",
@@ -146,7 +150,7 @@ const LAYOUT_DEFECT =
 
 /** VLM often names the attack class instead of quoting the catalog string. */
 const PAYLOAD_AS_CONTENT =
-  /\b(xss|sql\s*injection|sqli|test payloads?|payload texts?|injection (?:text|payload|string)s?|malformed svg|svg\/onload|leftover (?:test )?data)\b/i;
+  /\b(xss|sql\s*injection|sqli|test payloads?|payload texts?|injection (?:text|payload|string)s?|malformed svg|svg[\s/]+onload|onload\s*=\s*alert|leftover (?:test )?data)\b/i;
 
 /** Leftover --nasty fills are content. Layout breakage from that text still counts. */
 export function dropPayloadContentVisual(opts: { rule: string; message: string; where?: string }): boolean {

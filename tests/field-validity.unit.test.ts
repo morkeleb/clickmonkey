@@ -5,9 +5,12 @@ import {
   fieldLooksInvalid,
   fillCtxForPageError,
   fillShouldLookInvalid,
+  fillValueInRequest,
   upsertTrackedFill,
+  validationMissesToReport,
   type TrackedFill,
 } from "../src/executor/field-validity.js";
+import { looksLikeRowSelectCheckbox } from "../src/brains/unleash.js";
 import { looksLikeSubmitClick } from "../src/executor/write-policy.js";
 import { findingReportTitle, findingTapeBug, validationMissExplanation } from "../src/schema/finding.js";
 
@@ -169,7 +172,8 @@ describe("validationMissExplanation", () => {
     assert.match(body, /^Validation did not catch junk in `page\.from_date`/m);
     assert.match(body, /product bug/);
     assert.match(body, /%00%00%00%00/);
-    assert.match(body, /still not marked invalid/);
+    assert.match(body, /not marked invalid/);
+    assert.match(body, /sent the values or left the form/);
     assert.equal(findingReportTitle("expectFailed", body), "Validation did not catch junk in `page.from_date`");
     assert.equal(findingTapeBug("expectFailed", body), "Validation did not catch junk in `page.from_date`");
   });
@@ -177,6 +181,84 @@ describe("validationMissExplanation", () => {
   it("names an empty required field", () => {
     const body = validationMissExplanation([{ field: "create.name", value: "" }]);
     assert.match(body, /Required field `create\.name` accepted empty/);
+  });
+});
+
+describe("fillValueInRequest", () => {
+  it("matches raw, encoded, and JSON-escaped values", () => {
+    assert.equal(fillValueInRequest("ab", "/save", "ab"), false);
+    assert.equal(fillValueInRequest("' OR 'x'='x", "/save", JSON.stringify({ name: "' OR 'x'='x" })), true);
+    assert.equal(fillValueInRequest("javascript:alert(1)", "/x?q=javascript%3Aalert(1)", null), true);
+    assert.equal(
+      fillValueInRequest('"><img src=x onerror=alert(1)>', "/save", JSON.stringify({ v: '"><img src=x onerror=alert(1)>' })),
+      true,
+    );
+    assert.equal(fillValueInRequest("' OR 'x'='x", "/save", JSON.stringify({ name: "Ada" })), false);
+  });
+});
+
+describe("validationMissesToReport", () => {
+  it("drops unmarked junk that never left the form and was not sent", () => {
+    const unmarked: TrackedFill[] = [
+      { surface: "page", id: "clientname", value: "' OR 'x'='x", shouldInvalid: true, validity: valid },
+    ];
+    assert.deepEqual(validationMissesToReport({ unmarked, gone: [], requests: [] }), []);
+    assert.equal(
+      validationMissesToReport({
+        unmarked,
+        gone: [],
+        requests: [{ url: "/save", postData: JSON.stringify({ clientname: "' OR 'x'='x" }) }],
+      }).length,
+      1,
+    );
+  });
+
+  it("treats a write request as sending empty or short junk", () => {
+    const unmarked: TrackedFill[] = [
+      { surface: "page", id: "name", value: "", shouldInvalid: true, validity: valid },
+    ];
+    assert.deepEqual(validationMissesToReport({ unmarked, gone: [], requests: [] }), []);
+    assert.equal(
+      validationMissesToReport({
+        unmarked,
+        gone: [],
+        requests: [{ url: "/save", method: "POST", postData: '{"name":""}' }],
+      }).length,
+      1,
+    );
+    assert.equal(
+      validationMissesToReport({
+        unmarked: [{ surface: "page", id: "name", value: "\t", shouldInvalid: true, validity: valid }],
+        gone: [],
+        requests: [{ url: "/save", method: "PUT" }],
+      }).length,
+      1,
+    );
+  });
+
+  it("reports junk whose control left the form even with no request", () => {
+    const gone: TrackedFill[] = [
+      { surface: "page", id: "name", value: "' OR 'x'='x", shouldInvalid: true, validity: valid },
+    ];
+    assert.equal(validationMissesToReport({ unmarked: [], gone, requests: [] }).length, 1);
+  });
+});
+
+describe("looksLikeRowSelectCheckbox", () => {
+  it("matches TanStack row-toggle names, not a normal agree box", () => {
+    assert.equal(
+      looksLikeRowSelectCheckbox({
+        id: "checkbox_press_space_to_toggle_row_selection__unchecked_",
+        type: "checkbox",
+        label: "Press Space to toggle row selection (unchecked)",
+      }),
+      true,
+    );
+    assert.equal(
+      looksLikeRowSelectCheckbox({ id: "checkbox_column_with_header_selection", type: "checkbox" }),
+      false,
+    );
+    assert.equal(looksLikeRowSelectCheckbox({ id: "agree", type: "checkbox", label: "I agree" }), false);
   });
 });
 

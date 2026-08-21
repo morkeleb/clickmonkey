@@ -679,6 +679,10 @@ describe("mcp tools", () => {
   it("guide names map, unleash, spec, and replay and does not mention spec_run", () => {
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey map/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey unleash/);
+    assert.match(CLICKMONKEY_GUIDE, /\(scout\)/);
+    assert.match(CLICKMONKEY_GUIDE, /\(NPC\)/);
+    assert.match(CLICKMONKEY_GUIDE, /\(paladin\)/);
+    assert.match(CLICKMONKEY_GUIDE, /rogue pass/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey spec/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey replay/);
     assert.match(CLICKMONKEY_GUIDE, /explore_start/);

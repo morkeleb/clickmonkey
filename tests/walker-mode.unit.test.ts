@@ -101,6 +101,30 @@ describe("walker modes", () => {
     assert.doesNotMatch(afterText, /button_create_your_first_fee_entry/);
   });
 
+  it("does not fill a row-selection checkbox when the table is a list", () => {
+    const view = viewOf({
+      shown: [
+        {
+          id: "checkbox_press_space_to_toggle_row_selection__unchecked_",
+          value: "",
+          type: "checkbox",
+          label: "Press Space to toggle row selection (unchecked)",
+        },
+        { id: "search", value: "", type: "text", label: "Search" },
+      ],
+      actions: [
+        { id: "button_previous" },
+        { id: "button_next" },
+        { id: "combobox_status", role: "combobox" },
+      ],
+    });
+    const ctx = { view, stepsUsed: 0, writePolicy: "allow" as const };
+    assert.equal(detectWalkerMode(ctx).name, "list");
+    const d = decideUnleash(ctx, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.doesNotMatch(text, /toggle_row_selection/);
+  });
+
   it("detects nav on a page with a search field and an Add customer opener", () => {
     const view = viewOf({
       shown: [{ id: "q", value: "", type: "text" }],

@@ -33,8 +33,9 @@ export function faultFromHttpError(status: number, body: string): UiFault {
     title: "UI request failed",
     message: trimmed ? trimmed.replace(/\s+/g, " ").slice(0, 240) : `HTTP ${status}`,
     hint: [
-      "Stop the UI (Ctrl+C in the `clickmonkey ui` terminal), then from the workspace folder:",
+      "Use Restart UI, or from the workspace folder:",
       "",
+      "  clickmonkey ui --stop",
       "  clickmonkey ui --port 4174 --no-open",
       "",
       "Hard-refresh this tab (Cmd+Shift+R / Ctrl+Shift+R).",

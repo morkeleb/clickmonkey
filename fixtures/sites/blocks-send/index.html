@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Blocks send</title>
+  </head>
+  <body>
+    <main data-testid="home">
+      <form novalidate>
+        <label>Name <input data-testid="name" name="name" required /></label>
+        <button data-testid="submit" type="submit">Submit</button>
+      </form>
+    </main>
+    <script>
+      const name = document.querySelector('[data-testid="name"]');
+      document.querySelector("form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const value = name.value;
+        // Client-side validation: reject quotes/tags, but do not paint invalid marks.
+        if (/['"<>]/.test(value)) return;
+        fetch("/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: value }),
+        });
+      });
+    </script>
+  </body>
+</html>

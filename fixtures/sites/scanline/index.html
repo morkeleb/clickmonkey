@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Scanline</title>
+    <style>
+      body { font: 16px/1.4 sans-serif; margin: 24px; }
+      table { border-collapse: collapse; width: 640px; }
+      th, td { border-bottom: 1px solid #ddd; padding: 8px 12px; }
+      .clip td.vendor {
+        max-width: 96px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: clip;
+      }
+      .ellipsis td.vendor {
+        max-width: 96px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .drift tbody td.vendor:nth-child(2) { padding-left: 12px; }
+      .drift tbody tr:nth-child(2) td.vendor { padding-left: 40px; }
+      .drift tbody tr:nth-child(3) td.vendor { padding-left: 8px; }
+      label { display: block; margin: 16px 0 8px; }
+      input.cut {
+        width: 120px;
+        padding-right: 28px;
+      }
+    </style>
+  </head>
+  <body>
+    <main data-testid="home">
+      <h1>Vouchers</h1>
+      <table class="clip" data-testid="clipped">
+        <caption>Ready-to-Pay</caption>
+        <thead>
+          <tr><th>Voucher</th><th>Vendor</th><th>Reference</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>VCH-1</td><td class="vendor">Expert Witness Services LLC</td><td>INV-45678</td></tr>
+          <tr><td>VCH-2</td><td class="vendor">ABC Court Reporting</td><td>CR-18892</td></tr>
+          <tr><td>VCH-3</td><td class="vendor">Office Supplies Company International</td><td>OSC-11234</td></tr>
+        </tbody>
+      </table>
+      <table class="ellipsis" data-testid="ellipsis">
+        <caption>Ellipsis ok</caption>
+        <thead>
+          <tr><th>Voucher</th><th>Vendor</th><th>Reference</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>VCH-9</td><td class="vendor">Expert Witness Services LLC</td><td>INV-9</td></tr>
+        </tbody>
+      </table>
+      <table class="drift" data-testid="drift">
+        <caption>Ragged titles</caption>
+        <thead>
+          <tr><th>Voucher</th><th>Vendor</th><th>Reference</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>VCH-4</td><td class="vendor">Alpha</td><td>A-1</td></tr>
+          <tr><td>VCH-5</td><td class="vendor">Beta</td><td>B-1</td></tr>
+          <tr><td>VCH-6</td><td class="vendor">Gamma</td><td>C-1</td></tr>
+        </tbody>
+      </table>
+      <label>Due date <input class="cut" data-testid="due" value="' UNION SELECT NULL--" /></label>
+    </main>
+  </body>
+</html>

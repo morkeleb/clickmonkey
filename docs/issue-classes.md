@@ -6,8 +6,8 @@ A report counts **sites** (pages that show the class), not “10 unique bugs.”
 
 ## How to use the split
 
-1. **Map + unleash** on staging — soak chrome, crashes, locatability, HTML/axe, empty-required. Engineers fix classes.
-2. **Explore / MCP** with a charter from the ticket (`git log`, “can Test Mode start a Salesforce → Filevine flow”). A person still aims the monkey.
+1. **Map** (scout) then **unleash** (form NPC) on staging — soak chrome, crashes, locatability, HTML/axe, empty-required. `--nasty` is the rogue pass for junk and missed validation. Engineers fix classes.
+2. **Explore** (paladin) / MCP with a charter from the ticket (`git log`, “can Test Mode start a Salesforce → Filevine flow”). A person still aims the monkey.
 3. **Specs** for paths you will not debate again (login lands, empty create is invalid).
 4. **Humans** on money, permissions, “does this customer’s data look right,” and anything that needs a second user or an inbox.
 
@@ -24,9 +24,9 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 | **A11y scanners** | Contrast, `aria-hidden` + focus, button-name, … | axe-core |
 | **SEO hygiene** | Missing title/description/OG on public paths; the same title on every route | `seo` on the leash |
 | **Testability** | Unlabeled fields, unnamed controls, click on `<svg>`/`<div>`, no `main`, occluded widgets, duplicate names, missing stable ids | Inspect audit |
-| **Layout** | Overlap, clip, overflow, z-index, scanline, contrast in the pixels | Vision model; high-confidence extras become findings |
+| **Layout** | Overlap, clip, overflow, z-index, scanline, contrast in the pixels | Vision model plus a DOM pass on tables (clipped cells without `…`, column edges that do not line up); high-confidence extras become findings |
 | **Empty required** | Blank required field + submit must look invalid | Playbook `empty-required` |
-| **Junk not invalid** | `--nasty` / typed junk + submit still not `aria-invalid` / visible error / HTML5 constraint validation | Unleash after submit |
+| **Junk not invalid** | `--nasty` / typed junk + submit **sent those values or left the form** without `aria-invalid` / visible error / HTML5 constraint validation | Unleash after submit |
 | **Throw instead of invalid** | Fill then uncaught `pageerror` (e.g. `Invalid time value`) | Runtime oracle |
 | **Map / harness** | Unknown or drifted ids, ambiguous locators | Inspect + replay |
 | **Shallow payload** | XSS/SQLi/overlong in fields on a site you own | `unleash --nasty` / `nasty_*` |
@@ -36,7 +36,7 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 
 Fence bounce (`/logout`, off-app URL) is leash control, not a product finding.
 
-`--nasty` leftover text in a field is content, not a visual bug, unless that text overflows or clips.
+`--nasty` leftover text in a field is content, not a visual bug, unless that text overflows or clips. A table column that shears a name mid-word (no `…`) is clip even when the cell is leftover junk.
 
 Native `<select>` only accepts its `<option>` list. Unleash (and `--nasty`) pick one of those values. Catalog junk still goes into text, textarea, and type-in comboboxes — `selectOption("x")` is not an XSS test, it is Playwright waiting for an option that does not exist. A spec fill that is not in the list fails immediately and names the options.
 
@@ -56,17 +56,17 @@ Invalid means `aria-invalid="true"`, a visible `{id}-error` node, or HTML5 const
 
 A `pageerror` after a fill is the worse case of the same class: validation did not mark the field invalid, and the page **threw an uncaught JavaScript error**. `Invalid time value` is that crash, not “you typed a bad date.” The report names the field and value and says the throw means validation is missing or does not wrap parsing.
 
-Unleash and explore **prefer empty then invalid then a plausible value**. After `--nasty` junk and a submit, if the field is still not invalid, that is a finding. A `pageerror` on that fill is reported as a crash because validation is missing.
+Unleash and explore **prefer empty then invalid then a plausible value**. After `--nasty` junk and a submit, if the form **sent those values or left** and the field is still not invalid, that is a finding. A click on submit that does not send is not a miss: client-side validation blocked the write even if it did not paint invalid marks. A `pageerror` on that fill is reported as a crash because validation is missing.
 
 Unleash fills with Faker, scored from field id/label, HTML `type` / `autocomplete` / `inputmode`, and live `min` / `max` / `minlength` / `maxlength` / `step` / `pattern`. Native `<select>` still uses the option list. `--nasty` still uses catalog junk on type-in fields.
 
-Unleash after submit also flags **typed junk** the control should not accept: HTML `type` (email/url/number/date), `pattern`, `min`/`max`/`minlength`/`maxlength`, and `--nasty` catalog payloads. If those fields are still not invalid, that is the same class as empty-required.
+Unleash after submit also flags **typed junk** the control should not accept: HTML `type` (email/url/number/date), `pattern`, `min`/`max`/`minlength`/`maxlength`, and `--nasty` catalog payloads. If the form sent those values or left without marking the fields invalid, that is the same class as empty-required. The `empty-required` playbook still `expect`s visible invalid marks even when the form stays put.
 
 Not automatic:
 
 - Cross-field rules (end after start)
 - “Next stays disabled until the step is valid” as its own oracle (disabled Next is omitted from `actions:` until a fill enables it)
-- Proving the **write did not happen** (we check the control, not the database)
+- Proving the **database write** did not happen (we watch whether a request carried the filled values or the form left, not the backend)
 
 `writePolicy: validationOnly` is a **leash**, not a validator. It blocks submit/save/delete when required fields are already filled so a random walk does not commit. `allow` will submit.
 
@@ -90,10 +90,10 @@ ClickMonkey has no domain brain unless you put it in a **charter**, **skills** (
 
 | Command | Harvests |
 |---|---|
-| `map` | Pages/surfaces, testability, quality on navigate-only |
-| `unleash` | The above plus fill/submit; `--nasty` payloads |
+| `map` | Scout: pages/surfaces, testability, quality on navigate-only |
+| `unleash` | NPC: hunt mapped forms, fill/submit; `--nasty` rogue payloads |
 | `playbook empty-required` | Blank required + submit → invalid |
-| `explore` / `mcp` | Stochastic survey + host oracles; `explore_finding` / `screenshot ui` |
+| `explore` / `mcp` | Paladin: charter-driven walk + host oracles; `explore_finding` / `screenshot ui` |
 | `spec` | Fences as a real walk; findings still harvest unless you only care about PASS |
 | `replay` | Comparison vs a report, not a new survey |
 | `report` | Shareable markdown: findings first, then quality digest (Start here, Chrome, clusters) |

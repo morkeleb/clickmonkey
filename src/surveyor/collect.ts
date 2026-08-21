@@ -206,6 +206,9 @@ async function collectKind(
       if (info.inputType === "hidden") continue;
       if (info.inputType === "submit" || info.inputType === "button") continue;
     }
+    if (kind === "field" && /row selection|toggle row selection/i.test(`${info.accName} ${info.labelText}`)) {
+      continue;
+    }
     const candidate = toCandidate(kind, info);
     if (!candidate) continue;
     const key = identityKey("", candidate.by, candidate.value, candidate.name);

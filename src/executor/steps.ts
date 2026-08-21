@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { Page, Request } from "playwright";
 import { validationMissExplanation, type FindingKind } from "../schema/finding.js";
 import { locatorOf, type Locator } from "../schema/locator.js";
 import { readyKey, widgetKey } from "../schema/refs.js";
@@ -34,8 +34,10 @@ import {
   fillShouldLookInvalid,
   readFieldValidity,
   rememberTrackedFill,
+  validationMissesToReport,
   type FieldValidity,
   type TrackedFill,
+  type WatchedRequest,
 } from "./field-validity.js";
 import {
   formatSelectOptionList,
@@ -225,6 +227,33 @@ async function performOpen(state: RunState, pageId: string): Promise<StepFailure
 }
 
 const INVALID_SETTLE_MS = 800;
+const SUBMIT_REQUEST_TYPES = new Set(["document", "xhr", "fetch"]);
+
+function startSubmitRequestWatch(page: Page): { requests: WatchedRequest[]; stop: () => void } {
+  const requests: WatchedRequest[] = [];
+  const onRequest = (req: Request) => {
+    if (!SUBMIT_REQUEST_TYPES.has(req.resourceType())) return;
+    let postData: string | null = null;
+    try {
+      postData = req.postData();
+    } catch {
+      postData = null;
+    }
+    const method = req.method();
+    requests.push({
+      url: req.url(),
+      ...(method ? { method } : {}),
+      ...(postData ? { postData } : {}),
+    });
+  };
+  page.on("request", onRequest);
+  return {
+    requests,
+    stop: () => {
+      page.off("request", onRequest);
+    },
+  };
+}
 
 async function readFieldValiditySettled(
   state: RunState,
@@ -241,17 +270,28 @@ async function readFieldValiditySettled(
   return validity;
 }
 
-async function checkTrackedFillsAfterSubmit(state: RunState): Promise<StepFailure | undefined> {
+async function checkTrackedFillsAfterSubmit(
+  state: RunState,
+  watch: { requests: WatchedRequest[] },
+): Promise<StepFailure | undefined> {
   const suspects = (state.lastFills ?? []).filter((f) => f.shouldInvalid);
   if (suspects.length === 0) return undefined;
   if (state.pendingFindings.some((f) => f.kind === "pageError")) return undefined;
-  const stillOk: TrackedFill[] = [];
+  const unmarked: TrackedFill[] = [];
+  const gone: TrackedFill[] = [];
   for (const last of suspects) {
     const filled = findWidget(state, last.surface, last.id);
-    if (!filled) continue;
+    if (!filled) {
+      gone.push(last);
+      continue;
+    }
     const loc = widgetLocator(state.page, filled.surface, locatorOf(filled.widget));
-    const live = await pickActable(loc, state.page);
-    if (!live) continue;
+    const visible = await loc.first().isVisible().catch(() => false);
+    if (!visible) {
+      gone.push(last);
+      continue;
+    }
+    const live = loc.first();
     const validity = await readFieldValiditySettled(state, live, last.id);
     if (state.pendingFindings.some((f) => f.kind === "pageError")) return undefined;
     const liveValue = await live.inputValue().catch(() => last.value);
@@ -260,9 +300,10 @@ async function checkTrackedFillsAfterSubmit(state: RunState): Promise<StepFailur
         ? last.shouldInvalid
         : fillShouldLookInvalid({ id: last.id }, liveValue);
     rememberTrackedFill(state, { ...last, value: liveValue, shouldInvalid: stillJunk, validity });
-    if (stillJunk && !fieldLooksInvalid(validity)) stillOk.push({ ...last, value: liveValue, validity });
+    if (stillJunk && !fieldLooksInvalid(validity)) unmarked.push({ ...last, value: liveValue, validity });
   }
   if (state.pendingFindings.some((f) => f.kind === "pageError")) return undefined;
+  const stillOk = validationMissesToReport({ unmarked, gone, requests: watch.requests });
   if (stillOk.length === 0) return undefined;
   const first = stillOk[0]!;
   return {
@@ -298,22 +339,26 @@ async function performClick(
     }
   }
   recordLocator(state, actable.key, actable.locator);
+  const watchingSubmit =
+    !isField(actable.widget) && looksLikeSubmitClick(actable.widget, actable.surface.actions);
+  const watch = watchingSubmit ? startSubmitRequestWatch(state.page) : undefined;
   try {
-    await pw.click({ timeout: 2_000 });
-  } catch (err) {
-    const raw = err instanceof Error ? err.message : `${actable.key} click failed`;
-    return {
-      kind: "expectFailed",
-      message: oneLineBug(raw) || `${actable.key} click failed`,
-      widgetRef: actable.key,
-    };
-  }
-  if (
-    !isField(actable.widget) &&
-    looksLikeSubmitClick(actable.widget, actable.surface.actions)
-  ) {
-    const missed = await checkTrackedFillsAfterSubmit(state);
-    if (missed) return missed;
+    try {
+      await pw.click({ timeout: 2_000 });
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : `${actable.key} click failed`;
+      return {
+        kind: "expectFailed",
+        message: oneLineBug(raw) || `${actable.key} click failed`,
+        widgetRef: actable.key,
+      };
+    }
+    if (watch) {
+      const missed = await checkTrackedFillsAfterSubmit(state, watch);
+      if (missed) return missed;
+    }
+  } finally {
+    watch?.stop();
   }
   if (!isField(actable.widget) && actable.widget.opens) {
     const opened = findSurface(state, actable.widget.opens);
@@ -367,8 +412,21 @@ async function performFill(
     await pw.selectOption(selectOptionQuery(match), { timeout: 2_000 });
     return undefined;
   }
-  await pw.fill("");
-  if (resolved !== "") await pw.fill(resolved);
+  try {
+    await pw.fill("");
+    if (resolved !== "") await pw.fill(resolved);
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : `${actable.key} fill failed`;
+    if (/Cannot type text into input\[type=number\]/i.test(raw)) {
+      // Native <input type=number> refuses non-numeric catalog junk. Not a product bug.
+      return undefined;
+    }
+    return {
+      kind: "expectFailed",
+      message: oneLineBug(raw) || `${actable.key} fill failed`,
+      widgetRef: actable.key,
+    };
+  }
   await pw.evaluate((el) => {
     const node = el as { blur?: () => void };
     node.blur?.();

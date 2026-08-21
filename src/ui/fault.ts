@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { UiFault, type UiFault as UiFaultT, type UiNotice } from "../schema/ui.js";
 
 export const RESTART_UI_HINT = [
-  "Stop the UI (Ctrl+C in the `clickmonkey ui` terminal), then from the workspace folder:",
+  "Use Restart UI in this banner, or from the workspace folder:",
   "",
+  "  clickmonkey ui --stop",
   "  clickmonkey ui --port 4174 --no-open",
   "",
   "Hard-refresh this tab (Cmd+Shift+R / Ctrl+Shift+R). Walkers keep running; only the UI process needs a restart.",
@@ -109,6 +110,7 @@ export function staleUiNotice(): UiNotice {
     message:
       "Source files changed after `clickmonkey ui` started. The map can look frozen (no monkey movement, no new screenshots) until you restart the UI.",
     hint: RESTART_UI_HINT,
+    action: "restart",
   };
 }
 
@@ -119,6 +121,7 @@ export function snapshotFailNotice(err: unknown): UiNotice {
     title: fault.title,
     message: `Showing the last good map. ${fault.message}`,
     hint: fault.hint,
+    action: "restart",
     ...(fault.detail ? { detail: fault.detail } : {}),
   };
 }

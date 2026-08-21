@@ -108,6 +108,8 @@ export async function runUnleash(opts: {
     let stepsUsed = 0;
     const clicksByPage = new Map<string, string[]>();
     const noopsByPage = new Map<string, string[]>();
+    const formHits: Record<string, number> = {};
+    let huntTarget: string | undefined;
     while (stepsUsed < steps) {
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
@@ -121,11 +123,21 @@ export async function runUnleash(opts: {
         writePolicy: state.config.writePolicy,
         recentClicks: clicksByPage.get(onPage) ?? [],
         noopIds: noopsByPage.get(onPage) ?? [],
+        formHits,
+        ...(huntTarget ? { huntTarget } : {}),
       });
       if (state.navMeta) {
         if (decision.mode) state.navMeta.mode = decision.mode;
         else delete state.navMeta.mode;
       }
+      const formKey = `${view.page}/${view.surface}`;
+      const filledForm =
+        decision.note === "form" ||
+        decision.note === "form submit" ||
+        decision.note === "form dismiss";
+      if (decision.huntTarget) huntTarget = decision.huntTarget;
+      if (filledForm) huntTarget = undefined;
+      let formOk = false;
       for (const line of decisionLines(decision)) {
         if (stepsUsed >= steps) break;
         const parsed = parseLine(line);
@@ -151,18 +163,23 @@ export async function runUnleash(opts: {
           ) {
             const dead = noopsByPage.get(onPage) ?? [];
             if (!dead.includes(parsed.id)) noopsByPage.set(onPage, [...dead, parsed.id]);
+            if (decision.note === "form hunt") huntTarget = undefined;
           }
         }
         if (result.finding && shouldPersistFinding(result.finding.kind)) {
           findings.push(result.finding);
           view = await resetToSeed(exec, state, seedPageId);
+          huntTarget = undefined;
           break;
         }
         if (result.bounced || !result.ok) {
           if (result.bounced) view = await resetToSeed(exec, state, seedPageId);
+          huntTarget = undefined;
           break;
         }
+        formOk = true;
       }
+      if (filledForm && formOk) formHits[formKey] = (formHits[formKey] ?? 0) + 1;
     }
 
     const log: Log = {

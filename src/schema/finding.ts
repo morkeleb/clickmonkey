@@ -144,7 +144,7 @@ export function validationMissExplanation(fills: ValidationMissFill[]): string {
     return [
       "Validation did not catch this input",
       "",
-      `After submit the field was still not marked invalid (${INVALID_MARKS}). The form accepted input that should have been rejected.`,
+      `The field was not marked invalid (${INVALID_MARKS}) before the form sent or left. The form accepted input that should have been rejected.`,
     ].join("\n");
   }
   const empty = fills.every((f) => f.value.trim() === "");
@@ -160,8 +160,8 @@ export function validationMissExplanation(fills: ValidationMissFill[]): string {
     title,
     "",
     empty
-      ? "The form accepted a blank required field. This is a product bug: validation did not mark the field invalid."
-      : "The form accepted input that should have been rejected. This is a product bug: validation is missing or does not run on submit.",
+      ? "The form accepted a blank required field (it sent the form or left). This is a product bug: validation did not mark the field invalid."
+      : "The form accepted input that should have been rejected (it sent the values or left the form). This is a product bug: validation is missing or does not run on submit.",
     "",
   ];
   for (const f of fills) {
@@ -169,7 +169,7 @@ export function validationMissExplanation(fills: ValidationMissFill[]): string {
   }
   lines.push(
     "",
-    `After submit those fields were still not marked invalid (${INVALID_MARKS}).`,
+    `The fields were not marked invalid (${INVALID_MARKS}) before the form sent or left.`,
   );
   return lines.join("\n");
 }

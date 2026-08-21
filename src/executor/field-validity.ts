@@ -28,6 +28,61 @@ export function fieldLooksInvalid(v: FieldValidity): boolean {
   return v.ariaInvalid || v.errorVisible || v.nativeInvalid;
 }
 
+export type WatchedRequest = {
+  url: string;
+  method?: string;
+  postData?: string | null;
+};
+
+const MIN_SENT_NEEDLE = 3;
+
+/** True when a write-like request URL or body includes this filled value. */
+export function fillValueInRequest(value: string, url: string, postData?: string | null): boolean {
+  const needle = value.trim();
+  if (needle.length < MIN_SENT_NEEDLE) return false;
+  const body = postData ?? "";
+  if (url.includes(needle) || body.includes(needle)) return true;
+  let encoded = needle;
+  try {
+    encoded = encodeURIComponent(needle);
+  } catch {
+    encoded = needle;
+  }
+  if (encoded !== needle && (url.includes(encoded) || body.includes(encoded))) return true;
+  const plus = encoded.replace(/%20/g, "+");
+  if (plus !== encoded && (url.includes(plus) || body.includes(plus))) return true;
+  try {
+    const asJson = JSON.stringify(needle);
+    if (body.includes(asJson)) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+export function requestCarriesFill(requests: readonly WatchedRequest[], value: string): boolean {
+  return requests.some((r) => fillValueInRequest(value, r.url, r.postData));
+}
+
+export function requestLooksLikeWrite(req: WatchedRequest): boolean {
+  const method = (req.method ?? "").toUpperCase();
+  if (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE") return true;
+  return Boolean(req.postData);
+}
+
+export function validationMissesToReport(opts: {
+  unmarked: TrackedFill[];
+  gone: TrackedFill[];
+  requests: readonly WatchedRequest[];
+}): TrackedFill[] {
+  const writes = opts.requests.filter(requestLooksLikeWrite);
+  const sent = opts.unmarked.filter((f) => {
+    if (requestCarriesFill(opts.requests, f.value)) return true;
+    return f.value.trim().length < MIN_SENT_NEEDLE && writes.length > 0;
+  });
+  return [...sent, ...opts.gone];
+}
+
 export async function readFieldValidity(
   pw: PwLocator,
   page: Page,

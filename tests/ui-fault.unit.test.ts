@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { formatUiFault, sourceNewerThanStarted } from "../src/ui/fault.js";
+import { formatUiFault, sourceNewerThanStarted, staleUiNotice } from "../src/ui/fault.js";
 
 describe("formatUiFault", () => {
   it("leads with a restart hint and keeps zod issues in detail", () => {
@@ -21,11 +21,20 @@ describe("formatUiFault", () => {
     assert.equal(fault.error, true);
     assert.match(fault.message, /where/);
     assert.match(fault.message, /pages\.0\.issues\.0/);
+    assert.match(fault.hint, /clickmonkey ui --stop/);
     assert.match(fault.hint, /clickmonkey ui --port 4174/);
     assert.match(fault.copy, /^UI snapshot failed/m);
     assert.match(fault.copy, /Hard-refresh/);
     assert.match(fault.copy, /Unrecognized key/);
     assert.ok(fault.copy.startsWith("UI snapshot failed"));
+  });
+});
+
+describe("staleUiNotice", () => {
+  it("offers a restart action", () => {
+    const notice = staleUiNotice();
+    assert.equal(notice.action, "restart");
+    assert.match(notice.hint ?? "", /clickmonkey ui --stop/);
   });
 });
 

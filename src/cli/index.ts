@@ -44,6 +44,7 @@ try {
       "quality-full": { type: "boolean" },
       port: { type: "string" },
       "no-open": { type: "boolean" },
+      stop: { type: "boolean" },
       check: { type: "boolean" },
       "fail-on-findings": { type: "boolean" },
     },
@@ -77,6 +78,7 @@ try {
     qualityFull: Boolean(values["quality-full"]),
     port: typeof values.port === "string" ? values.port : undefined,
     noOpen: Boolean(values["no-open"]),
+    stop: Boolean(values.stop),
     check: Boolean(values.check),
     failOnFindings: Boolean(values["fail-on-findings"]),
   };

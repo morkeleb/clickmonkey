@@ -30,11 +30,15 @@ export {
   fieldLooksInvalid,
   fillCtxForPageError,
   fillShouldLookInvalid,
+  fillValueInRequest,
   readFieldValidity,
   rememberTrackedFill,
+  requestCarriesFill,
+  requestLooksLikeWrite,
   upsertTrackedFill,
+  validationMissesToReport,
 } from "./executor/field-validity.js";
-export type { FieldValidity, TrackedFill } from "./executor/field-validity.js";
+export type { FieldValidity, TrackedFill, WatchedRequest } from "./executor/field-validity.js";
 export { resolveCount } from "./surveyor/resolve.js";
 export { inspect, inspectAndSaveConfig } from "./surveyor/inspect.js";
 export { templatizePath, looksParametric, pathHasParams, ledgerPath } from "./surveyor/path-template.js";
@@ -42,6 +46,7 @@ export {
   applyPageDescription,
   applyMissingPageDescriptions,
   applyVisionBlurb,
+  visionMayDescribe,
   descriptionRank,
   descriptionSourceMayWrite,
   mechanicalDescription,
@@ -49,6 +54,11 @@ export {
   pageNotesFromModel,
 } from "./surveyor/describe.js";
 export { recordPageLedgers } from "./surveyor/record.js";
+export {
+  blurbLooksLikeLoading,
+  htmlLooksLikeLoading,
+  textIsLoadingPlaceholder,
+} from "./surveyor/loading.js";
 export {
   dropExpectedOverlayVisual,
   dropPayloadContentVisual,
@@ -62,6 +72,8 @@ export {
   VISUAL_PROMPT,
 } from "./surveyor/vision.js";
 export type { ParsedVisualReply, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
+export { scanTableLayout } from "./surveyor/scanline.js";
+export type { LayoutHit } from "./surveyor/scanline.js";
 export { validateHtml } from "./surveyor/html.js";
 export { scanA11y } from "./surveyor/a11y.js";
 export { scanSeo, scanSeoHtml, seoIsPrivate, issuesFromMeta, metaFromHtml, applyDuplicateTitles } from "./surveyor/seo.js";
@@ -143,6 +155,7 @@ export { buildUiGraph, badgeCounts, findingOnPage, hopsFromNavLog } from "./ui/g
 export { buildUiSnapshot } from "./ui/snapshot.js";
 export { buildRunDetail } from "./ui/run-detail.js";
 export { startUiServer, UI_DEFAULT_PORT, resolveUiRoot } from "./ui/server.js";
+export { stopUi, readUiPid, spawnDetachedUi, uiSpawnArgs, uiPidPath } from "./ui/pid.js";
 export { writeBundle, freezeSnapshot } from "./ui/bundle.js";
 export type { UiServer, UiServerOpts } from "./ui/server.js";
 export {
@@ -172,6 +185,7 @@ export {
   isRecordRowAction,
   looksLikeNavWidget,
   looksLikeSearchField,
+  looksLikeRowSelectCheckbox,
   isEmptyStateAction,
   sharedChromeIds,
   formSubmitAction,
@@ -198,6 +212,18 @@ export {
   LIST_CHROME_LIMIT,
 } from "./brains/unleash.js";
 export { detectWalkerMode, UNLEASH_MODES } from "./brains/walker-mode.js";
+export {
+  decideFormHunt,
+  floodHunt,
+  formGoalKey,
+  huntHunger,
+  huntScore,
+  isMapFormSurface,
+  mapFormGoals,
+  FORM_HUNT_STAY_RATE,
+  FORM_HUNT_RETHINK,
+} from "./brains/form-hunt.js";
+export type { FormGoal, HuntEdge, HuntNode, HuntReach } from "./brains/form-hunt.js";
 export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";
 export { decisionLines } from "./brains/types.js";
 export { fakerFill, fillRuleId } from "./brains/faker-fill.js";

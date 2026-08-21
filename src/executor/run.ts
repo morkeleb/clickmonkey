@@ -30,7 +30,14 @@ import type { View } from "../schema/view.js";
 import { attachHttpOracle, isDocumentNotFound, isNotFoundPage, type OracleFinding } from "../oracles/http.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
 import { attachPageErrorOracle } from "../oracles/page-error.js";
-import { applyVisionBlurb, mechanicalDescription } from "../surveyor/describe.js";
+import { applyVisionBlurb, mechanicalDescription, visionMayDescribe } from "../surveyor/describe.js";
+import {
+  blurbLooksLikeLoading,
+  htmlLooksLikeLoading,
+  pageLooksLikeLoading,
+  waitOutLoading,
+} from "../surveyor/loading.js";
+import { scanTableLayout } from "../surveyor/scanline.js";
 import { examineScreenshot, hashPngFile } from "../surveyor/vision.js";
 import { checkFence } from "./fence.js";
 import {
@@ -84,6 +91,8 @@ export interface RunState {
   /** Per-step HTML + view dumps under outDir/verbose/. */
   verbose?: boolean;
   verboseSeq?: number;
+  /** Page keys where waitOutLoading timed out; skip the wait until the pane is not loading. */
+  loadingWaitGaveUpByPage?: Record<string, true>;
 }
 
 export interface StepResult {
@@ -254,6 +263,20 @@ function applyPageSight(state: RunState, pageKey: string): void {
   state.lastSight = state.lastSightByPage?.[pageKey];
 }
 
+async function maybeWaitOutLoading(state: RunState, pageKey: string): Promise<void> {
+  if (state.loadingWaitGaveUpByPage?.[pageKey]) {
+    if (!(await pageLooksLikeLoading(state.page))) {
+      const next = { ...state.loadingWaitGaveUpByPage };
+      delete next[pageKey];
+      state.loadingWaitGaveUpByPage = next;
+    }
+    return;
+  }
+  if (await waitOutLoading(state.page)) {
+    state.loadingWaitGaveUpByPage = { ...(state.loadingWaitGaveUpByPage ?? {}), [pageKey]: true };
+  }
+}
+
 function livePageLoc(state: RunState): { path: string; origin?: string; href: string } {
   const href = state.page.url();
   let path = "/";
@@ -265,6 +288,10 @@ function livePageLoc(state: RunState): { path: string; origin?: string; href: st
   return { path, href, origin: ledgerOrigin(href, originOfHref(state.config.url)) };
 }
 
+function visionReplyIsLoading(opts: { blurb?: string; sight?: string }): boolean {
+  return blurbLooksLikeLoading(opts.blurb ?? "") || blurbLooksLikeLoading(opts.sight ?? "");
+}
+
 /** PNG + HTTP only. Do not touch `page` — finish() overlaps this with inspect/axe. */
 async function scanStepVision(
   state: RunState,
@@ -272,6 +299,7 @@ async function scanStepVision(
   bounced: boolean,
   shotPath: string | undefined,
   loc: { path: string; origin?: string; href: string },
+  html?: string,
 ): Promise<string | undefined> {
   const { path, origin, href } = loc;
   const pageKey = sightPageKey(path, origin);
@@ -279,6 +307,7 @@ async function scanStepVision(
   if (state.replay || bounced) return undefined;
   if (!shotPath || !existsSync(shotPath)) return undefined;
   if (step.kind === "screenshot" && step.ui) return undefined;
+  if (html && htmlLooksLikeLoading(html)) return undefined;
   try {
     const vision = resolveVision(state.config.vision, state.config.brain);
     if (!vision || (!vision.issues && !vision.assist)) return undefined;
@@ -288,7 +317,7 @@ async function scanStepVision(
     const mapPage = onPageSurface ? state.model.pages.find((p) => p.id === state.pageId) : undefined;
     const shotHash = hashPngFile(shotPath);
     const needBlurb = Boolean(
-      mapPage && mapPage.describedBy !== "vision" && state.blurbTriedHashByPage?.[pageKey] !== shotHash,
+      mapPage && visionMayDescribe(mapPage) && state.blurbTriedHashByPage?.[pageKey] !== shotHash,
     );
     const lastHash =
       needSight || needBlurb || !state.configPath
@@ -307,6 +336,13 @@ async function scanStepVision(
     if (result.status !== "ok") {
       if (needBlurb) {
         state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: shotHash };
+      }
+      applyPageSight(state, pageKey);
+      return undefined;
+    }
+    if (visionReplyIsLoading(result)) {
+      if (needBlurb) {
+        state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: result.hash };
       }
       applyPageSight(state, pageKey);
       return undefined;
@@ -356,7 +392,7 @@ function commitVisionBlurb(state: RunState, blurb: string): void {
   if (!state.configPath) return;
   const onPageSurface = state.surfaceStack.length <= 1;
   const mapPage = onPageSurface ? state.model.pages.find((p) => p.id === state.pageId) : undefined;
-  if (!mapPage || mapPage.describedBy === "vision") return;
+  if (!mapPage || !visionMayDescribe(mapPage)) return;
   if (!applyVisionBlurb(mapPage, blurb)) return;
   const saved = persistSharedMap(state.configPath, state.model);
   state.config = saved;
@@ -483,6 +519,8 @@ async function finish(
 
   let shotPath = step.kind === "screenshot" ? state.lastScreenshotPath : undefined;
   if (!state.replay && state.config.screenshots !== false && step.kind !== "screenshot") {
+    const locForWait = livePageLoc(state);
+    await maybeWaitOutLoading(state, sightPageKey(locForWait.path, locForWait.origin));
     shotPath = await captureStepShot(state);
   }
   // Client-side Next.js 404 often paints after the document response (HTTP 200).
@@ -509,7 +547,7 @@ async function finish(
     html && state.configPath ? lastQualityPage(state.configPath, qualityKey, state.outDir) : undefined;
   const hashHit = Boolean(html && prev && prev.htmlHash === hashHtml(html));
   const [blurb, markup, a11y] = await Promise.all([
-    scanStepVision(state, step, bounced, shotPath, loc),
+    scanStepVision(state, step, bounced, shotPath, loc, html),
     html && !hashHit
       ? qualityFromHtml(html, loc.href, scanPublicMeta).catch(() => undefined)
       : Promise.resolve(undefined),
@@ -529,6 +567,38 @@ async function finish(
       : Promise.resolve(undefined),
   ]);
   state.stepHtml = undefined;
+  if (runInspect && !state.replay && !bounced && state.configPath) {
+    try {
+      const shotHash = shotPath && existsSync(shotPath) ? hashPngFile(shotPath) : undefined;
+      const skipLayout = shotHash ? prev?.visualHash === shotHash : hashHit;
+      if (!skipLayout) {
+        const layoutIssues = await scanTableLayout(state.page);
+        if (layoutIssues.length > 0) {
+          persistQualityVisual(
+            state.configPath,
+            {
+              ...qualityKey,
+              foundAt: new Date().toISOString(),
+              visual: layoutIssues,
+              visualHash: shotHash ?? prev?.visualHash ?? "layout",
+            },
+            state.outDir,
+          );
+          if (shotPath) {
+            persistVisualIssueFindings(state.outDir, layoutIssues, {
+              stepIndex: state.log.steps.length,
+              url: loc.href,
+              screenshotPath: shotPath,
+              tapePath: join(state.outDir, "replay.log"),
+              replayLog: compactTape(state, step, "visual issue"),
+            });
+          }
+        }
+      }
+    } catch {
+      // layout extras must not stall a walk
+    }
+  }
   if (html && runInspect && state.configPath && !state.replay) {
     try {
       const livePath = (() => {

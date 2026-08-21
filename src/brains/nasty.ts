@@ -170,11 +170,24 @@ export function pickNasty(fieldType: string | undefined, rng: () => number = Mat
 
 const NATIVE_TEMPORAL = new Set(["date", "datetime-local", "time", "month", "week"]);
 
-/** Native `<select>` / date inputs reject catalog junk; type-in fields still get it. */
+function numericCatalogPool(fieldType: string | undefined): string[] {
+  return poolFor(fieldType ?? "number", loadPayloads()).filter((raw) => {
+    const v = interpret(raw).trim();
+    if (!v) return false;
+    return Number.isFinite(Number(v));
+  });
+}
+
+/** Native `<select>` / date / number inputs reject catalog junk; type-in fields still get it. */
 export function pickNastyFill(field: ShownField, rng: () => number = Math.random): string {
   if (field.type === "select") return pickSelectOption(field.options, rng) ?? "";
-  const html = (field.constraints?.htmlType ?? "").toLowerCase();
+  const html = (field.constraints?.htmlType ?? field.type ?? "").toLowerCase();
   if (NATIVE_TEMPORAL.has(html)) return fakerFill(field, rng);
+  if (html === "number") {
+    const pool = numericCatalogPool("number");
+    if (pool.length === 0) return fakerFill(field, rng);
+    return interpret(pick(pool, rng));
+  }
   return pickNasty(field.type, rng);
 }
 

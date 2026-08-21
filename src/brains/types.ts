@@ -12,6 +12,8 @@ export interface BrainDecision {
   good?: string;
   done?: boolean;
   mode?: WalkerModeName;
+  /** Form hunt destination; playbook feeds this back as ctx.huntTarget. */
+  huntTarget?: string;
 }
 
 export function decisionLines(d: BrainDecision): string[] {
@@ -32,6 +34,10 @@ export interface BrainContext {
   recentClicks?: readonly string[];
   /** Click ids that did nothing on this page (same URL, stack, widgets). Never pick again here. */
   noopIds?: readonly string[];
+  /** Times a map form (`page/surface`) was filled this run. Hunt deprioritises high counts. */
+  formHits?: Readonly<Record<string, number>>;
+  /** Form hunt target (`page/surface`) the walker is walking toward. */
+  huntTarget?: string;
   plan?: UiExplorePlan;
   pages?: readonly Page[];
   /** Last vision assist note. Context only — never a command or widget id. */

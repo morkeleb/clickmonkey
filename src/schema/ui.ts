@@ -241,6 +241,7 @@ export const UiNotice = z
     message: z.string().min(1),
     hint: z.string().min(1).optional(),
     detail: z.string().min(1).optional(),
+    action: z.enum(["restart"]).optional(),
   })
   .strict();
 export type UiNotice = z.infer<typeof UiNotice>;

@@ -41,6 +41,7 @@ import {
   UNLEASH_CLI_STEPS,
 } from "../playbooks/index.js";
 import { startUiServer } from "../ui/server.js";
+import { readUiPid, stopUi } from "../ui/pid.js";
 import { runMcp } from "../mcp/server.js";
 import {
   BRAIN_HELP,
@@ -609,19 +610,33 @@ export async function cmdUi(opts: {
   config?: string;
   port?: string;
   noOpen?: boolean;
+  stop?: boolean;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
+  if (opts.stop) {
+    const fromFile = existsSync(configPath) ? readUiPid(configPath) : undefined;
+    const port = opts.port !== undefined ? parsePort(opts.port) : (fromFile?.port ?? parsePort());
+    const result = await stopUi({
+      ...(existsSync(configPath) ? { configPath } : {}),
+      port,
+    });
+    process.stdout.write(`${result.reason}\n`);
+    return EXIT_OK;
+  }
   loadConfigOrExit(configPath);
   const server = await startUiServer({
     configPath,
     port: parsePort(opts.port),
     open: !opts.noOpen,
   });
-  await new Promise<void>((resolve) => {
-    const stop = () => resolve();
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  });
+  await Promise.race([
+    server.stopped,
+    new Promise<void>((resolve) => {
+      const stop = () => resolve();
+      process.once("SIGINT", stop);
+      process.once("SIGTERM", stop);
+    }),
+  ]);
   await server.close();
   return EXIT_OK;
 }

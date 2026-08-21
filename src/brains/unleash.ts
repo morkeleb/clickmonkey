@@ -191,6 +191,20 @@ export function looksLikeSearchField(field: ShownField): boolean {
   return /\b(search|query|filter|find)\b/.test(blob);
 }
 
+/**
+ * TanStack/shadcn row checkboxes share one aria-label and vanish when the
+ * table is empty. Not a form field; filling them is a false "not found".
+ */
+export function looksLikeRowSelectCheckbox(field: {
+  id: string;
+  type?: string;
+  label?: string;
+}): boolean {
+  if (field.type && field.type !== "checkbox") return false;
+  const blob = `${field.id} ${field.label ?? ""}`.toLowerCase();
+  return /row.?selection|toggle_row_selection|press_space_to_toggle/.test(blob);
+}
+
 /** Empty-list CTA (“Create your first …”). Hidden once a filter/search has a value. */
 export function isEmptyStateAction(action: ShownAction): boolean {
   const id = action.id.toLowerCase();
@@ -478,7 +492,7 @@ export function decideForm(
   const submitFresh = usableClicks(submits, ctx);
   if (submitFresh.length === 0) return undefined;
   const empty = fields.filter((f) => f.type === "checkbox" || !f.value.trim() || f.value === "••••");
-  const formFields = empty.filter((f) => !looksLikeSearchField(f));
+  const formFields = empty.filter((f) => !looksLikeSearchField(f) && !looksLikeRowSelectCheckbox(f));
   const toFill = formFields.slice(0, FORM_BURST_MAX);
   const lines: string[] = toFill.map((field) =>
     formatStep({

@@ -107,6 +107,19 @@ describe("nasty payloads", () => {
     if (parsed.kind === "fill") assert.equal(parsed.value, "mailing");
   });
 
+  it("fills a native number input with a finite number, not ${7*7}", () => {
+    const field = {
+      id: "lineitems_0__amount",
+      value: "",
+      type: "number" as const,
+      constraints: { htmlType: "number" },
+    };
+    for (let i = 0; i < 20; i++) {
+      const value = pickNastyFill(field, () => i / 20);
+      assert.equal(Number.isFinite(Number(value)), true, value);
+    }
+  });
+
   it("fills a native date input with yyyy-MM-dd, not catalog junk", () => {
     const field = {
       id: "posted_from",
