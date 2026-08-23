@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Text clip</title>
+    <style>
+      body { font: 16px/1.4 sans-serif; margin: 24px; }
+      [role="tab"] {
+        display: inline-block;
+        padding: 8px 12px;
+        white-space: nowrap;
+        box-sizing: border-box;
+        min-width: 0;
+      }
+      .cut {
+        max-width: 72px;
+        overflow: hidden;
+        text-overflow: clip;
+        white-space: nowrap;
+      }
+      .ellipsis {
+        max-width: 72px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .scroll {
+        max-width: 72px;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      table { border-collapse: collapse; margin-top: 24px; }
+      th, td { border-bottom: 1px solid #ddd; padding: 8px 12px; }
+      td.vendor {
+        max-width: 72px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: clip;
+      }
+      [role="menu"] {
+        display: block;
+        margin-top: 24px;
+        border: 1px solid #ccc;
+        padding: 8px;
+        width: 240px;
+      }
+      [role="menuitem"].cut {
+        display: block;
+      }
+      button.roomy { margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <main data-testid="home">
+      <h1>Vouchers</h1>
+      <div role="tablist">
+        <div role="tab" class="cut" data-testid="clipped-tab">Accounts receivable aging</div>
+        <div role="tab" class="ellipsis" data-testid="ellipsis-tab">Vendor statements overview</div>
+        <div role="tab" class="scroll" data-testid="scroll-tab">Open purchase orders queue</div>
+      </div>
+      <table data-testid="clipped-cells">
+        <caption>Ready-to-Pay</caption>
+        <thead>
+          <tr><th>Vendor</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="vendor">Expert Witness Services LLC</td></tr>
+        </tbody>
+      </table>
+      <div role="menu" data-testid="open-menu">
+        <div role="menuitem" class="cut">Reconcile outstanding vendor credits</div>
+      </div>
+      <button type="button" class="roomy">Save</button>
+    </main>
+  </body>
+</html>

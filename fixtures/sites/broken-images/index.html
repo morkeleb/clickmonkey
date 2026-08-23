@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Broken images</title>
+    <style>
+      body { margin: 0; font: 16px/1.4 sans-serif; }
+      main { padding: 24px; }
+      img.logo { width: 64px; height: 64px; }
+      img.pixel { width: 8px; height: 8px; }
+      img.hidden { display: none; }
+      img.zero { width: 0; height: 0; overflow: hidden; }
+      img.tiny { width: 16px; height: 16px; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Broken images</h1>
+      <img class="logo" src="missing-file.png" alt="Logo" width="64" height="64" />
+      <img
+        class="pixel"
+        alt="Valid pixel"
+        width="8"
+        height="8"
+        src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+      />
+      <img class="hidden" src="missing-hidden.png" alt="Hidden" width="64" height="64" />
+      <img src="missing-aria.png" alt="Aria hole" aria-hidden="true" width="64" height="64" />
+      <img src="" alt="Empty src" width="64" height="64" />
+      <img class="zero" src="missing-zero.png" alt="Zero" />
+    </main>
+    <footer>
+      <img class="tiny" src="missing-dot.png" alt="" data-testid="footer-dot" width="16" height="16" />
+    </footer>
+  </body>
+</html>

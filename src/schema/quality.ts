@@ -10,7 +10,7 @@ export type QualitySource = z.infer<typeof QualitySource>;
 export const QualitySeverity = z.enum(["error", "warning"]);
 export type QualitySeverity = z.infer<typeof QualitySeverity>;
 
-/** Self-reported by the vision model. Not a calibrated probability. */
+/** high/medium from DOM geometry or the vision model. Not a calibrated probability. */
 export const QualityConfidence = z.enum(["high", "medium", "low"]);
 export type QualityConfidence = z.infer<typeof QualityConfidence>;
 

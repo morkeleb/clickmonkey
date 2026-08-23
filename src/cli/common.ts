@@ -136,7 +136,10 @@ export const VISION_HELP = `vision is optional. Same connection shape as brain (
   "brain":  { "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5" }
   "vision": { "baseUrl": "http://127.0.0.1:8080/v1", "model": "qwen2.5-vl" }
 
-issues (default true) writes extras into that run's quality.json.
+Layout geometry (overflow, clip, overlap, scanline, sparse, broken images,
+24×24 hit targets) is a DOM pass on inspect and does not need vision.
+
+issues (default true) lets the model add the same rule names from pixels.
 High-confidence visual extras are also filed as findings with the step screenshot.
 Medium stays on the quality ledger. The walk does not stop.
 assist (default true) adds explore sight notes.

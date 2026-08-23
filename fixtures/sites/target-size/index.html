@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Target size</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; }
+      button, a.icon {
+        box-sizing: border-box;
+        font: inherit;
+      }
+      .icon {
+        width: 16px;
+        height: 16px;
+        padding: 0;
+        margin: 0 8px 8px 0;
+        border: 0;
+        background: #222;
+        color: #fff;
+        font-size: 10px;
+        line-height: 16px;
+        display: inline-block;
+        text-align: center;
+        text-decoration: none;
+        vertical-align: middle;
+      }
+      .ok {
+        min-width: 40px;
+        min-height: 40px;
+        padding: 8px 12px;
+      }
+      .ghost { opacity: 0; }
+      .hidden { display: none; }
+      label.roomy {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 160px;
+        min-height: 32px;
+        padding: 8px;
+      }
+      .tiny-check { width: 12px; height: 12px; margin: 0; padding: 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Target size</h1>
+      <p>
+        <button type="button" class="icon" data-testid="icon-btn" aria-label="Close">×</button>
+        <button type="button" class="ok" data-testid="save">Save</button>
+        <a href="/settings" class="icon" data-testid="icon-link" aria-label="Settings">⚙</a>
+        <button type="button" class="icon" data-testid="disabled-icon" aria-label="Muted" disabled>×</button>
+        <button type="button" class="icon" data-testid="aria-disabled-icon" aria-label="Off" aria-disabled="true">×</button>
+        <button type="button" class="icon ghost" data-testid="ghost-icon" aria-label="Ghost">×</button>
+        <button type="button" class="icon hidden" data-testid="hidden-icon" aria-label="Hidden">×</button>
+      </p>
+      <p>Read the <a href="/docs" data-testid="inline-link">documentation</a> before you continue.</p>
+      <label class="roomy" data-testid="agree-label">
+        <input type="checkbox" class="tiny-check" data-testid="agree" />
+        I agree
+      </label>
+      <input type="checkbox" class="tiny-check" data-testid="bare-check" />
+      <button type="button" aria-expanded="false" aria-controls="more-menu">More</button>
+      <ul id="more-menu" role="menu" hidden>
+        <li role="menuitem" data-testid="collapsed-item" class="icon">Copy</li>
+      </ul>
+    </main>
+  </body>
+</html>

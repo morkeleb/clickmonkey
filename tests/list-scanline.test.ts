@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
+import { scanListScanline } from "../src/surveyor/list-scanline.js";
+import { withPage } from "./helpers/with-page.js";
+
+const html = fileURLToPath(new URL("../fixtures/sites/list-scanline/index.html", import.meta.url));
+
+describe("scanListScanline", () => {
+  it("flags ragged list titles, not a 3-col card grid or table cells", async () => {
+    await withPage(html, async (page) => {
+      const issues = await scanListScanline(page);
+      const lines = issues.filter((i) => i.rule === "scanline");
+      assert.ok(
+        lines.some(
+          (i) =>
+            i.message === "Row titles do not share a left edge" &&
+            /thread/i.test(i.where ?? ""),
+        ),
+        `expected scanline on list titles, got ${JSON.stringify(issues)}`,
+      );
+      assert.ok(
+        lines.some((i) => i.confidence === "high"),
+        `expected high confidence on 40px title drift, got ${JSON.stringify(issues)}`,
+      );
+      assert.ok(
+        lines.every((i) => i.source === "visual" && i.severity === "warning" && i.count === 1),
+      );
+      assert.ok(
+        lines.every((i) => !/Ragged titles|vendor|drift/i.test(`${i.where} ${i.message}`)),
+        `tables are owned by scanTableLayout, got ${JSON.stringify(issues)}`,
+      );
+      assert.ok(
+        lines.every((i) => !/card/i.test(`${i.where} ${i.message}`)),
+        `3-col cards must not be scanline, got ${JSON.stringify(issues)}`,
+      );
+      assert.ok(
+        lines.every((i) => !/overflow|primary|menu/i.test(`${i.where} ${i.message}`)),
+        `menubar and overflow menu must not be scanline, got ${JSON.stringify(issues)}`,
+      );
+    });
+  });
+});

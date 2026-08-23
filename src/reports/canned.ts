@@ -62,7 +62,7 @@ export function cannedReport(finding: Finding): string {
       return [
         `# ${finding.id}`,
         "",
-        "High-confidence visual issue from the vision model.",
+        "High-confidence visual issue from the DOM layout pass (or vision).",
         "",
         finding.message,
         "",

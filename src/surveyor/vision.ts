@@ -18,6 +18,7 @@ export const VISUAL_RULES = [
   "align",
   "scanline",
   "sparse",
+  "targetSize",
   "contrast",
   "broken",
   "other",

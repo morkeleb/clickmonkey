@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Overlap</title>
+    <style>
+      body { margin: 0; font: 16px/1.4 sans-serif; }
+      header.sticky {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 64px;
+        background: #222;
+        color: #fff;
+        z-index: 20;
+        padding: 0 16px;
+        line-height: 64px;
+      }
+      #save {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        z-index: 1;
+        width: 80px;
+        height: 32px;
+      }
+      #alpha {
+        position: absolute;
+        left: 40px;
+        top: 120px;
+        width: 100px;
+        height: 40px;
+      }
+      #beta {
+        position: absolute;
+        left: 100px;
+        top: 120px;
+        width: 100px;
+        height: 40px;
+      }
+      .labels {
+        position: absolute;
+        left: 400px;
+        top: 120px;
+        width: 160px;
+        height: 40px;
+      }
+      .labels label { position: absolute; left: 0; top: 0; }
+      .labels .l2 { left: 12px; top: 6px; }
+      .table-wrap {
+        position: absolute;
+        left: 24px;
+        top: 200px;
+        width: 360px;
+      }
+      table { border-collapse: collapse; width: 100%; }
+      td, th { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+      #file-menu {
+        display: none;
+        position: absolute;
+        left: 24px;
+        top: 200px;
+        width: 280px;
+        background: #fff;
+        border: 1px solid #222;
+        z-index: 6;
+        padding: 8px;
+      }
+      #file-menu.open { display: block; }
+      #file-menu [role="menuitem"] {
+        display: block;
+        padding: 10px 16px;
+      }
+      #open-menu {
+        position: absolute;
+        left: 24px;
+        top: 360px;
+      }
+      #behind {
+        position: absolute;
+        left: 600px;
+        top: 340px;
+        width: 96px;
+        height: 32px;
+      }
+      #modal {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(0, 0, 0, 0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      #modal.open { display: flex; }
+      .dialog-card {
+        background: #fff;
+        padding: 24px;
+        width: 420px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="sticky">App header</header>
+    <main data-testid="home">
+      <button type="button" id="save" data-testid="save">Save</button>
+      <button type="button" id="alpha" data-testid="alpha">Alpha</button>
+      <button type="button" id="beta" data-testid="beta">Beta</button>
+
+      <div class="labels">
+        <label class="l1">Email</label>
+        <label class="l2">Name</label>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Files</caption>
+          <thead>
+            <tr><th>Name</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Report.csv</td>
+              <td><button type="button" id="edit-row" data-testid="edit-row">Edit</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="file-menu" role="menu" data-testid="file-menu" aria-label="File">
+        <div role="menuitem">New</div>
+        <div role="menuitem">Open…</div>
+      </div>
+      <button type="button" id="open-menu" data-testid="open-menu">Open menu</button>
+
+      <button type="button" id="behind" data-testid="behind">Behind</button>
+      <div id="modal" role="dialog" aria-modal="true" aria-label="Confirm" data-testid="modal">
+        <div class="dialog-card">
+          <p>Centered dialog</p>
+          <button type="button" data-testid="dialog-ok">OK</button>
+        </div>
+      </div>
+    </main>
+    <script>
+      document.querySelector('[data-testid="open-menu"]').addEventListener("click", () => {
+        document.getElementById("file-menu").classList.add("open");
+      });
+    </script>
+  </body>
+</html>

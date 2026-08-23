@@ -236,7 +236,7 @@ export function renderQualitySection(
   const lines = [
     "## Quality",
     "",
-    "Recorded while walking — HTML (html-validate), accessibility (axe-core), testability, and JavaScript always; SEO (title/description/OG) on public paths; visual layout extras when a vision model ran.",
+    "Recorded while walking — HTML (html-validate), accessibility (axe-core), testability, JavaScript, and DOM layout (overflow, clip, overlap, scanline, sparse, broken images, hit targets) always; SEO (title/description/OG) on public paths; extra pixel notes if a vision model ran.",
     "",
   ];
   keys.sort((a, b) => {

@@ -73,8 +73,15 @@ export {
 export type { ParsedVisualReply, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
 export { scanTableLayout } from "./surveyor/scanline.js";
 export type { LayoutHit } from "./surveyor/scanline.js";
+export { scanLayout } from "./surveyor/layout.js";
 export { sparseLayoutIssue, sparseMetrics } from "./surveyor/sparse.js";
 export type { SparseBox, SparseMetrics, SparsePane, SparseSample } from "./surveyor/sparse.js";
+export { scanOverflow } from "./surveyor/overflow.js";
+export { scanBroken } from "./surveyor/broken.js";
+export { scanTextClip } from "./surveyor/text-clip.js";
+export { scanOverlap } from "./surveyor/overlap.js";
+export { scanListScanline } from "./surveyor/list-scanline.js";
+export { scanTargetSize } from "./surveyor/target-size.js";
 export { validateHtml } from "./surveyor/html.js";
 export { scanA11y } from "./surveyor/a11y.js";
 export { scanSeo, scanSeoHtml, seoIsPrivate, issuesFromMeta, metaFromHtml, applyDuplicateTitles } from "./surveyor/seo.js";

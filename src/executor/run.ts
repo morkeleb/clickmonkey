@@ -37,7 +37,7 @@ import {
   pageLooksLikeLoading,
   waitOutLoading,
 } from "../surveyor/loading.js";
-import { scanTableLayout } from "../surveyor/scanline.js";
+import { scanLayout } from "../surveyor/layout.js";
 import { examineScreenshot, hashPngFile } from "../surveyor/vision.js";
 import { checkFence } from "./fence.js";
 import {
@@ -574,7 +574,7 @@ async function finish(
       const shotHash = shotPath && existsSync(shotPath) ? hashPngFile(shotPath) : undefined;
       const skipLayout = shotHash ? prev?.visualHash === shotHash : hashHit;
       if (!skipLayout) {
-        const layoutIssues = await scanTableLayout(state.page);
+        const layoutIssues = await scanLayout(state.page);
         if (layoutIssues.length > 0) {
           persistQualityVisual(
             state.configPath,

@@ -541,7 +541,7 @@ describe("quality ledger", () => {
     assert.match(md, /html-validate/);
     assert.match(md, /axe-core/);
     assert.match(md, /SEO \(title\/description\/OG\) on public paths/);
-    assert.match(md, /visual layout extras when a vision model ran/);
+    assert.match(md, /DOM layout/);
     assert.doesNotMatch(md, /No LLM/);
     assert.match(md, /`opaqueControl` block/);
     assert.match(md, /`no-dup-id` · error/);

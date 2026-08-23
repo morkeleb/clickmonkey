@@ -100,6 +100,8 @@ const RULE_WHY: Record<string, string> = {
     "Repeating items do not share an edge. Scanning a list becomes hunting; it usually means a wrapping cell or mixed padding.",
   sparse:
     "The main pane is left-locked: the form or column stops short and more than half the width is empty on the right. Centered cards are not this; it is unused canvas, not a layout choice.",
+  targetSize:
+    "The control is smaller than 24×24 CSS pixels, so taps miss or hit the neighbor. WCAG 2.5.8 (Target Size Minimum) is the 24×24 floor; inline text links are not this.",
   contrast: "Text is unreadable on its background in the screenshot, not only in the WCAG math.",
   broken: "A missing image, empty icon hole, or obvious placeholder instead of content.",
   other: "A user-visible rendering defect that does not fit overlap, clip, or overflow.",

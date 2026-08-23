@@ -24,7 +24,7 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 | **A11y scanners** | Contrast, `aria-hidden` + focus, button-name, … | axe-core |
 | **SEO hygiene** | Missing title/description/OG on public paths; the same title on every route | `seo` on the leash |
 | **Testability** | Unlabeled fields, unnamed controls, click on `<svg>`/`<div>`, no `main`, occluded widgets, duplicate names, missing stable ids | Inspect audit |
-| **Layout** | Overlap, clip, overflow, z-index, scanline, sparse, contrast; type that is sheared, unreadable, or off a shared baseline (not font taste) | Vision model plus a DOM pass: clipped table cells without `…`, ragged column edges, and left-locked main panes with more than half the width empty on the right (centered cards are not sparse); high-confidence extras become findings |
+| **Layout** | Overflow, clip, overlap, covered controls, scanline, sparse panes, broken images, undersized hit targets; VLM may add contrast/align | DOM geometry on every inspect (no model). Optional `vision.issues` can name the same rules from a screenshot. High-confidence extras become findings; medium stays on the quality ledger |
 | **Empty required** | Blank required field + submit must look invalid | Playbook `empty-required` |
 | **Junk not invalid** | `--nasty` / typed junk + submit **sent those values or left the form** without `aria-invalid` / visible error / HTML5 constraint validation | Unleash after submit |
 | **Throw instead of invalid** | Fill then uncaught `pageerror` (e.g. `Invalid time value`) | Runtime oracle |
@@ -33,6 +33,24 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 | **Explore oracles** | Claim vs behavior, purpose, consistency, interruption, affordance | MCP / `explore` when the host files them |
 | **Frozen contracts** | Path, text, value, visible/hidden, invalid | `clickmonkey spec` fences |
 | **Regression** | Same finding tape still fails or is fixed | `clickmonkey replay` (STILL / FIXED / LOOK) |
+
+### Layout (DOM, always)
+
+Inspect measures boxes, overflow, and hit-testing on the live page. It does **not** need `vision`. High confidence → finding folder; medium → quality ledger only.
+
+| Rule | What it catches | Not this |
+|---|---|---|
+| **overflow** | Page or container leaking past its edge (document wider than the viewport past the scrollbar gutter; ~40px+ is high) | Intended `overflow: auto` / `scroll`, closed off-canvas drawers, sticky `100vh` chrome, `overflow: hidden` clip (that is **clip**) |
+| **clip** | Text cut mid-word with no `…` — table cells, fields, tabs, chips, headings | Clean ellipsis, scrollable panes, roomy inputs whose letters are readable |
+| **overlap** | Two actable controls sharing ≥8×8 px | Parent/child, labels on labels, an open menu covering the page |
+| **zIndex** | `elementFromPoint` at a control's center is something else | Sticky header/nav, an open dialog/menu covering the page behind it |
+| **scanline** | Repeating list or table row titles/icons whose edges do not line up (≥16px) | Nested nav indent, masonry / multi-column cards, items inside a menu |
+| **sparse** | Main pane is left-locked and the content column uses ≤50% of the width (~30% is high) | Centered cards/login, a second column on the right, small dialogs |
+| **broken** | Visible `<img>` that finished loading with `naturalWidth === 0` | `data:` placeholders, hidden/empty `src`, still loading |
+| **targetSize** | Actable control smaller than 24×24 CSS px on **both** axes | Inline text links, native checkbox/radio/file, disabled, a wrapping label that is ≥24×24 |
+| **contrast** / **align** | Unreadable type in a screenshot; a row of the same kind obviously stepped | WCAG contrast (axe); 1px taste; stacked label above its field |
+
+Optional `vision` can still file these rule names from pixels (blurbs and Sight too). Do not treat leftover `--nasty` catalog strings as broken/clip; a sheared **product** name in a table still counts.
 
 Fence bounce (`/logout`, off-app URL) is leash control, not a product finding.
 
@@ -80,7 +98,7 @@ ClickMonkey has no domain brain unless you put it in a **charter**, **skills** (
 |---|---|
 | **Business correctness** | Wrong total, wrong tenant, wrong binding. Specs pin a path you already know; they do not invent the rule. |
 | **Authz policy** | HTTP 403 + “You do not have access” is often the product working. Whether that nav item should exist for this role is a human call. Do not mute 403s with an allowlist — the interesting bug is **200 where this role must not go**. Use `skip` / fence if this leash should not walk it. |
-| **Triage** | Axe/html noise vs a user-visible break; visual LOOK; `--nasty` false friends; expected empty states. |
+| **Triage** | Axe/html noise vs a user-visible break; 1px align / brand tokens; `--nasty` false friends; expected empty states. |
 | **Journeys the walker will not finish alone** | Multi-user, email/PDF, payments, long wizards that need real org data, races, load. |
 | **Security beyond junk-in-fields** | Not a pentest. No CSRF, IDOR campaigns, session fixation. `--nasty` is only for a site you own. |
 | **Taste and intent** | Copy, information architecture, “is this the right wizard.” |
@@ -90,8 +108,8 @@ ClickMonkey has no domain brain unless you put it in a **charter**, **skills** (
 
 | Command | Harvests |
 |---|---|
-| `map` | Scout: pages/surfaces, testability, quality on navigate-only |
-| `unleash` | NPC: hunt mapped forms, fill/submit; `--nasty` rogue payloads |
+| `map` | Scout: pages/surfaces, testability, quality + DOM layout on navigate-only |
+| `unleash` | NPC: hunt mapped forms, fill/submit; `--nasty` rogue payloads; same layout pass |
 | `playbook empty-required` | Blank required + submit → invalid |
 | `explore` / `mcp` | Paladin: charter-driven walk + host oracles; `explore_finding` / `screenshot ui` |
 | `spec` | Fences as a real walk; findings still harvest unless you only care about PASS |
