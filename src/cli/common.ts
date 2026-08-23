@@ -27,6 +27,7 @@ Commands:
   explore     Paladin: charter-driven LLM walk of legal map ids
   mcp         Exploratory testing over MCP (stdio)
   report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
+  prune       Drop false positives from a report (inquirer; --ids for scripts)
   replay      Replay a log file or a findings-report markdown file
   spec        Markdown specs under clickmonkey/specs/ [--check] [--fail-on-findings]
   compact     Shorten a log to the last open or nav click + following lines

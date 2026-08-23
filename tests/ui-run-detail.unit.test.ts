@@ -7,7 +7,13 @@ import { saveConfig } from "../src/persist/config.js";
 import { persistFinding } from "../src/persist/finding.js";
 import { exploreOutlineOf, setPresenceOutline, startPresence } from "../src/persist/presence.js";
 import { emptyConfig } from "../src/schema/config.js";
-import { buildRunDetail, latestPageScreenshotUrls, shotPageId, stepsFromNavLog } from "../src/ui/run-detail.js";
+import {
+  buildRunDetail,
+  latestPageScreenshotUrls,
+  shotPageId,
+  shotRelsByIndex,
+  stepsFromNavLog,
+} from "../src/ui/run-detail.js";
 
 describe("stepsFromNavLog", () => {
   it("merges step, hops, and stepDone and keeps a boot prelude", () => {
@@ -468,6 +474,19 @@ describe("latestPageScreenshotUrls", () => {
   });
 });
 
+describe("shotRelsByIndex", () => {
+  it("indexes step-NNN.png once and prefers the exact name", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-shots-idx-"));
+    mkdirSync(join(dir, "shots"));
+    writeFileSync(join(dir, "shots", "step-000-hash.png"), "a");
+    writeFileSync(join(dir, "shots", "step-000.png"), "b");
+    writeFileSync(join(dir, "shots", "step-012.png"), "c");
+    const rels = shotRelsByIndex(dir);
+    assert.equal(rels.get(0), "shots/step-000.png");
+    assert.equal(rels.get(12), "shots/step-012.png");
+  });
+});
+
 describe("buildRunDetail", () => {
   it("attaches findings and screenshot urls without leaking filesystem paths", () => {
     const dir = mkdtempSync(join(tmpdir(), "cm-run-detail-"));
@@ -530,8 +549,76 @@ describe("buildRunDetail", () => {
       `/files/runs/${runId}/findings/fnd_0_fenceViolation/screenshot.png`,
     );
     assert.equal(detail.findings.length, 1);
+    assert.equal(detail.findings[0]?.pageId, "home");
     const json = JSON.stringify(detail);
     assert.equal(json.includes(runDir), false);
     assert.equal(json.includes("tapePath"), false);
+  });
+
+  it("uses the landing page when a finding.json has no pageId", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-run-detail-at-"));
+    const path = join(dir, "clickmonkey.json");
+    saveConfig(path, emptyConfig("http://127.0.0.1:4173/"));
+    const runId = "20260818T180001Z-land";
+    const runDir = join(dir, "clickmonkey", "runs", runId);
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(
+      join(runDir, "nav.jsonl"),
+      `${JSON.stringify({ ts: "t0", type: "step", line: "click page.go", pageId: "home", phase: "walk" })}\n${JSON.stringify({
+        ts: "t1",
+        type: "stepDone",
+        line: "click page.go",
+        ok: false,
+        ms: 200,
+        finding: "visualIssue",
+        pageId: "invoices",
+      })}\n`,
+    );
+    persistFinding(runDir, {
+      schemaVersion: 1,
+      id: "fnd_0_visualIssue",
+      kind: "visualIssue",
+      severity: "minor",
+      message: "scanline: row icons drift",
+      tapePath: join(runDir, "replay.log"),
+      stepIndex: 0,
+    });
+    const detail = buildRunDetail(path, runId);
+    assert.equal(detail?.findings[0]?.pageId, "invoices");
+  });
+
+  it("keeps a persisted finding pageId and falls back to the page still", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-run-detail-page-"));
+    const path = join(dir, "clickmonkey.json");
+    saveConfig(path, emptyConfig("http://127.0.0.1:4173/"));
+    const runId = "20260818T180002Z-page";
+    const runDir = join(dir, "clickmonkey", "runs", runId);
+    mkdirSync(join(runDir, "shots", "pages"), { recursive: true });
+    writeFileSync(
+      join(runDir, "nav.jsonl"),
+      `${JSON.stringify({ ts: "t0", type: "step", line: "expect path /invoices", pageId: "home", phase: "walk" })}\n${JSON.stringify({
+        ts: "t1",
+        type: "stepDone",
+        line: "expect path /invoices",
+        ok: false,
+        ms: 10,
+        finding: "expectFailed",
+        pageId: "home",
+      })}\n`,
+    );
+    writeFileSync(join(runDir, "shots", "pages", "invoices.png"), "png");
+    persistFinding(runDir, {
+      schemaVersion: 1,
+      id: "fnd_0_expectFailed",
+      kind: "expectFailed",
+      severity: "major",
+      message: "expected invalid",
+      tapePath: join(runDir, "replay.log"),
+      stepIndex: 0,
+      pageId: "invoices",
+    });
+    const detail = buildRunDetail(path, runId);
+    assert.equal(detail?.findings[0]?.pageId, "invoices");
+    assert.equal(detail?.findings[0]?.screenshotUrl, `/files/runs/${runId}/shots/pages/invoices.png`);
   });
 });

@@ -1,6 +1,6 @@
 import { Check, Copy, Printer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ShotPreview } from "@/components/shot";
+import { ShotSkeleton, useOpenShot } from "@/components/shot";
 import { Button } from "@/components/ui/button";
 import { copyReportToClipboard } from "@/lib/report-clipboard";
 import { renderReportHtml } from "@/lib/markdown";
@@ -20,14 +20,13 @@ export function ReportMarkdown({ reportId }: { reportId: string }) {
   const [report, setReport] = useState<ReportPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "failed">("idle");
-  const [preview, setPreview] = useState<string | null>(null);
+  const openShot = useOpenShot();
 
   useEffect(() => {
     let cancelled = false;
     setReport(null);
     setError(null);
     setCopyState("idle");
-    setPreview(null);
     void (async () => {
       try {
         const enc = encodeURIComponent(reportId);
@@ -51,7 +50,13 @@ export function ReportMarkdown({ reportId }: { reportId: string }) {
   }
   if (!report) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading report…</div>
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-8 py-8">
+        <div className="h-5 w-48 animate-pulse rounded-md bg-zinc-800" />
+        <div className="h-4 w-full animate-pulse rounded-md bg-zinc-800" />
+        <div className="h-4 w-5/6 animate-pulse rounded-md bg-zinc-800" />
+        <ShotSkeleton className="mt-0" />
+        <ShotSkeleton className="mt-0" />
+      </div>
     );
   }
 
@@ -99,18 +104,10 @@ export function ReportMarkdown({ reportId }: { reportId: string }) {
             const href = shotFromClick(event.target);
             if (!href) return;
             event.preventDefault();
-            setPreview(href);
+            openShot(href, "Report screenshot");
           }}
         />
       </div>
-      <ShotPreview
-        url={preview}
-        alt="Report screenshot"
-        description="From this report."
-        onOpenChange={(open) => {
-          if (!open) setPreview(null);
-        }}
-      />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   cmdMap,
   cmdMcp,
   cmdPlaybook,
+  cmdPrune,
   cmdReport,
   cmdReplay,
   cmdSpec,
@@ -47,6 +48,7 @@ try {
       stop: { type: "boolean" },
       check: { type: "boolean" },
       "fail-on-findings": { type: "boolean" },
+      ids: { type: "string" },
     },
   });
 
@@ -81,6 +83,7 @@ try {
     stop: Boolean(values.stop),
     check: Boolean(values.check),
     failOnFindings: Boolean(values["fail-on-findings"]),
+    ids: typeof values.ids === "string" ? values.ids : undefined,
   };
 
   const run = async (): Promise<number> => {
@@ -105,6 +108,8 @@ try {
         return cmdMcp(flags);
       case "report":
         return cmdReport(flags);
+      case "prune":
+        return cmdPrune(positionals[1], flags);
       case "replay":
         return cmdReplay(positionals[1], flags);
       case "spec":

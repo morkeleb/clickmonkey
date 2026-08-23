@@ -21,5 +21,6 @@
       "@ui/*": ["../src/ui/*"]
     }
   },
-  "include": ["src", "../src/ui/graph-labels.ts"]
+  "include": ["src", "../src/ui/graph-labels.ts"],
+  "exclude": ["src/**/*.unit.test.ts"]
 }

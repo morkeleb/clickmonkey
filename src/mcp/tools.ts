@@ -96,7 +96,7 @@ export const CLICKMONKEY_GUIDE = [
   "",
   "## Modes",
   "",
-  "- **Map** (scout) — CLI `clickmonkey map`. Fog of war, navigate only. Run this when the map is thin. Never fills or submits.",
+  "- **Map** (scout) — CLI `clickmonkey map`. Lifts fog: unseen doors, then unvisited pages. Never fills or submits.",
   "- **Unleash** (NPC) — CLI `clickmonkey unleash`. Pathfinds to mapped forms, fills, submits. `--nasty` is the rogue pass (junk + missed validation) on a site you own.",
   "- **Explore** (paladin) — MCP `explore_start` … `explore_finish`. Charter-driven: do the job. You are the brain. Skills: prompts explore_tester, explore_plan, explore_report.",
   "- **Spec** — freeze a compact tape into `clickmonkey/specs/*.md` (prompt spec_writer). Validate with spec_check or `clickmonkey spec --check`. Play in CI with CLI `clickmonkey spec`. Not MCP.",

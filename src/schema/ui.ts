@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PageModel, PageModelDraft } from "./page-model.js";
+import { PageModel, PageModelDraft, parsePageModelDraft } from "./page-model.js";
 import { QualityReport } from "./quality.js";
 import { TestabilityReport } from "./testability.js";
 
@@ -61,6 +61,7 @@ export const UiRunFinding = z
     message: z.string().min(1),
     stepIndex: z.number().int().nonnegative(),
     url: z.string().min(1).optional(),
+    pageId: z.string().min(1).optional(),
     widgetRef: z.string().min(1).optional(),
     screenshotUrl: z.string().min(1).optional(),
   })
@@ -281,6 +282,8 @@ export const UiEvent = z
   .object({
     type: UiEventType,
     snapshot: UiSnapshot.optional(),
+    /** Cheap live patch: walker pageId / presence without rebuilding the map. */
+    runs: z.array(UiRun).optional(),
   })
   .strict();
 export type UiEvent = z.infer<typeof UiEvent>;
@@ -306,5 +309,5 @@ export type Presence = z.infer<typeof Presence>;
 export function parseMapForUi(raw: unknown): z.infer<typeof PageModelDraft> {
   const full = PageModel.safeParse(raw);
   if (full.success) return full.data;
-  return PageModelDraft.parse(raw);
+  return parsePageModelDraft(raw, { dropUnknown: true });
 }

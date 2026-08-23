@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { UiEvent, UiFault, UiSnapshot } from "@schema/ui";
+import type { UiEvent, UiFault, UiRun, UiSnapshot } from "@schema/ui";
 import { faultFromHttpError } from "@/lib/fault";
 import { fetchFirstJson, publicUrl, UiHttpError } from "@/lib/paths";
 
@@ -7,8 +7,13 @@ const EVENT_TYPES = ["hello", "map", "quality", "testability", "run", "nav"] as 
 
 function readSnapshot(raw: unknown): UiSnapshot | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const snapshot = (raw as UiEvent).snapshot;
-  return snapshot;
+  return (raw as UiEvent).snapshot;
+}
+
+function readRuns(raw: unknown): UiRun[] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const runs = (raw as UiEvent).runs;
+  return Array.isArray(runs) ? runs : undefined;
 }
 
 export function useSnapshot(): {
@@ -56,6 +61,11 @@ export function useSnapshot(): {
           setSnapshot(next);
           setError(null);
           setFault(null);
+          return;
+        }
+        const runs = readRuns(parsed);
+        if (runs && !cancelled) {
+          setSnapshot((prev) => (prev ? { ...prev, runs } : prev));
         }
       } catch {
         /* ignore malformed SSE payloads */

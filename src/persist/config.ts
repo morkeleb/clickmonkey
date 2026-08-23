@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { assertNotLegacyConfig, Config, LeashFile } from "../schema/config.js";
-import { emptyDraft, PageModelDraft } from "../schema/page-model.js";
+import { emptyDraft, PageModelDraft, parsePageModelDraft } from "../schema/page-model.js";
 import { applyMissingPageDescriptions } from "../surveyor/describe.js";
 import { mergeTrees } from "../surveyor/merge.js";
 import { withFileLock } from "./lock.js";
@@ -30,18 +30,18 @@ function leashPayload(
   return out;
 }
 
-function readMapFile(path: string): PageModelDraft {
-  return PageModelDraft.parse(JSON.parse(readFileSync(path, "utf8")));
+function readMapFile(path: string, dropUnknown = false): PageModelDraft {
+  return parsePageModelDraft(JSON.parse(readFileSync(path, "utf8")), { dropUnknown });
 }
 
-export function loadConfig(path: string): Config {
+export function loadConfig(path: string, opts?: { lenientMap?: boolean }): Config {
   const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
   assertNotLegacyConfig(raw);
   const leash = LeashFile.parse(raw);
   const shared = mapPath(path);
   let map: PageModelDraft;
   if (existsSync(shared)) {
-    map = readMapFile(shared);
+    map = readMapFile(shared, opts?.lenientMap === true);
     if (map.pages.length === 0 && (leash.map?.pages.length ?? 0) > 0) {
       map = leash.map!;
     }

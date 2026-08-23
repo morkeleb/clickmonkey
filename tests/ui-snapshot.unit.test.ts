@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { saveConfig } from "../src/persist/config.js";
 import { exploreOutlineOf, setPresenceOutline, startPresence } from "../src/persist/presence.js";
 import { emptyConfig } from "../src/schema/config.js";
-import { buildUiSnapshot } from "../src/ui/snapshot.js";
+import { buildUiSnapshot, refreshUiSnapshot } from "../src/ui/snapshot.js";
 
 describe("buildUiSnapshot", () => {
   it("omits apiKey and resolved $ENV secrets", () => {
@@ -95,8 +95,7 @@ describe("buildUiSnapshot", () => {
       assert.equal(run.brain, "explore");
       assert.equal(run.outline?.charter, "walk invoices");
       assert.equal(run.outline?.now, "open invoices");
-      assert.equal(run.steps?.[0]?.line, "open home");
-      assert.equal(run.steps?.[0]?.ok, true);
+      assert.equal(run.steps, undefined);
     } finally {
       if (prevKey === undefined) delete process.env.XAI_API_KEY;
       else process.env.XAI_API_KEY = prevKey;
@@ -148,7 +147,13 @@ describe("buildUiSnapshot", () => {
     const snap = buildUiSnapshot(path);
     const home = snap.graph.nodes.find((n) => n.id === "home");
     assert.equal(home?.screenshotUrl, "/files/runs/20260818T150000Z-ab12/shots/step-000.png");
-    assert.equal(snap.runs[0]?.steps[0]?.screenshotUrl, "/files/runs/20260818T150000Z-ab12/shots/step-000.png");
+    assert.equal(snap.runs[0]?.steps, undefined);
+    const patched = refreshUiSnapshot(snap, path, "findings");
+    assert.equal(
+      patched.graph.nodes.find((n) => n.id === "home")?.screenshotUrl,
+      "/files/runs/20260818T150000Z-ab12/shots/step-000.png",
+    );
+    assert.equal(refreshUiSnapshot(snap, path, "runs").graph, snap.graph);
   });
 
   it("attaches screenshots from a live run that has no log.txt yet", () => {
@@ -320,5 +325,50 @@ describe("buildUiSnapshot", () => {
       snap.graph.nodes.find((n) => n.id === "schema_analysis_run")?.screenshotUrl,
       "/files/runs/20260818T180000Z-pages/shots/step-001.png",
     );
+  });
+
+  it("keeps nth on a duplicate action and ignores unknown widget keys", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-ui-nth-"));
+    const path = join(dir, "clickmonkey.json");
+    saveConfig(path, emptyConfig("http://127.0.0.1:4173/"));
+    writeFileSync(
+      join(dir, "clickmonkey", "map.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        app: "x",
+        generation: 1,
+        pages: [
+          {
+            id: "home",
+            path: "/",
+            params: [],
+            ready: { by: "testId", value: "home" },
+            surfaces: [
+              {
+                id: "page",
+                kind: "page",
+                fields: [],
+                actions: [
+                  { id: "employees", by: "role", value: "button", name: "Employees", status: "ok" },
+                  {
+                    id: "employeesList",
+                    by: "role",
+                    value: "button",
+                    name: "Employees",
+                    nth: 1,
+                    status: "ok",
+                    futureKey: "x",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })}\n`,
+    );
+    const snap = buildUiSnapshot(path);
+    const actions = snap.map.pages[0]?.surfaces[0]?.actions;
+    assert.equal(actions?.[1]?.nth, 1);
+    assert.equal("futureKey" in (actions?.[1] ?? {}), false);
   });
 });

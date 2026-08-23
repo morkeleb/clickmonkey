@@ -20,15 +20,34 @@ export function runFileUrl(runId: string, rel: string): string {
   return `/files/runs/${runId}/${rel.split("\\").join("/")}`;
 }
 
-export function stepShotRel(runDir: string, index: number): string | undefined {
-  const padded = String(index).padStart(3, "0");
-  const exact = `shots/step-${padded}.png`;
-  if (existsSync(join(runDir, exact))) return exact;
+const STEP_SHOT = /^step-(\d+)/;
+
+/** One readdir of `shots/` — callers must not call `stepShotRel` in a loop. */
+export function shotRelsByIndex(runDir: string): Map<number, string> {
   const shotsDir = join(runDir, "shots");
-  if (!existsSync(shotsDir)) return undefined;
-  const prefix = `step-${padded}-`;
-  const hit = readdirSync(shotsDir).find((name) => name.startsWith(prefix) && name.endsWith(".png"));
-  return hit ? `shots/${hit}` : undefined;
+  const out = new Map<number, string>();
+  if (!existsSync(shotsDir)) return out;
+  let names: string[];
+  try {
+    names = readdirSync(shotsDir);
+  } catch {
+    return out;
+  }
+  for (const name of names) {
+    if (!name.endsWith(".png")) continue;
+    const m = STEP_SHOT.exec(name);
+    if (!m) continue;
+    const index = Number(m[1]);
+    if (!Number.isInteger(index) || index < 0) continue;
+    const exact = `step-${String(index).padStart(3, "0")}.png`;
+    const prev = out.get(index);
+    if (!prev || name === exact) out.set(index, `shots/${name}`);
+  }
+  return out;
+}
+
+export function stepShotRel(runDir: string, index: number, rels?: Map<number, string>): string | undefined {
+  return (rels ?? shotRelsByIndex(runDir)).get(index);
 }
 
 /** Live walks often have nav.jsonl + shots before log.txt exists, so listRuns misses them. */
@@ -110,11 +129,12 @@ export function latestPageScreenshotUrls(
     const nav = join(run.dir, "nav.jsonl");
     if (!existsSync(nav)) continue;
     const { steps } = stepsFromNavLog(readFileSync(nav, "utf8"));
+    const rels = shotRelsByIndex(run.dir);
     for (let i = steps.length - 1; i >= 0; i--) {
       const step = steps[i]!;
       const pageId = shotPageId(step, opts?.pages, opts?.appOrigin);
       if (!pageId || out.has(pageId)) continue;
-      const rel = stepShotRel(run.dir, step.index) ?? pageStillRel(run.dir, pageId);
+      const rel = rels.get(step.index) ?? pageStillRel(run.dir, pageId);
       if (rel) out.set(pageId, runFileUrl(run.id, rel));
     }
   }
@@ -312,12 +332,31 @@ function collectFindings(runDir: string, runId: string): UiRunFinding[] {
         message: finding.message,
         stepIndex: finding.stepIndex,
         ...(finding.url ? { url: finding.url } : {}),
+        ...(finding.pageId ? { pageId: finding.pageId } : {}),
         ...(finding.widgetRef ? { widgetRef: finding.widgetRef } : {}),
         ...(existsSync(shot) ? { screenshotUrl: runFileUrl(runId, `findings/${name}/screenshot.png`) } : {}),
       }),
     );
   }
   return out.sort((a, b) => a.stepIndex - b.stepIndex || a.id.localeCompare(b.id));
+}
+
+function withFindingPages(
+  findings: UiRunFinding[],
+  steps: Step[],
+  pageShots?: Map<string, string>,
+): UiRunFinding[] {
+  const byIndex = new Map(steps.map((s) => [s.index, s]));
+  return findings.map((f) => {
+    const step = byIndex.get(f.stepIndex);
+    const pageId = f.pageId ?? step?.atPageId ?? step?.pageId;
+    const screenshotUrl = f.screenshotUrl ?? (pageId ? pageShots?.get(pageId) : undefined);
+    return {
+      ...f,
+      ...(pageId ? { pageId } : {}),
+      ...(screenshotUrl ? { screenshotUrl } : {}),
+    };
+  });
 }
 
 function attachShots(runDir: string, runId: string, steps: Step[], findings: UiRunFinding[]): Step[] {
@@ -327,12 +366,13 @@ function attachShots(runDir: string, runId: string, steps: Step[], findings: UiR
     list.push(f);
     byIndex.set(f.stepIndex, list);
   }
+  const rels = shotRelsByIndex(runDir);
   return steps.map((step) => {
     const hit = byIndex.get(step.index)?.[0];
-    const rel = stepShotRel(runDir, step.index);
+    const rel = rels.get(step.index);
     const shotFromStep = rel ? runFileUrl(runId, rel) : undefined;
     const screenshotUrl = hit?.screenshotUrl ?? shotFromStep;
-    return UiRunStep.parse({
+    return {
       ...step,
       ...(screenshotUrl ? { screenshotUrl } : {}),
       ...(hit
@@ -343,7 +383,7 @@ function attachShots(runDir: string, runId: string, steps: Step[], findings: UiR
             finding: step.finding ?? hit.kind,
           }
         : {}),
-    });
+    };
   });
 }
 
@@ -362,7 +402,11 @@ export function buildRunDetail(configPath: string, runId: string): UiRunDetail |
   const presence = loadPresence(presencePath(dir));
   const navPath = join(dir, "nav.jsonl");
   const parsed = existsSync(navPath) ? stepsFromNavLog(readFileSync(navPath, "utf8")) : { steps: [] };
-  const findings = collectFindings(dir, runId);
+  const findings = withFindingPages(
+    collectFindings(dir, runId),
+    parsed.steps,
+    latestPageScreenshotUrls([{ id: runId, dir }]),
+  );
   const steps = attachShots(dir, runId, parsed.steps, findings);
   const startedAt = presence?.startedAt ?? parsed.boot?.ts ?? steps[0]?.ts;
   return UiRunDetail.parse({

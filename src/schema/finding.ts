@@ -53,6 +53,7 @@ export const Finding = z
     stepIndex: z.number().int().nonnegative(),
     httpStatus: z.number().int().optional(),
     url: z.string().min(1).optional(),
+    pageId: z.string().min(1).optional(),
     widgetRef: z.string().min(1).optional(),
   })
   .strict();

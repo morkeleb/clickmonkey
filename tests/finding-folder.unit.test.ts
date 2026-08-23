@@ -281,6 +281,7 @@ describe("finding folder", () => {
     const written = persistVisualIssueFindings(outDir, issues, {
       stepIndex: 3,
       url: "http://127.0.0.1:3000/customers/11111111-1111-4111-8111-111111111111/migrations",
+      pageId: "customer_migrations",
       screenshotPath: shot,
       tapePath: join(outDir, "replay.log"),
       replayLog: "open home\n",
@@ -288,6 +289,7 @@ describe("finding folder", () => {
     assert.equal(written.length, 1);
     assert.equal(written[0]?.created, true);
     assert.equal(written[0]?.finding.kind, "visualIssue");
+    assert.equal(written[0]?.finding.pageId, "customer_migrations");
     assert.equal(written[0]?.finding.severity, "minor");
     assert.equal(written[0]?.finding.widgetRef, "scanline");
     assert.equal(

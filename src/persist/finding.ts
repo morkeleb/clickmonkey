@@ -176,6 +176,7 @@ export function persistVisualIssueFindings(
   ctx: {
     stepIndex: number;
     url?: string;
+    pageId?: string;
     screenshotPath?: string;
     tapePath: string;
     replayLog?: string;
@@ -194,6 +195,7 @@ export function persistVisualIssueFindings(
       stepIndex: ctx.stepIndex,
       widgetRef: issue.rule,
       ...(ctx.url ? { url: ctx.url } : {}),
+      ...(ctx.pageId ? { pageId: ctx.pageId } : {}),
       ...(ctx.screenshotPath ? { screenshotPath: ctx.screenshotPath } : {}),
     };
     results.push(

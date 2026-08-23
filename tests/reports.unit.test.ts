@@ -68,7 +68,7 @@ describe("reports folder", () => {
 
 ### Ga(...) is not a function
 
-- **id:** fnd_115_pageError
+\`pageError\` · critical · \`fnd_115_pageError\`
 
 ## Quality
 
@@ -76,7 +76,7 @@ describe("reports folder", () => {
 
 - \`nested-interactive\` error
 
-### Pages with unique issues
+### Pages
 
 - \`/\` — 1 error
 `;

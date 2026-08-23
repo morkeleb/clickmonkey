@@ -10,13 +10,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runsDir, workspaceDir, WORKSPACE_DIR } from "../persist/workspace.js";
-import type { UiEvent, UiEventType } from "../schema/ui.js";
+import { UiSnapshot, type UiEvent, type UiEventType, type UiSnapshot as UiSnapshotT } from "../schema/ui.js";
 import { isSafeReportId, readReport } from "../persist/reports.js";
 import { formatUiFault, snapshotFailNotice, sourceNewerThanStarted, staleUiNotice } from "./fault.js";
 import { clearUiPid, spawnDetachedUi, writeUiPid } from "./pid.js";
 import { buildRunDetail, isSafeRunId } from "./run-detail.js";
-import { buildUiSnapshot } from "./snapshot.js";
-import { UiSnapshot, type UiSnapshot as UiSnapshotT } from "../schema/ui.js";
+import { buildUiSnapshot, refreshUiSnapshot } from "./snapshot.js";
 
 export const UI_DEFAULT_PORT = 4174;
 const HEARTBEAT_MS = 15_000;
@@ -86,17 +85,16 @@ function eventTypeOf(filename: string | null): UiEventType | undefined {
   if (norm.includes("verbose")) return undefined;
   const base = basename(norm);
   if (base.endsWith(".tmp")) {
-    if (base.startsWith("presence.json")) return "run";
+    if (base.startsWith("presence.json")) return "nav";
     return undefined;
   }
   if (base === "map.json") return "map";
   if (base === "testability.json") return "testability";
   if (base === "quality.json") return "quality";
-  if (base === "findings.md" || base === "report.json") return "run";
-  if (base === "nav.jsonl") return "nav";
-  if (base === "presence.json" || base === "log.txt" || base === "finding.json" || base === "replay.log") {
+  if (base === "findings.md" || base === "report.json" || base === "finding.json" || base === "replay.log") {
     return "run";
   }
+  if (base === "nav.jsonl" || base === "presence.json" || base === "log.txt") return "nav";
   return undefined;
 }
 
@@ -173,7 +171,8 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
 
   const liveSnapshot = (): { snapshot?: UiSnapshotT; fail?: unknown } => {
     try {
-      return { snapshot: decorateSnapshot(snapshotNow(), startedAtMs) };
+      const raw = lastSnapshot ?? snapshotNow();
+      return { snapshot: decorateSnapshot(raw, startedAtMs) };
     } catch (err) {
       if (!lastSnapshot) return { fail: err };
       return { snapshot: decorateSnapshot(lastSnapshot, startedAtMs, err), fail: err };
@@ -181,6 +180,31 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
   };
 
   const broadcast = (type: UiEventType): void => {
+    if (lastSnapshot && type !== "map") {
+      try {
+        if (type === "nav") {
+          lastSnapshot = refreshUiSnapshot(lastSnapshot, configPath, "runs");
+          const event: UiEvent = { type, runs: lastSnapshot.runs };
+          for (const client of clients) writeSse(client, event);
+          return;
+        }
+        if (type === "quality") {
+          lastSnapshot = refreshUiSnapshot(lastSnapshot, configPath, "quality");
+          for (const client of clients) writeSse(client, { type });
+          return;
+        }
+        if (type === "testability") {
+          lastSnapshot = refreshUiSnapshot(lastSnapshot, configPath, "testability");
+          for (const client of clients) writeSse(client, { type });
+          return;
+        }
+        if (type === "run") {
+          lastSnapshot = refreshUiSnapshot(lastSnapshot, configPath, "findings");
+        }
+      } catch {
+        lastSnapshot = undefined;
+      }
+    }
     const { snapshot } = liveSnapshot();
     if (!snapshot) return;
     const event: UiEvent = { type, snapshot };
@@ -188,11 +212,15 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
   };
 
   const schedule = (type: UiEventType): void => {
-    pendingType = type;
+    if (type === "map") pendingType = "map";
+    else if (pendingType !== "map" && type === "run") pendingType = "run";
+    else if (pendingType !== "map" && pendingType !== "run") pendingType = type;
     if (debounce) clearTimeout(debounce);
     debounce = setTimeout(() => {
       debounce = undefined;
-      broadcast(pendingType);
+      const t = pendingType;
+      pendingType = "nav";
+      broadcast(t);
     }, DEBOUNCE_MS);
   };
 
@@ -202,7 +230,8 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
       watchers.push(
         watch(path, { persistent: true, recursive }, (_event, filename) => {
           const type = eventTypeOf(typeof filename === "string" ? filename : null);
-          schedule(type ?? "run");
+          if (!type) return;
+          schedule(type);
         }),
       );
     } catch {

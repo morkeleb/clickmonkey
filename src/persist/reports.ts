@@ -20,7 +20,11 @@ export function reportTitle(runIds: readonly string[], findingCount: number): st
 }
 
 export function countFindingsInMarkdown(markdown: string): number {
-  return (markdown.match(/^- \*\*id:\*\* /gm) ?? []).length;
+  const byId = markdown.match(/^- \*\*id:\*\* /gm)?.length ?? 0;
+  if (byId > 0) return byId;
+  const beforeQuality = markdown.split(/^## Quality\s*$/m)[0] ?? markdown;
+  const findings = beforeQuality.split(/^## Findings\s*$/m)[1] ?? "";
+  return (findings.match(/^### /gm) ?? []).length;
 }
 
 function parseRunsLine(markdown: string): string[] {
@@ -59,6 +63,27 @@ export function writeReportFolder(
   writeFileSync(mdPath, opts.markdown, "utf8");
   writeFileSync(join(dir, "report.json"), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
   return { id, dir, mdPath, meta };
+}
+
+export function rewriteReportMarkdown(
+  configPath: string,
+  id: string,
+  markdown: string,
+  findingCount: number,
+): { meta: ReportMeta; mdPath: string } | undefined {
+  if (!isSafeReportId(id) || id === LEGACY_REPORT_ID) return undefined;
+  const loaded = readReport(configPath, id);
+  if (!loaded) return undefined;
+  const meta = ReportMeta.parse({
+    ...loaded.meta,
+    findingCount,
+    title: reportTitle(loaded.meta.runIds, findingCount),
+  });
+  const dir = join(reportsDir(configPath), id);
+  const mdPath = join(dir, "findings.md");
+  writeFileSync(mdPath, markdown, "utf8");
+  writeFileSync(join(dir, "report.json"), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  return { meta, mdPath };
 }
 
 export function plannedReportPath(configPath: string, id: string): string {

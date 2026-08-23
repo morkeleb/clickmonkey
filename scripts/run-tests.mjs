@@ -32,7 +32,18 @@ function main() {
   const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...files], {
     stdio: "inherit",
   });
-  process.exit(result.status === null ? 1 : result.status);
+  if (result.status !== 0) process.exit(result.status === null ? 1 : result.status);
+  if (mode === "unit") {
+    const webTests = globSync("src/**/*.unit.test.ts", { cwd: resolve("web") });
+    if (webTests.length > 0) {
+      const web = spawnSync(process.execPath, ["--import", "tsx", "--test", ...webTests], {
+        cwd: resolve("web"),
+        stdio: "inherit",
+      });
+      process.exit(web.status === null ? 1 : web.status);
+    }
+  }
+  process.exit(0);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

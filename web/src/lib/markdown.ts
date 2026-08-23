@@ -2,6 +2,9 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { escapeHtmlToken } from "@/lib/html-escape";
 import { publicUrl } from "@/lib/paths";
+import { wrapReportPrintBlocks, wrapShotFrames } from "@/lib/wrap-report-blocks";
+
+export { wrapReportPrintBlocks };
 
 export { escapeHtmlToken };
 
@@ -36,6 +39,7 @@ function rewriteHtmlImages(html: string): string {
 
 export function renderReportHtml(markdown: string): string {
   const raw = marked.parse(markdown, { async: false }) as string;
-  const withFiles = rewriteHtmlImages(raw);
-  return DOMPurify.sanitize(withFiles, { USE_PROFILES: { html: true } });
+  const withFiles = wrapShotFrames(rewriteHtmlImages(raw));
+  const wrapped = wrapReportPrintBlocks(withFiles);
+  return DOMPurify.sanitize(wrapped, { USE_PROFILES: { html: true }, ADD_ATTR: ["class"] });
 }

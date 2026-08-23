@@ -60,7 +60,6 @@ export {
   textIsLoadingPlaceholder,
 } from "./surveyor/loading.js";
 export {
-  dropExpectedOverlayVisual,
   dropPayloadContentVisual,
   examineScreenshot,
   hashPngFile,
@@ -74,6 +73,8 @@ export {
 export type { ParsedVisualReply, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
 export { scanTableLayout } from "./surveyor/scanline.js";
 export type { LayoutHit } from "./surveyor/scanline.js";
+export { sparseLayoutIssue, sparseMetrics } from "./surveyor/sparse.js";
+export type { SparseBox, SparseMetrics, SparsePane, SparseSample } from "./surveyor/sparse.js";
 export { validateHtml } from "./surveyor/html.js";
 export { scanA11y } from "./surveyor/a11y.js";
 export { scanSeo, scanSeoHtml, seoIsPrivate, issuesFromMeta, metaFromHtml, applyDuplicateTitles } from "./surveyor/seo.js";
@@ -150,6 +151,7 @@ export {
   enrichWithBrain,
   writeRunsReport,
 } from "./reports/findings-report.js";
+export { whyFinding, whyFindingBlock, whyRule } from "./reports/why.js";
 export { identityFromRunId, pickDistinctHue, HUE_SLOTS } from "./ui/identity.js";
 export { buildUiGraph, badgeCounts, findingOnPage, hopsFromNavLog } from "./ui/graph.js";
 export { buildUiSnapshot } from "./ui/snapshot.js";
@@ -213,6 +215,16 @@ export {
 } from "./brains/unleash.js";
 export { detectWalkerMode, UNLEASH_MODES } from "./brains/walker-mode.js";
 export {
+  floodNpc,
+  formatNpcStep,
+  npcHunger,
+  npcKey,
+  npcScore,
+  pageSurfaceId,
+  planNpc,
+} from "./brains/npc.js";
+export type { NpcEdge, NpcGoal, NpcNode, NpcPlan, NpcReach } from "./brains/npc.js";
+export {
   decideFormHunt,
   floodHunt,
   formGoalKey,
@@ -225,6 +237,7 @@ export {
   LOOT_EXPLORE_STEPS,
 } from "./brains/form-hunt.js";
 export type { FormGoal, HuntEdge, HuntNode, HuntReach } from "./brains/form-hunt.js";
+export { decideMapScout, fogClicks, visitKey } from "./brains/map-scout.js";
 export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";
 export { decisionLines } from "./brains/types.js";
 export { fakerFill, fillRuleId } from "./brains/faker-fill.js";

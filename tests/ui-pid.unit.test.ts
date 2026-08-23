@@ -54,8 +54,9 @@ describe("ui pid", () => {
   it("uiSpawnArgs rebuilds clickmonkey ui --no-open", () => {
     const { execPath, args } = uiSpawnArgs({ configPath: "/tmp/clickmonkey.json", port: 4174 });
     assert.equal(execPath, process.execPath);
+    assert.match(args[0] ?? "", /clickmonkey\.mjs$/);
+    assert.equal(args[1], "ui");
     assert.equal(args.at(-1), "--no-open");
-    assert.ok(args.includes("ui"));
     assert.ok(args.includes("/tmp/clickmonkey.json"));
     assert.ok(args.includes("4174"));
   });

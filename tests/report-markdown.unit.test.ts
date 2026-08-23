@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { escapeHtmlToken } from "../web/src/lib/html-escape.ts";
+import { wrapReportPrintBlocks, wrapShotFrames } from "../web/src/lib/wrap-report-blocks.ts";
 import { marked } from "../web/node_modules/marked/lib/marked.esm.js";
 
 describe("report markdown HTML tokens", () => {
@@ -13,7 +14,7 @@ describe("report markdown HTML tokens", () => {
         },
       },
     });
-    const md = `### Pages with unique issues
+    const md = `### Pages
 
 - \`/designer\` — 1 error
   - \`element-permitted-content\` error — <style> element is not permitted as content under <div>
@@ -29,5 +30,50 @@ Source finding folders live under each run's \`findings/\` directory.
     assert.doesNotMatch(html, /<style>/);
     assert.match(html, /<h2[^>]*>Appendix<\/h2>/);
     assert.match(html, /\/pipelines/);
+  });
+});
+
+describe("wrapShotFrames", () => {
+  it("wraps each img in a reserved shot frame", () => {
+    const html = wrapShotFrames("<p><img src='/files/runs/a/x.png' alt='shot'></p>");
+    assert.equal(html, "<p><span class=\"shot-frame\"><img src='/files/runs/a/x.png' alt='shot'></span></p>");
+  });
+});
+
+describe("wrapReportPrintBlocks", () => {
+  it("wraps a finding heading with its screenshot, leaves the tape outside", () => {
+    const html = wrapReportPrintBlocks(
+      [
+        "<h2>Critical</h2>",
+        "<h3>HTTP 409</h3>",
+        "<p>httpError</p>",
+        "<blockquote>why</blockquote>",
+        "<p><img src='shot.png'></p>",
+        "<pre>open home</pre>",
+        "<h3>Invalid time value</h3>",
+        "<p>pageError</p>",
+        "<pre>fill date</pre>",
+      ].join(""),
+    );
+    assert.match(html, /<div class="report-card"><h3>HTTP 409<\/h3>/);
+    assert.match(html, /<img src='shot.png'><\/p><\/div><pre>open home<\/pre>/);
+    assert.match(html, /<div class="report-card"><h3>Invalid time value<\/h3>/);
+    assert.equal((html.match(/class="report-card"/g) ?? []).length, 2);
+  });
+
+  it("does not wrap Quality digest headings, wraps page groups", () => {
+    const html = wrapReportPrintBlocks(
+      [
+        "<h2>Quality</h2>",
+        "<h3>Pages</h3>",
+        "<h4><code>/vouchers</code></h4>",
+        "<p>1 error</p>",
+        "<ul><li>clip</li></ul>",
+        "<h2>Appendix</h2>",
+      ].join(""),
+    );
+    assert.doesNotMatch(html, /report-card"><h3>Pages/);
+    assert.match(html, /<div class="report-subcard"><h4>/);
+    assert.match(html, /<\/ul><\/div><h2>Appendix<\/h2>/);
   });
 });

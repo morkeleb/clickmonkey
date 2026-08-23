@@ -2,6 +2,29 @@ import dagre from "@dagrejs/dagre";
 import type { Edge, Node } from "@xyflow/react";
 import type { UiGraph, UiGraphNode, UiRun } from "@schema/ui";
 import { prettyPageLabel, sectionKey, titleCaseSegment } from "@ui/graph-labels";
+import {
+  DIALOG_GAP_X,
+  DIALOG_GAP_Y,
+  DIALOG_NODE,
+  NESTED_PAGE,
+  NODE_SEP,
+  PAGE_NODE,
+  RANK_SEP,
+  SECTION_NODE,
+  dialogRailWidth,
+  pageBoxSize,
+  type LayoutBox,
+} from "./layout-metrics";
+
+export {
+  DIALOG_NODE,
+  NESTED_PAGE,
+  PAGE_NODE,
+  SECTION_NODE,
+  dialogRailWidth,
+  pageBoxSize,
+} from "./layout-metrics";
+export type { LayoutBox } from "./layout-metrics";
 
 export type GraphKind = UiGraphNode["kind"] | "section";
 
@@ -22,14 +45,30 @@ export type GraphNodeData = {
   count?: number;
   collapsed?: boolean;
   section?: string;
+  /** Visual card size when the flow node is a larger bounding box (page + dialog rail). */
+  cardWidth?: number;
+  cardHeight?: number;
 };
 
 export type GraphFlowNode = Node<GraphNodeData, "graph" | "section">;
 
-export const PAGE_NODE = { width: 188, height: 72 } as const;
-export const NESTED_PAGE = { width: 200, height: 58 } as const;
-export const SECTION_NODE = { width: 236, height: 64 } as const;
-export const DIALOG_NODE = { width: 160, height: 48 } as const;
+function selectedPageId(selectedId?: string | null): string | undefined {
+  if (!selectedId) return undefined;
+  const cut = selectedId.indexOf("::");
+  return cut >= 0 ? selectedId.slice(0, cut) : selectedId;
+}
+
+function groupDialogs(graph: UiGraph, selectedPage?: string): Map<string, UiGraphNode[]> {
+  const dialogsByPage = new Map<string, UiGraphNode[]>();
+  for (const node of graph.nodes) {
+    if (node.kind !== "dialog") continue;
+    if (selectedPage && node.pageId !== selectedPage) continue;
+    const list = dialogsByPage.get(node.pageId) ?? [];
+    list.push(node);
+    dialogsByPage.set(node.pageId, list);
+  }
+  return dialogsByPage;
+}
 
 const CHILD_GAP = 6;
 const SECTION_PAD_X = 12;
@@ -97,10 +136,23 @@ function sectionId(key: string): string {
   return `section:${key}`;
 }
 
-function expandedSize(count: number): { width: number; height: number } {
+function expandedSize(
+  pages: UiGraphNode[],
+  dialogsByPage: Map<string, UiGraphNode[]>,
+): { width: number; height: number } {
+  const sorted = pages.slice().sort((a, b) => a.path.localeCompare(b.path));
+  let height = SECTION_PAD_TOP + SECTION_PAD_BOTTOM;
+  let rail = 0;
+  sorted.forEach((page, i) => {
+    const n = dialogsByPage.get(page.id)?.length ?? 0;
+    const box = pageBoxSize(NESTED_PAGE, n);
+    height += box.height;
+    if (i > 0) height += CHILD_GAP;
+    rail = Math.max(rail, dialogRailWidth(n));
+  });
   return {
-    width: NESTED_PAGE.width + SECTION_PAD_X * 2,
-    height: SECTION_PAD_TOP + count * NESTED_PAGE.height + Math.max(0, count - 1) * CHILD_GAP + SECTION_PAD_BOTTOM,
+    width: NESTED_PAGE.width + SECTION_PAD_X * 2 + rail,
+    height,
   };
 }
 
@@ -117,24 +169,29 @@ export function layoutGraph(
   }
   const expanded = opts?.expanded ?? new Set<string>();
   const query = opts?.query?.trim().toLowerCase();
+  const dialogsByPage = groupDialogs(graph, selectedPageId(opts?.selectedId));
 
   const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "LR", nodesep: 36, ranksep: 110, marginx: 24, marginy: 24 });
+  g.setDefaultEdgeLabel(() => ({ width: 0, height: 0 }));
+  g.setGraph({ rankdir: "LR", nodesep: NODE_SEP, ranksep: RANK_SEP, marginx: 24, marginy: 24 });
 
   const macroId = (pageId: string): string => {
     const key = clustered.get(pageId);
     return key ? sectionId(key) : pageId;
   };
 
+  const dagreBox = new Map<string, { width: number; height: number }>();
   for (const node of graph.nodes) {
     if (node.kind !== "page") continue;
     if (clustered.has(node.id)) continue;
-    g.setNode(node.id, { width: PAGE_NODE.width, height: PAGE_NODE.height });
+    const box = pageBoxSize(PAGE_NODE, dialogsByPage.get(node.id)?.length ?? 0);
+    dagreBox.set(node.id, box);
+    g.setNode(node.id, box);
   }
   for (const [key, pages] of clusters) {
-    const size = expanded.has(key) ? expandedSize(pages.length) : SECTION_NODE;
-    g.setNode(sectionId(key), { width: size.width, height: size.height });
+    const inner = expanded.has(key) ? expandedSize(pages, dialogsByPage) : { ...SECTION_NODE };
+    dagreBox.set(sectionId(key), inner);
+    g.setNode(sectionId(key), inner);
   }
 
   const seenMacro = new Set<string>();
@@ -168,9 +225,10 @@ export function layoutGraph(
     if (node.kind !== "page") continue;
     if (clustered.has(node.id)) continue;
     const placed = g.node(node.id);
+    const box = dagreBox.get(node.id) ?? PAGE_NODE;
     const position = {
-      x: (placed?.x ?? 0) - PAGE_NODE.width / 2,
-      y: (placed?.y ?? 0) - PAGE_NODE.height / 2,
+      x: (placed?.x ?? 0) - box.width / 2,
+      y: (placed?.y ?? 0) - box.height / 2,
     };
     pagePos.set(node.id, position);
     const pretty = prettyPageLabel(node.path, node.id);
@@ -192,10 +250,12 @@ export function layoutGraph(
         red: node.red,
         yellow: node.yellow,
         rings: ringsFor(node, runs),
+        cardWidth: PAGE_NODE.width,
+        cardHeight: PAGE_NODE.height,
         ...(node.blurb ? { blurb: node.blurb } : {}),
         ...(node.describedBy ? { describedBy: node.describedBy } : {}),
       },
-      style: { width: PAGE_NODE.width, height: PAGE_NODE.height, opacity: hidden ? 0.18 : 1 },
+      style: { width: box.width, height: box.height, opacity: hidden ? 0.18 : 1 },
       zIndex: 2,
     });
   }
@@ -203,7 +263,7 @@ export function layoutGraph(
   for (const [key, pages] of clusters) {
     const sid = sectionId(key);
     const placed = g.node(sid);
-    const size = expanded.has(key) ? expandedSize(pages.length) : SECTION_NODE;
+    const size = expanded.has(key) ? expandedSize(pages, dialogsByPage) : { ...SECTION_NODE };
     const position = {
       x: (placed?.x ?? 0) - size.width / 2,
       y: (placed?.y ?? 0) - size.height / 2,
@@ -236,69 +296,66 @@ export function layoutGraph(
     });
 
     if (!expanded.has(key)) continue;
-    pages
-      .slice()
-      .sort((a, b) => a.path.localeCompare(b.path))
-      .forEach((page, i) => {
-        const pretty = prettyPageLabel(page.path, page.id);
-        const childHidden = Boolean(query) && !matchesQuery(page);
-        pagePos.set(page.id, {
-          x: position.x + SECTION_PAD_X,
-          y: position.y + SECTION_PAD_TOP + i * (NESTED_PAGE.height + CHILD_GAP),
-        });
-        nodes.push({
-          id: page.id,
-          type: "graph",
-          parentId: sid,
-          extent: "parent",
-          position: {
-            x: SECTION_PAD_X,
-            y: SECTION_PAD_TOP + i * (NESTED_PAGE.height + CHILD_GAP),
-          },
-          hidden: childHidden,
-          data: {
-            kind: "page",
-            pageId: page.pageId,
-            label: page.label,
-            title: pretty.title,
-            path: page.path,
-            origin: page.origin,
-            entry: page.entry,
-            red: page.red,
-            yellow: page.yellow,
-            rings: ringsFor(page, runs),
-            section: key,
-            ...(page.blurb ? { blurb: page.blurb } : {}),
-            ...(page.describedBy ? { describedBy: page.describedBy } : {}),
-          },
-          style: { width: NESTED_PAGE.width, height: NESTED_PAGE.height, opacity: childHidden ? 0.18 : 1 },
-          zIndex: 2,
-        });
+    const sorted = pages.slice().sort((a, b) => a.path.localeCompare(b.path));
+    let childY = SECTION_PAD_TOP;
+    for (const page of sorted) {
+      const pretty = prettyPageLabel(page.path, page.id);
+      const childHidden = Boolean(query) && !matchesQuery(page);
+      const box = pageBoxSize(NESTED_PAGE, dialogsByPage.get(page.id)?.length ?? 0);
+      pagePos.set(page.id, {
+        x: position.x + SECTION_PAD_X,
+        y: position.y + childY,
       });
+      nodes.push({
+        id: page.id,
+        type: "graph",
+        parentId: sid,
+        extent: "parent",
+        position: {
+          x: SECTION_PAD_X,
+          y: childY,
+        },
+        hidden: childHidden,
+        data: {
+          kind: "page",
+          pageId: page.pageId,
+          label: page.label,
+          title: pretty.title,
+          path: page.path,
+          origin: page.origin,
+          entry: page.entry,
+          red: page.red,
+          yellow: page.yellow,
+          rings: ringsFor(page, runs),
+          section: key,
+          cardWidth: NESTED_PAGE.width,
+          cardHeight: NESTED_PAGE.height,
+          ...(page.blurb ? { blurb: page.blurb } : {}),
+          ...(page.describedBy ? { describedBy: page.describedBy } : {}),
+        },
+        style: { width: box.width, height: box.height, opacity: childHidden ? 0.18 : 1 },
+        zIndex: 2,
+      });
+      childY += box.height + CHILD_GAP;
+    }
   }
 
-  const selectedPage = opts?.selectedId?.includes("::")
-    ? opts.selectedId.slice(0, opts.selectedId.indexOf("::"))
-    : opts?.selectedId;
-  const dialogsByPage = new Map<string, UiGraphNode[]>();
-  for (const node of graph.nodes) {
-    if (node.kind !== "dialog") continue;
-    if (selectedPage && node.pageId !== selectedPage) continue;
-    const list = dialogsByPage.get(node.pageId) ?? [];
-    list.push(node);
-    dialogsByPage.set(node.pageId, list);
-  }
   for (const [pageId, dialogs] of dialogsByPage) {
     const parent = pagePos.get(pageId);
     if (!parent) continue;
+    const parentNode = nodes.find((n) => n.id === pageId);
+    const parentHidden = Boolean(parentNode?.hidden);
+    const cardW = clustered.has(pageId) ? NESTED_PAGE.width : PAGE_NODE.width;
     dialogs.forEach((node, i) => {
       nodes.push({
         id: node.id,
         type: "graph",
+        parentId: pageId,
         position: {
-          x: parent.x + NESTED_PAGE.width + 16,
-          y: parent.y + i * (DIALOG_NODE.height + 6),
+          x: cardW + DIALOG_GAP_X,
+          y: i * (DIALOG_NODE.height + DIALOG_GAP_Y),
         },
+        hidden: parentHidden,
         data: {
           kind: "dialog",
           pageId: node.pageId,
@@ -311,6 +368,7 @@ export function layoutGraph(
           rings: ringsFor(node, runs),
         },
         style: { width: DIALOG_NODE.width, height: DIALOG_NODE.height },
+        zIndex: 3,
       });
     });
   }
@@ -319,17 +377,7 @@ export function layoutGraph(
   const edges: Edge[] = [];
   const seen = new Set<string>();
   for (const edge of graph.edges) {
-    if (edge.source.includes("::") || edge.target.includes("::")) {
-      if (!visible.has(edge.source) || !visible.has(edge.target)) continue;
-      edges.push({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        type: "smoothstep",
-        style: { stroke: "#52525b", strokeWidth: 1 },
-      });
-      continue;
-    }
+    if (edge.source.includes("::") || edge.target.includes("::")) continue;
     const back = isBackEdge(edge, depth);
     let source = edge.source;
     let target = edge.target;
@@ -354,6 +402,34 @@ export function layoutGraph(
   }
 
   return { nodes, edges };
+}
+
+export function absoluteBoxes(nodes: GraphFlowNode[]): LayoutBox[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const abs = (node: GraphFlowNode): { x: number; y: number } => {
+    const pos = { x: node.position.x, y: node.position.y };
+    let parentId = node.parentId;
+    while (parentId) {
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      pos.x += parent.position.x;
+      pos.y += parent.position.y;
+      parentId = parent.parentId;
+    }
+    return pos;
+  };
+  return nodes
+    .filter((n) => !n.hidden)
+    .map((n) => {
+      const p = abs(n);
+      return {
+        id: n.id,
+        x: p.x,
+        y: p.y,
+        width: Number(n.style?.width ?? 0),
+        height: Number(n.style?.height ?? 0),
+      };
+    });
 }
 
 export function defaultExpanded(graph: UiGraph, runs: UiRun[]): Set<string> {

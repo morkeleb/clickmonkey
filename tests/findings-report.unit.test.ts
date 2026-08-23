@@ -57,6 +57,9 @@ describe("findings report", () => {
     assert.match(md, /^## Major/m);
     assert.match(md, /!\[screenshot\]\(runs\/20260817T000000Z-abcd\/findings\/fnd_3_expectFailed\/screenshot\.png\)/);
     assert.match(md, /```clickmonkey/);
+    assert.match(md, /^> /m);
+    assert.doesNotMatch(md, /^- \*\*id:\*\*/m);
+    assert.match(md, /`expectFailed` · major · `fnd_3_expectFailed` · `20260817T000000Z-abcd`/);
     assert.match(md, /^## Findings/m);
     const findingsAt = md.indexOf("## Findings");
     const qualityAt = md.indexOf("## Quality");
@@ -127,7 +130,7 @@ describe("findings report", () => {
       join(root, "findings.md"),
     );
     assert.match(md, /2 findings from 2 runs/);
-    assert.match(md, /\*\*seen:\*\* 2× in 2 runs/);
+    assert.match(md, /2× in 2 runs/);
     assert.equal((md.match(/^### /gm) ?? []).length, 2);
   });
 
@@ -380,6 +383,10 @@ describe("findings report", () => {
     const ctx = contextAtStep(runDir, 0);
     assert.equal(ctx.url, "https://app.example/accounting/closing-routines");
     assert.equal(ctx.pageId, "accounting_closing_routines");
+    const slim = collectFindingCases([runDir], { tapes: false });
+    assert.equal(slim[0]?.url, "https://app.example/accounting/closing-routines");
+    assert.equal(slim[0]?.pageId, "accounting_closing_routines");
+    assert.equal(slim[0]?.tape, "");
     const cases = collectFindingCases([runDir]);
     assert.equal(cases[0]?.url, "https://app.example/accounting/closing-routines");
     const md = renderFindingsReport(
@@ -391,8 +398,10 @@ describe("findings report", () => {
       },
       join(root, "findings.md"),
     );
-    assert.match(md, /\*\*url:\*\* https:\/\/app\.example\/accounting\/closing-routines/);
-    assert.match(md, /\*\*path:\*\* \/accounting\/closing-routines/);
+    assert.match(
+      md,
+      /\[\/accounting\/closing-routines\]\(https:\/\/app\.example\/accounting\/closing-routines\)/,
+    );
     assert.match(md, /Uncaught JavaScript error: Ga\(\.\.\.\) is not a function/);
     assert.match(md, /uncaught JavaScript error/);
     assert.match(md, /not `console\.error`/);
@@ -536,13 +545,15 @@ describe("findings report", () => {
     );
     assert.match(md, /### Start here/);
     assert.match(md, /### Chrome/);
-    assert.match(md, /Pages with unique issues/);
+    assert.match(md, /### Pages/);
+    assert.match(md, /More than one main landmark/);
     assert.match(md, /2 pages/);
     assert.match(md, /no-multiple-main/);
     assert.match(md, /main\.layout/);
     assert.match(md, /Ga\(\.\.\.\) is not a function/);
-    assert.match(md, /`\/` — 1 error, 0 warnings/);
-    assert.match(md, / {2}- `pageError` error — Ga\(\.\.\.\) is not a function/);
+    assert.match(md, /#### `\/`/);
+    assert.match(md, /1 error, 0 warnings/);
+    assert.match(md, /- `pageError` · error\n\n  Ga\(\.\.\.\) is not a function/);
     assert.doesNotMatch(md, / {2}- `no-multiple-main`/);
     assert.doesNotMatch(md, /`\/vendors` —/);
     assert.doesNotMatch(md, /Recurring rules/);
@@ -756,7 +767,7 @@ describe("findings report", () => {
     );
     const start = md.slice(md.indexOf("### Start here"), md.indexOf("### Chrome"));
     assert.match(start, /Fix `color-contrast` \(shared shell/);
-    assert.match(start, /one token\/CSS change/);
+    assert.match(start, /theme token/);
     assert.match(start, /2\. Fix `clickableNonWidget` \(same component/);
     assert.match(start, /mostly `\/pipelines`/);
     assert.ok(start.indexOf("clickableNonWidget") < start.indexOf("button-name"));

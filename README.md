@@ -68,9 +68,10 @@ clickmonkey explore --charter "…"        # paladin — do the job in the chart
 clickmonkey mcp                          # same paladin, host LLM via stdio
 ```
 
-**Map** is the scout. It clicks around so the sitemap exists: pages, dialogs,
-openers. It never fills and never clicks submit/save/delete. After it, the
-others have legal ids.
+**Map** is the scout. It clicks unseen doors (unvisited pages and unopened
+dialogs) and pathfinds toward rooms it has not stood on, instead of grinding
+the same sidebar. It never fills and never clicks submit/save/delete. After
+it, the others have legal ids.
 
 **Unleash** is an NPC on that map. It pathfinds toward forms (fields + submit),
 fills them, and watches what happens. Forms already filled this run drop in
@@ -154,11 +155,11 @@ The `seo` block is optional. Leave it off for an app-only site. Use `private` pr
 - **skip** — extra widget id/label substrings the walker will not click. Sign out, log out, and close panel are skipped by default.
 - **screenshots** — per-step screenshots, default on. `"screenshots": false` turns auto shots off.
 - **seo** — optional. Scan the live `<head>` for title, meta description, Open Graph, and canonical problems. Off when omitted. See [SEO / meta](#seo--meta).
-- **vision** — optional. Same connection shape as `brain` (`baseUrl`, `model`, `apiKeyEnv`). Mix models (qwen text + qwen-vl on another host). `model` is required and is never copied from `brain`. `baseUrl` inherits when omitted. `apiKeyEnv` inherits only when `vision.baseUrl` is also omitted; `"apiKeyEnv": false` means no key. Per-step screenshots must stay on. `issues` (default true) writes extras into that run's `quality.json` (overlap, overflow, clip, covered controls, alignment, scanline/list edges, unreadable contrast, broken images). Each visual extra has `high`/`medium` confidence; `low` guesses are dropped. High-confidence extras are also filed as findings with the step screenshot (the walk does not stop). Medium stays on the quality ledger. If a visual report quotes a `--nasty` catalog payload in a cell, that is treated as leftover test data, not a defect; overflow or clip from that text still counts. `assist` (default true) adds explore sight notes. decide stays text-only.
+- **vision** — optional. Same connection shape as `brain` (`baseUrl`, `model`, `apiKeyEnv`). Mix models (qwen text + qwen-vl on another host). `model` is required and is never copied from `brain`. `baseUrl` inherits when omitted. `apiKeyEnv` inherits only when `vision.baseUrl` is also omitted; `"apiKeyEnv": false` means no key. Per-step screenshots must stay on. `issues` (default true) writes extras into that run's `quality.json` (overlap, overflow, clip, covered controls, alignment, scanline/list edges, unreadable contrast, sheared or off-baseline type — not font taste, broken images). Each visual extra has `high`/`medium` confidence; `low` guesses are dropped. High-confidence extras are also filed as findings with the step screenshot (the walk does not stop). Medium stays on the quality ledger. If a visual report quotes a `--nasty` catalog payload in a cell, that is treated as leftover test data, not a defect; overflow or clip from that text still counts. `assist` (default true) adds explore sight notes. decide stays text-only.
 
 v1 used `fence.blacklist` only for **URLs** (e.g. `#/login` after the monkey logged itself out). That is still the fence. `skip` is the widget denylist.
 
-Duplicate accessible names (two **Settings** buttons) are a `duplicateName` **warn** on the page, not a reason to skip the control. The walker clicks the first uncovered match.
+Duplicate accessible names (two **Employees** buttons) are a `duplicateName` **warn**. Collect keeps both: the first match stays the plain locator, the rest get `nth` so the walker can open the child list, not only the section expander.
 
 `clickmonkey/map.json` is the page model `inspect` / `map` grow. Each page gets a one-line `description` (path, heading, fields, dialogs). With `vision` configured, a page-level screenshot upgrades that to what is actually on screen (dashboard, list, form, details) — not a modal shot. Explore may still polish with the text brain. Extra widgets never fail a replay. Several processes may share that file: each step takes a short lock, unions the trees, and writes back. That is cheap next to Playwright and the LLM.
 
@@ -332,7 +333,9 @@ Explore exit `1` means findings, not a crash — mark the job `allow_failure`. E
 
 `--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 
-`clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox, none pre-selected). `--runs id,id` is explicit; `--all` takes every run that has findings. Findings come first (severity, page, url, screenshot, compacted tape), then a Quality digest: **Start here**, **Chrome** (shared shell — fix once), issues on several pages (same component), then unique pages. Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. `--quality-full` dumps per-page HTML/a11y/SEO/JS. With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF) and Copy (text + screenshots).
+`clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox, none pre-selected), then **Quality section?** — digest (Start here, chrome, pages) or full (per-page HTML/a11y/SEO/JS). `--runs id,id` is explicit; `--all` takes every run that has findings. `--quality-full` skips the quality prompt (scripts). Findings come first (severity, page, url, screenshot, compacted tape), then the Quality section. Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. Findings and quality rows include a short **Why it matters** paragraph (copy-pasteable). With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF) and Copy (text + screenshots).
+
+`clickmonkey prune` is human review: pick a report, then checkbox findings to drop as false positives. Finding folders on disk stay; the report markdown is rewritten and ids/fingerprints go into `clickmonkey/dismissed.json` so later `report` runs skip them. With `brain` configured the model reads the report first and pre-checks likely walker noise (you can uncheck). Scripts: `clickmonkey prune <reportId> --ids fnd_3_expectFailed,fnd_10_visualIssue`.
 
 Each run writes `nav.jsonl` (and echoes timestamped lines on stderr): every DSL step (`step` / `ok` / `fail`) plus main-frame redirects, document loads, and in-page URL changes. Gaps between `step` and `ok` are waits. That is not the replay tape — `log.txt` stays click/fill/`open` only.
 

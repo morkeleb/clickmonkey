@@ -145,7 +145,7 @@
 }
 
 .markdown {
-  line-height: 1.6;
+  line-height: 1.55;
 }
 .markdown h1,
 .markdown h2,
@@ -153,23 +153,42 @@
 .markdown h4 {
   font-weight: 600;
   letter-spacing: -0.01em;
-  margin: 1.25em 0 0.5em;
+  line-height: 1.3;
 }
 .markdown h1 {
-  font-size: 1.35rem;
+  font-size: 1.4rem;
+  margin: 0 0 0.75em;
 }
 .markdown h2 {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
+  margin: 2.25em 0 0.85em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid oklch(1 0 0 / 12%);
 }
 .markdown h3 {
-  font-size: 1rem;
+  font-size: 1.05rem;
+  margin: 2em 0 0.4em;
+}
+.markdown h2 + h3 {
+  margin-top: 1.1em;
+}
+.markdown h4 {
+  font-size: 0.95rem;
+  margin: 1.6em 0 0.3em;
+  color: oklch(0.88 0.01 286);
 }
 .markdown p,
 .markdown ul,
 .markdown ol,
 .markdown pre,
 .markdown blockquote {
-  margin: 0.75em 0;
+  margin: 0.65em 0;
+}
+.markdown h3 + p {
+  margin-top: 0.2em;
+  font-size: 0.85rem;
+  color: oklch(0.68 0.012 286);
+  line-height: 1.45;
 }
 .markdown ul,
 .markdown ol {
@@ -180,6 +199,19 @@
 }
 .markdown ol {
   list-style: decimal;
+}
+.markdown li {
+  margin: 0.9em 0;
+}
+.markdown li p {
+  margin: 0.35em 0;
+}
+.markdown li > p:first-child {
+  font-weight: 600;
+  margin: 0 0 0.25em;
+}
+.markdown li > p:not(:first-child) {
+  color: oklch(0.72 0.012 286);
 }
 .markdown code {
   font-size: 0.85em;
@@ -198,12 +230,40 @@
   background: none;
   padding: 0;
 }
-.markdown img {
-  max-width: 100%;
-  height: auto;
+@keyframes shot-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+.markdown .shot-frame {
+  position: relative;
+  display: block;
+  height: 18rem;
+  overflow: hidden;
+  margin: 0.75em 0;
   border-radius: 0.4rem;
   border: 1px solid oklch(1 0 0 / 10%);
-  margin: 0.75em 0;
+  background: oklch(0.22 0.01 286);
+  cursor: zoom-in;
+}
+.markdown .shot-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: oklch(0.38 0.01 286);
+  animation: shot-pulse 1.6s ease-in-out infinite;
+}
+.markdown img,
+.markdown .shot-frame img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  object-position: top;
+  margin: 0;
+  border: 0;
   cursor: zoom-in;
 }
 .markdown a {
@@ -212,9 +272,14 @@
   text-underline-offset: 3px;
 }
 .markdown blockquote {
-  border-left: 2px solid oklch(1 0 0 / 18%);
-  padding-left: 0.85rem;
-  color: oklch(0.75 0.015 286);
+  border-left: 3px solid oklch(0.62 0.06 250);
+  padding: 0.15rem 0 0.15rem 0.85rem;
+  margin: 0.45em 0 0.9em;
+  color: oklch(0.72 0.015 286);
+  font-size: 0.925rem;
+}
+.markdown li > blockquote {
+  margin: 0.3em 0 0.7em;
 }
 .markdown table {
   width: 100%;
@@ -248,8 +313,35 @@
   .markdown {
     color: black;
   }
+  .markdown li > p:not(:first-child) {
+    color: #52525b;
+  }
   .markdown a {
     color: black;
+  }
+  .markdown h2,
+  .markdown h3,
+  .markdown h4 {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+  .markdown .report-card {
+    break-inside: avoid;
+    break-before: page;
+  }
+  .markdown .report-card:first-of-type {
+    break-before: auto;
+  }
+  .markdown .report-subcard {
+    break-inside: avoid;
+  }
+  .markdown .report-card + h2,
+  .markdown .report-subcard + h2 {
+    break-before: page;
+  }
+  .markdown pre,
+  .markdown blockquote {
+    break-inside: avoid;
   }
   .markdown pre,
   .markdown code {
@@ -257,7 +349,21 @@
     color: black !important;
     border-color: #d4d4d8 !important;
   }
-  .markdown img {
+  .markdown .shot-frame {
+    height: auto;
+    background: transparent;
+    border-color: #d4d4d8;
+    break-inside: avoid;
+  }
+  .markdown .shot-frame::before {
+    display: none;
+  }
+  .markdown img,
+  .markdown .shot-frame img {
+    height: auto;
+    max-height: 55vh;
+    width: auto;
+    object-fit: contain;
     border-color: #d4d4d8;
     break-inside: avoid;
   }

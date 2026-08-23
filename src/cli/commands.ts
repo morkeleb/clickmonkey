@@ -7,12 +7,15 @@ import { buildView, formatView } from "../executor/view.js";
 import { saveConfig } from "../persist/config.js";
 import { writeLog, readLog } from "../persist/log.js";
 import { stopPresence } from "../persist/presence.js";
-import { listRuns, resolveRunDirs } from "../persist/runs.js";
+import { appendDismissed } from "../persist/dismissed.js";
+import { listReports, readReport, reportMarkdownPath, rewriteReportMarkdown } from "../persist/reports.js";
+import { collectFindingCases, listRuns, resolveRunDirs } from "../persist/runs.js";
 import { newRunId } from "../persist/run-id.js";
 import { replaysDir, workspaceDir } from "../persist/workspace.js";
 import { writeBundle } from "../ui/bundle.js";
 import { isFindingsReport } from "../reports/fences.js";
-import { renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
+import { findingFingerprint, renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
+import { dropReportFindings, parseReportFindings, suggestFalsePositives } from "../reports/prune.js";
 import { emptyConfig, requirePageModel, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
@@ -439,6 +442,16 @@ export async function cmdReport(opts: {
     }
   }
   if (selectors.length === 0) fail(EXIT_USAGE, "no runs selected (use --all, --runs, or pick interactively)");
+  let qualityFull = Boolean(opts.qualityFull);
+  if (!qualityFull) {
+    const { promptQualityFull } = await import("./prompt-runs.js");
+    try {
+      qualityFull = await promptQualityFull();
+    } catch (err) {
+      if (err instanceof Error && err.name === "ExitPromptError") return 130;
+      fail(EXIT_USAGE, errMessage(err));
+    }
+  }
   let runDirs: string[];
   try {
     runDirs = resolveRunDirs(configPath, selectors);
@@ -449,7 +462,7 @@ export async function cmdReport(opts: {
     configPath,
     config,
     runDirs,
-    qualityFull: opts.qualityFull,
+    qualityFull,
     onBrainError: (message) => process.stderr.write(`brain skipped: ${message}\n`),
   });
   if (opts.out) {
@@ -466,6 +479,88 @@ export async function cmdReport(opts: {
     process.stdout.write(`${written.mdPath}\n`);
   }
   return written.caseCount > 0 ? EXIT_FINDINGS : EXIT_OK;
+}
+
+export async function cmdPrune(
+  reportId: string | undefined,
+  opts: { config?: string; ids?: string },
+): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  const config = loadConfigOrExit(configPath);
+  const reports = listReports(configPath);
+  if (reports.length === 0) fail(EXIT_USAGE, "no reports yet (run clickmonkey report)");
+  let id = reportId?.trim();
+  if (!id) {
+    const { promptReport } = await import("./prompt-prune.js");
+    try {
+      id = await promptReport(reports);
+    } catch (err) {
+      if (err instanceof Error && err.name === "ExitPromptError") return 130;
+      fail(EXIT_USAGE, errMessage(err));
+    }
+  }
+  if (!id) fail(EXIT_USAGE, "no report selected");
+  const loaded = readReport(configPath, id);
+  if (!loaded) fail(EXIT_USAGE, `report not found: ${id}`);
+  const findings = parseReportFindings(loaded.markdown);
+  if (findings.length === 0) fail(EXIT_USAGE, `report ${id} has no findings to prune`);
+  let dropIds: string[];
+  if (opts.ids) {
+    dropIds = opts.ids.split(",").map((s) => s.trim()).filter(Boolean);
+  } else {
+    let suggested = new Map<string, string>();
+    if (config.brain?.baseUrl && config.brain.model) {
+      process.stderr.write("Looking over the report…\n");
+      try {
+        suggested = await suggestFalsePositives(findings, loaded.markdown, config);
+      } catch (err) {
+        process.stderr.write(`brain skipped: ${errMessage(err)}\n`);
+      }
+    }
+    const { promptFalsePositives } = await import("./prompt-prune.js");
+    try {
+      dropIds = await promptFalsePositives(findings, suggested);
+    } catch (err) {
+      if (err instanceof Error && err.name === "ExitPromptError") return 130;
+      fail(EXIT_USAGE, errMessage(err));
+    }
+  }
+  if (dropIds.length === 0) {
+    process.stdout.write("no findings dropped\n");
+    return EXIT_OK;
+  }
+  const { markdown, dropped, kept } = dropReportFindings(loaded.markdown, dropIds);
+  if (dropped.length === 0) fail(EXIT_USAGE, "none of those ids are in the report");
+  const mdPath = reportMarkdownPath(configPath, id);
+  if (!mdPath) fail(EXIT_USAGE, `report not found: ${id}`);
+  const rewritten = rewriteReportMarkdown(configPath, id, markdown, kept.length);
+  if (!rewritten) writeFileSync(mdPath, markdown, "utf8");
+  const casesById = new Map<string, string>();
+  try {
+    const runDirs = resolveRunDirs(configPath, loaded.meta.runIds);
+    for (const c of collectFindingCases(runDirs, { tapes: false })) {
+      casesById.set(c.id, findingFingerprint(c));
+    }
+  } catch {
+    // run folders may be gone; still dismiss by id
+  }
+  const now = new Date().toISOString();
+  appendDismissed(
+    configPath,
+    dropped.flatMap((f) =>
+      f.ids.map((findingId) => ({
+        dismissedAt: now,
+        id: findingId,
+        reportId: id,
+        kind: f.kind,
+        title: f.title,
+        ...(casesById.get(findingId) ? { fingerprint: casesById.get(findingId) } : {}),
+      })),
+    ),
+  );
+  process.stdout.write(`${rewritten?.mdPath ?? mdPath}\n`);
+  process.stderr.write(`dropped ${dropped.length} finding${dropped.length === 1 ? "" : "s"}\n`);
+  return kept.length > 0 ? EXIT_FINDINGS : EXIT_OK;
 }
 
 export async function cmdSpec(

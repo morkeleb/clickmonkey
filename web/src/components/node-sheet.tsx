@@ -1,10 +1,10 @@
 import { ChevronDown } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import type { Page } from "@schema/page-model";
 import type { QualityIssue, QualityPage, QualityRuntimeEvent } from "@schema/quality";
 import type { TestabilityIssue, TestabilityPage } from "@schema/testability";
 import type { UiGraphNode, UiMapFinding, UiRun, UiSnapshot } from "@schema/ui";
-import { Shot, ShotPreview } from "@/components/shot";
+import { Shot } from "@/components/shot";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -162,16 +162,8 @@ export function NodeSheet({
     : [];
   const blurb = page?.description ?? node?.blurb;
   const describedBy = page?.describedBy ?? node?.describedBy;
-  const [preview, setPreview] = useState<string | null>(null);
-
   return (
-    <Sheet
-      open={Boolean(node)}
-      onOpenChange={(open) => {
-        if (!open) setPreview(null);
-        onOpenChange(open);
-      }}
-    >
+    <Sheet open={Boolean(node)} onOpenChange={onOpenChange}>
       <SheetContent className="w-full min-w-0 gap-0 overflow-hidden p-0">
         <SheetHeader className="min-w-0 shrink-0 border-b border-border">
           <SheetTitle>{node?.label ?? "Node"}</SheetTitle>
@@ -198,9 +190,8 @@ export function NodeSheet({
             <Shot
               url={node.screenshotUrl}
               alt={`Latest screenshot of ${node.label}`}
-              onOpen={setPreview}
               className="mt-3"
-              imgClassName="max-h-48"
+              frameClassName="h-48"
             />
           ) : node?.kind === "page" ? (
             <p className="mt-2 text-xs text-muted-foreground">No screenshot of this page yet. Walk it with screenshots on.</p>
@@ -304,14 +295,6 @@ export function NodeSheet({
           </div>
         ) : null}
       </SheetContent>
-      <ShotPreview
-        url={preview}
-        alt={node ? `Latest screenshot of ${node.label}` : "Screenshot"}
-        description="Latest screenshot of this page."
-        onOpenChange={(open) => {
-          if (!open) setPreview(null);
-        }}
-      />
     </Sheet>
   );
 }

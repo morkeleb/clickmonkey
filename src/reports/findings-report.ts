@@ -1,6 +1,7 @@
 import { dirname, relative } from "node:path";
 import { z } from "zod";
 import { chat, type ChatClient } from "../brains/chat.js";
+import { isDismissed, loadDismissed } from "../persist/dismissed.js";
 import { collectFindingCases, type FindingCase } from "../persist/runs.js";
 import { loadPresence, presencePath } from "../persist/presence.js";
 import { loadCombinedQuality } from "../persist/quality.js";
@@ -22,6 +23,7 @@ import type { QualityReport, QualityPage, QualityIssue, QualityRuntimeEvent } fr
 import { joinWheres, qualityLedgerItems, qualityPageCounts } from "../schema/quality.js";
 import { sameLedgerPage, type TestabilityReport, type TestabilityPage } from "../schema/testability.js";
 import { wrapClickmonkeyFence } from "./fences.js";
+import { whyFindingBlock, whyRule } from "./why.js";
 
 const SEV_ORDER: FindingSeverity[] = ["critical", "major", "minor", "suggestion"];
 
@@ -134,24 +136,24 @@ function renderCase(
   const all = [c, ...copies];
   const runIds = [...new Set(all.map((x) => x.runId))];
   const pages = [...new Set(all.map((x) => x.pageId).filter(Boolean))];
+  const seen =
+    all.length > 1 ? ` · ${all.length}× in ${runIds.length} run${runIds.length === 1 ? "" : "s"}` : "";
+  const loc: string[] = [
+    `\`${c.finding.kind}\` · ${c.severity}${seen} · \`${c.id}\``,
+    runIds.length === 1 ? `\`${runIds[0]}\`` : runIds.map((id) => `\`${id}\``).join(" "),
+  ];
+  if (pages.length === 1) loc.push(`\`${pages[0]}\``);
+  else if (pages.length > 1) loc.push(pages.map((id) => `\`${id}\``).join(" "));
+  if (path && url) loc.push(`[${path}](${url})`);
+  else if (url) loc.push(url);
   const lines = [
     `### ${title}`,
     "",
-    `- **id:** ${c.id}`,
-    `- **severity:** ${c.severity}`,
-    `- **kind:** ${c.finding.kind}`,
+    loc.join(" · "),
+    "",
+    whyFindingBlock(c.finding.kind, c.finding.message, extra?.why),
+    "",
   ];
-  if (all.length > 1) {
-    lines.push(`- **seen:** ${all.length}× in ${runIds.length} run${runIds.length === 1 ? "" : "s"}`);
-    lines.push(`- **runs:** ${runIds.join(", ")}`);
-  } else {
-    lines.push(`- **run:** ${c.runId}`);
-  }
-  if (pages.length === 1) lines.push(`- **page:** ${pages[0]}`);
-  else if (pages.length > 1) lines.push(`- **pages:** ${pages.join(", ")}`);
-  if (url) lines.push(`- **url:** ${url}`);
-  if (path) lines.push(`- **path:** ${path}`);
-  lines.push("");
   if (extra?.expected) {
     lines.push(`**Expected:** ${extra.expected}`, "");
   }
@@ -159,11 +161,8 @@ function renderCase(
     lines.push(`**Actual:** ${extra.actual}`, "");
   } else if (c.finding.kind === "pageError") {
     lines.push(pageErrorExplanation(c.finding.message), "");
-  } else {
+  } else if (c.finding.message.trim() && c.finding.message.trim() !== title.trim()) {
     lines.push(c.finding.message, "");
-  }
-  if (extra?.why) {
-    lines.push(`**Why it matters:** ${extra.why}`, "");
   }
   const shot = shotMarkdown(c.screenshotPath, reportPath);
   if (shot) lines.push(shot, "");
@@ -177,7 +176,7 @@ function renderCase(
     }
   }
   if (copies.length > 0) {
-    lines.push("**Also:**");
+    lines.push("Also seen:");
     for (const o of copies) {
       lines.push(`- ${o.runId} \`${o.id}\`${o.pageId ? ` · ${o.pageId}` : ""}`);
     }
@@ -195,7 +194,7 @@ function formatIssueLine(i: QualityIssue | QualityRuntimeEvent): string {
   const times = i.count > 1 ? ` ×${i.count}` : "";
   const conf = "confidence" in i && i.confidence ? ` ${i.confidence}` : "";
   const where = "where" in i && i.where ? ` · ${i.where}` : "";
-  return `- \`${i.rule}\` ${i.severity}${conf}${times}${where} — ${markdownSafeQualityMessage(i.message)}`;
+  return `- \`${i.rule}\` · ${i.severity}${conf}${times}${where} — ${markdownSafeQualityMessage(i.message)}`;
 }
 
 export function isNoisyQualityMessage(message: string): boolean {
@@ -263,11 +262,11 @@ export function renderQualitySection(
       for (const i of t.issues) {
         const extra = [i.role, i.inputType].filter(Boolean).join(" ");
         const loc = i.where ? ` · ${i.where}` : "";
-        lines.push(
-          extra
-            ? `- \`${i.code}\` ${i.severity} · ${i.tag} ${extra}${loc}`
-            : `- \`${i.code}\` ${i.severity} · ${i.tag}${loc}`,
-        );
+        const head = extra
+          ? `- \`${i.code}\` ${i.severity} · ${i.tag} ${extra}${loc}`
+          : `- \`${i.code}\` ${i.severity} · ${i.tag}${loc}`;
+        const why = whyRule(i.code);
+        lines.push(why ? `${head}\n\n  > ${why}` : head);
       }
       lines.push("");
     }
@@ -327,14 +326,29 @@ function shortQualityMessage(message: string): string {
   return markdownSafeQualityMessage(msg);
 }
 
-/** `rule` severity ×n — message. Omit ×n when listing under one page. */
-function formatDigestIssue(row: DigestRow, underPage = false): string {
+function shortWhere(where: string | undefined): string | undefined {
+  if (!where?.trim()) return undefined;
+  const parts = where
+    .split(" · ")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  if (parts.length === 0) return undefined;
+  return markdownSafeQualityMessage(parts.join(" · "));
+}
+
+/** Header is rule + severity + pages. Message and where sit on the next line. */
+function formatDigestIssue(row: DigestRow, underPage = false, trail?: string): string {
   const times = !underPage && row.count > 1 ? ` ×${row.count}` : "";
-  const msg = shortQualityMessage(row.message);
-  const loc = row.where ? ` · ${markdownSafeQualityMessage(row.where)}` : "";
-  return msg
-    ? `\`${row.rule}\` ${row.severity}${times} — ${msg}${loc}`
-    : `\`${row.rule}\` ${row.severity}${times}${loc}`;
+  const bits = [`\`${row.rule}\``, `${row.severity}${times}`];
+  if (trail) bits.push(trail);
+  const head = bits.join(" · ");
+  const detail = [shortQualityMessage(row.message), shortWhere(row.where)].filter(Boolean).join(" · ");
+  const why = whyRule(row.rule);
+  const lines = [head];
+  if (detail) lines.push("", `  ${detail}`);
+  if (why) lines.push("", `  > ${why}`);
+  return lines.join("\n");
 }
 
 function wherePages(row: DigestRow): string {
@@ -343,41 +357,6 @@ function wherePages(row: DigestRow): string {
   if (names.length <= 5) return `${names.length} pages (${names.map((p) => `\`${p}\``).join(", ")})`;
   return `${names.length} pages (e.g. \`${names[0]}\`, \`${names[1]}\`)`;
 }
-
-const RULE_HINTS: Record<string, string> = {
-  "color-contrast": "Theme or chrome colors — one token/CSS change.",
-  "element-permitted-content":
-    "Invalid nesting (block inside a button, or a tag in the wrong parent). Search the shell component that wraps those tags.",
-  "aria-label-misuse": "aria-label on an element that does not support it — usually a wrapper in chrome.",
-  missingStableId: "No stable id / data-testid. Later walks cannot target this control.",
-  duplicateName: "Two widgets share the same accessible name.",
-  clickableNonWidget: "Click handler on a non-interactive tag. Keyboard and screen-reader users cannot use it.",
-  opaqueControl: "No accessible name. Add a visible label or aria-label.",
-  "button-name": "Button has no discernible text (icon-only without a name).",
-  "link-name": "Link has no discernible text (empty or icon-only).",
-  "aria-hidden-focus": "aria-hidden node is still focusable — leftover overlay, or svg with tabindex.",
-  "document-title": "This route never sets document.title.",
-  "document-title-placeholder": "Title is still a framework default (Create Next App, Vite, …).",
-  "document-title-long": "Title is longer than ~60 characters and will truncate in search results.",
-  "document-title-same":
-    "Every tab shows the same name. Set a unique document.title (and og:title) that names this page — screen readers announce it, and search uses it too.",
-  "document-title-instance":
-    "Different records on this route share one tab title. Put the record name in document.title (two customer tabs should not both say Customer).",
-  "meta-description": "Add a unique meta description for search snippets and social fallback.",
-  "og-title": "Open Graph title missing — shares will look untitled.",
-  "og-description": "Open Graph description missing — shares get no summary.",
-  "og-image": "Open Graph image missing — shares get no preview picture.",
-  "og-url": "Open Graph url missing.",
-  "canonical": "No rel=canonical — duplicates can split search ranking.",
-  "element-required-content": "Required child missing (often head without title).",
-  "attribute-allowed-values":
-    "Invalid attribute value. React's default form action=javascript:... is framework, not copy.",
-  "nested-interactive": "Interactive element nested inside another (button in a link).",
-  "console.error": "JavaScript error or failed network request on this page.",
-  "console.warning": "Runtime warning — read the message for the library that logged it.",
-  pageError:
-    "Uncaught JavaScript error (`pageerror`). Not console.error and not a validation message — the script crashed.",
-};
 
 type StartScope = "chrome" | "cluster" | "page";
 
@@ -409,7 +388,7 @@ function formatStartItem(row: DigestRow, scope: StartScope): string {
       : family
         ? `${wherePages(row)}, mostly \`${family}\``
         : wherePages(row);
-  const hint = RULE_HINTS[row.rule];
+  const hint = whyRule(row.rule);
   const msg = shortQualityMessage(row.message);
   const scopeLabel =
     scope === "chrome" ? "shared shell" : scope === "cluster" ? "same component" : "this page only";
@@ -561,15 +540,14 @@ export function renderQualityDigest(
   }
   const topPages = [...pageScores.entries()]
     .filter(([, score]) => score.errors + score.warnings > 0)
-    .sort((a, b) => b[1].errors - a[1].errors || b[1].warnings - a[1].warnings || a[0].localeCompare(b[0]))
-    .slice(0, 8);
+    .sort((a, b) => b[1].errors - a[1].errors || b[1].warnings - a[1].warnings || a[0].localeCompare(b[0]));
 
   const start = pickStartHere(chrome, clusters, uniqueRows);
 
   const lines = [
     "## Quality",
     "",
-    `Workspace ledger across ${pageCount} page${pageCount === 1 ? "" : "s"}. **Start here** is what to fix first. Chrome is the shared shell — one change drops those counts everywhere. Issues on several pages are one component. Unique pages last. Console preload/keyframe warnings omitted. Use \`--quality-full\` for the long form.`,
+    `Workspace ledger across ${pageCount} page${pageCount === 1 ? "" : "s"}. **Start here** is what to fix first. Chrome is the shared shell — one change drops those counts everywhere. Issues on several pages are one component. **Pages** lists every route that still has its own issues. Console preload/keyframe warnings omitted.`,
     "",
   ];
   if (start.length > 0) {
@@ -582,27 +560,31 @@ export function renderQualityDigest(
   if (chrome.length > 0) {
     lines.push("### Chrome", "");
     for (const row of chrome) {
-      lines.push(`- ${formatDigestIssue(row)} — ${wherePages(row)}`);
+      lines.push(`- ${formatDigestIssue(row, false, wherePages(row))}`);
     }
     lines.push("");
   }
   if (clusters.length > 0) {
     lines.push("### On several pages", "");
     for (const row of clusters) {
-      lines.push(`- ${formatDigestIssue(row)} — ${wherePages(row)}`);
+      lines.push(`- ${formatDigestIssue(row, false, wherePages(row))}`);
     }
     lines.push("");
   }
   if (topPages.length > 0) {
-    lines.push("### Pages with unique issues", "");
+    lines.push("### Pages", "");
     for (const [page, score] of topPages) {
       lines.push(
-        `- \`${page}\` — ${score.errors} error${score.errors === 1 ? "" : "s"}, ${score.warnings} warning${score.warnings === 1 ? "" : "s"}`,
+        `#### \`${page}\``,
+        "",
+        `${score.errors} error${score.errors === 1 ? "" : "s"}, ${score.warnings} warning${score.warnings === 1 ? "" : "s"}`,
+        "",
       );
       const issues = sortDigestRows(uniqueRows.filter((r) => r.pageSet.has(page)));
       for (const row of issues) {
-        lines.push(`  - ${formatDigestIssue(row, true)}`);
+        lines.push(`- ${formatDigestIssue(row, true)}`);
       }
+      lines.push("");
     }
     lines.push("");
   }
@@ -737,7 +719,10 @@ export async function writeRunsReport(opts: {
   extra?: string;
   outlines?: Array<{ runId: string; outline: UiExploreOutline }>;
 }): Promise<WrittenRunsReport> {
-  const cases = collectFindingCases(opts.runDirs);
+  const dismissed = loadDismissed(opts.configPath);
+  const cases = collectFindingCases(opts.runDirs).filter(
+    (c) => !isDismissed(dismissed, { id: c.id, fingerprint: findingFingerprint(c) }),
+  );
   const runIds = opts.runDirs.map((d) => d.split(/[/\\]/).pop() ?? d);
   const generatedAt = new Date().toISOString();
   const reportId = newRunId();

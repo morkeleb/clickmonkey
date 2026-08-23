@@ -1,7 +1,12 @@
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { workspaceDir } from "../persist/workspace.js";
+
+function packageRoot(): string {
+  return fileURLToPath(new URL("../..", import.meta.url));
+}
 
 export const UI_PID_NAME = "ui.pid";
 
@@ -147,10 +152,14 @@ export async function stopUi(opts: { configPath?: string; port: number }): Promi
 }
 
 export function uiSpawnArgs(opts: { configPath: string; port: number }): { execPath: string; args: string[] } {
+  const rest = ["ui", "--config", opts.configPath, "--port", String(opts.port), "--no-open"];
+  const bin = join(packageRoot(), "bin", "clickmonkey.mjs");
+  // Re-enter the bin so src-vs-dist is rechecked. Respawning argv[1] (often dist) keeps a stale schema.
+  if (existsSync(bin)) return { execPath: process.execPath, args: [bin, ...rest] };
   const script = process.argv[1];
   const args = [...process.execArgv];
   if (script) args.push(script);
-  args.push("ui", "--config", opts.configPath, "--port", String(opts.port), "--no-open");
+  args.push(...rest);
   return { execPath: process.execPath, args };
 }
 
