@@ -80,6 +80,47 @@ describe("prune report findings", () => {
     assert.equal(parseReportFindings(markdown).length, 1);
   });
 
+  it("drops only the selected run when two cards share an fnd_ id", () => {
+    const md = `# Findings report
+
+## Summary
+
+2 findings from 2 runs (2 major).
+
+## Findings
+
+## Major
+
+### expected invalid A
+
+\`expectFailed\` · major · \`fnd_3_expectFailed\` · \`run-a\` · \`home\`
+
+why a
+
+### expected invalid B
+
+\`expectFailed\` · major · \`fnd_3_expectFailed\` · \`run-b\` · \`home\`
+
+why b
+
+## Appendix
+
+done
+`;
+    const parsed = parseReportFindings(md);
+    assert.equal(parsed.length, 2);
+    assert.equal(parsed[0]?.key, "run-a/fnd_3_expectFailed");
+    assert.equal(parsed[1]?.key, "run-b/fnd_3_expectFailed");
+    const { markdown, dropped, kept } = dropReportFindings(md, ["run-a/fnd_3_expectFailed"]);
+    assert.equal(dropped.length, 1);
+    assert.equal(kept.length, 1);
+    assert.equal(kept[0]?.key, "run-b/fnd_3_expectFailed");
+    assert.match(markdown, /expected invalid B/);
+    assert.doesNotMatch(markdown, /expected invalid A/);
+    const both = dropReportFindings(md, ["fnd_3_expectFailed"]);
+    assert.equal(both.dropped.length, 0, "bare colliding id must not drop both cards");
+  });
+
   it("clears the findings section when every card is dropped", () => {
     const md = `# Findings report
 
@@ -119,6 +160,8 @@ why
       {
         id: "fnd_1_uiIssue",
         ids: ["fnd_1_uiIssue"],
+        runIds: ["r"],
+        key: "r/fnd_1_uiIssue",
         kind: "uiIssue",
         severity: "suggestion",
         title: "overlap",
@@ -144,7 +187,7 @@ why
           ],
         }),
     );
-    assert.equal(suggested.get("fnd_1_uiIssue"), "walker screenshot note");
+    assert.equal(suggested.get("r/fnd_1_uiIssue"), "walker screenshot note");
     assert.equal(suggested.has("fnd_99_nope"), false);
   });
 });
@@ -169,6 +212,7 @@ describe("dismissed ledger", () => {
     ]);
     const ledger = loadDismissed(cfg);
     assert.equal(isDismissed(ledger, { id: "other", fingerprint: fp }), true);
+    assert.equal(isDismissed(ledger, { id: cases[0]!.id }), false);
     const written = await writeRunsReport({
       configPath: cfg,
       config: emptyConfig("http://127.0.0.1:4173/"),
@@ -216,6 +260,9 @@ describe("clickmonkey prune", () => {
     assert.doesNotMatch(next, /fnd_4_visualIssue/);
     assert.match(result.stderr, /dropped 1 finding/);
     const ledger = loadDismissed(cfg);
-    assert.equal(isDismissed(ledger, { id: findingId(4, "visualIssue") }), true);
+    assert.equal(
+      isDismissed(ledger, { id: findingId(4, "visualIssue"), runId: "20260817T000000Z-abcd" }),
+      true,
+    );
   });
 });

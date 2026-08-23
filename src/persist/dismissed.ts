@@ -20,11 +20,11 @@ export function loadDismissed(configPath: string): DismissedLedger {
 
 export function isDismissed(
   ledger: DismissedLedger,
-  opts: { id: string; fingerprint?: string },
+  opts: { id: string; runId?: string; fingerprint?: string },
 ): boolean {
   for (const item of ledger.items) {
-    if (item.id === opts.id) return true;
     if (opts.fingerprint && item.fingerprint === opts.fingerprint) return true;
+    if (opts.runId && item.runId === opts.runId && item.id === opts.id) return true;
   }
   return false;
 }

@@ -34,6 +34,16 @@ describe("select option match", () => {
     assert.equal(matchListedOption(OPTIONS, "MAILING")?.value, "mailing");
     assert.equal(matchListedOption(OPTIONS, "Mail")?.label, "Mailing");
     assert.equal(matchListedOption(OPTIONS, "zzz"), undefined);
+    assert.equal(
+      matchListedOption(
+        [
+          { value: "no", label: "Norway" },
+          { value: "dk", label: "Denmark" },
+        ],
+        "Sweden",
+      ),
+      undefined,
+    );
   });
 
   it("matches a listed row that contains the fill as a token, not a mid-word substring", () => {

@@ -721,7 +721,8 @@ export async function writeRunsReport(opts: {
 }): Promise<WrittenRunsReport> {
   const dismissed = loadDismissed(opts.configPath);
   const cases = collectFindingCases(opts.runDirs).filter(
-    (c) => !isDismissed(dismissed, { id: c.id, fingerprint: findingFingerprint(c) }),
+    (c) =>
+      !isDismissed(dismissed, { id: c.id, runId: c.runId, fingerprint: findingFingerprint(c) }),
   );
   const runIds = opts.runDirs.map((d) => d.split(/[/\\]/).pop() ?? d);
   const generatedAt = new Date().toISOString();

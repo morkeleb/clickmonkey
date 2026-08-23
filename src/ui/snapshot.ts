@@ -103,6 +103,13 @@ export function refreshUiSnapshot(
     graph,
     findings: mapFindingsOf(findings),
     runs: collectUiRuns(configPath),
+    reports: listReports(configPath).map((r) => ({
+      id: r.id,
+      title: r.title,
+      generatedAt: r.generatedAt,
+      runIds: r.runIds,
+      findingCount: r.findingCount,
+    })),
   };
 }
 

@@ -4,6 +4,7 @@ export const DismissedItem = z
   .object({
     dismissedAt: z.string().min(1),
     id: z.string().min(1),
+    runId: z.string().min(1).optional(),
     fingerprint: z.string().min(1).optional(),
     kind: z.string().min(1).optional(),
     title: z.string().min(1).optional(),

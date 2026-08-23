@@ -31,10 +31,10 @@ export async function promptFalsePositives(
     required: false,
     pageSize: Math.min(16, findings.length),
     choices: findings.map((f) => {
-      const reason = suggested.get(f.id) ?? [...f.ids].map((id) => suggested.get(id)).find(Boolean);
+      const reason = suggested.get(f.key) ?? suggested.get(f.id) ?? [...f.ids].map((id) => suggested.get(id)).find(Boolean);
       return {
-        name: `${f.severity} ${f.kind}  ${f.title}`,
-        value: f.id,
+        name: `${f.severity} ${f.kind}  ${f.title}${f.runIds[0] ? `  ${f.runIds[0]}` : ""}`,
+        value: f.key,
         checked: Boolean(reason),
         ...(reason ? { description: reason } : {}),
       };

@@ -1,7 +1,7 @@
 import type { Locator as PwLocator, Page } from "playwright";
 import {
   formatSelectOptionList,
-  pickListedOption,
+  matchListedOption,
   type LiveSelectOption,
 } from "./select-options.js";
 
@@ -242,7 +242,7 @@ export async function fillTypeahead(
       await loc.fill("");
       return { handled: true, value: "" };
     }
-    const match = pickListedOption(options, wanted);
+    const match = matchListedOption(options, wanted);
     if (!match) {
       return { handled: false };
     }
@@ -267,25 +267,29 @@ export async function fillTypeahead(
     await waitForOptions(page, TYPEAHEAD_SEARCH_WAIT_MS);
     options = await readOpenTypeaheadOptions(loc, page);
   }
-  const listedMatch = pickListedOption(options, wanted);
+  const listedMatch = matchListedOption(options, wanted);
   if (listedMatch && (await clickTypeaheadOption(page, listedMatch, wanted))) {
     const live = await loc.inputValue().catch(() => listedMatch.label || listedMatch.value);
     return { handled: true, value: live };
   }
   let probed: LiveSelectOption[] = [];
-  for (const probe of SEARCH_PROBES) {
-    await loc.fill("");
-    await loc.fill(probe);
-    await waitForOptions(page, TYPEAHEAD_SEARCH_WAIT_MS);
-    probed = await readOpenTypeaheadOptions(loc, page);
-    if (probed.length > 0) break;
+  if (options.length === 0) {
+    for (const probe of SEARCH_PROBES) {
+      await loc.fill("");
+      await loc.fill(probe);
+      await waitForOptions(page, TYPEAHEAD_SEARCH_WAIT_MS);
+      probed = await readOpenTypeaheadOptions(loc, page);
+      if (probed.length > 0) break;
+    }
   }
-  const probeMatch = pickListedOption(probed, wanted);
+  const probeMatch = matchListedOption(probed, wanted);
   if (probeMatch && (await clickTypeaheadOption(page, probeMatch, wanted))) {
     const live = await loc.inputValue().catch(() => probeMatch.label || probeMatch.value);
     return { handled: true, value: live };
   }
   if (options.length > 0 || probed.length > 0) {
+    await loc.fill("");
+    await loc.fill(wanted);
     const shown = options.length > 0 ? options : probed;
     return {
       handled: true,

@@ -539,7 +539,7 @@ export async function cmdPrune(
   try {
     const runDirs = resolveRunDirs(configPath, loaded.meta.runIds);
     for (const c of collectFindingCases(runDirs, { tapes: false })) {
-      casesById.set(c.id, findingFingerprint(c));
+      casesById.set(`${c.runId}/${c.id}`, findingFingerprint(c));
     }
   } catch {
     // run folders may be gone; still dismiss by id
@@ -548,14 +548,19 @@ export async function cmdPrune(
   appendDismissed(
     configPath,
     dropped.flatMap((f) =>
-      f.ids.map((findingId) => ({
-        dismissedAt: now,
-        id: findingId,
-        reportId: id,
-        kind: f.kind,
-        title: f.title,
-        ...(casesById.get(findingId) ? { fingerprint: casesById.get(findingId) } : {}),
-      })),
+      f.ids.map((findingId, i) => {
+        const runId = f.runIds[i] ?? f.runIds[0];
+        const fingerprint = runId ? casesById.get(`${runId}/${findingId}`) : undefined;
+        return {
+          dismissedAt: now,
+          id: findingId,
+          reportId: id,
+          kind: f.kind,
+          title: f.title,
+          ...(runId ? { runId } : {}),
+          ...(fingerprint ? { fingerprint } : {}),
+        };
+      }),
     ),
   );
   process.stdout.write(`${rewritten?.mdPath ?? mdPath}\n`);

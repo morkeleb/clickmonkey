@@ -3,18 +3,28 @@ import { chat, type ChatClient } from "../brains/chat.js";
 import type { Config } from "../schema/config.js";
 
 const LOC_LINE =
-  /`([A-Za-z]+)` · (\w+)(?: · \d+× in \d+ runs?)? · `(fnd_[^`]+)`/;
-const COPY_LINE = /^- \S+ `(fnd_[^`]+)`/;
+  /`([A-Za-z]+)` · (\w+)(?: · (\d+)× in (\d+) runs?)? · `(fnd_[^`]+)`(.*)$/m;
+const COPY_LINE = /^- (\S+) `(fnd_[^`]+)`/;
 
 export type ReportFinding = {
   id: string;
   ids: string[];
+  runIds: string[];
+  key: string;
   kind: string;
   severity: string;
   title: string;
   heading: string;
   markdown: string;
 };
+
+function backticks(s: string): string[] {
+  return [...s.matchAll(/`([^`]+)`/g)].map((m) => m[1]!).filter((t) => !t.startsWith("fnd_"));
+}
+
+function cardKey(runIds: string[], id: string): string {
+  return `${runIds[0] ?? ""}/${id}`;
+}
 
 function findingsBounds(markdown: string): { start: number; end: number } | undefined {
   const start = markdown.search(/^## Findings\s*$/m);
@@ -32,14 +42,24 @@ function parseBlock(heading: string, raw: string): ReportFinding | undefined {
   if (!title) return undefined;
   const loc = LOC_LINE.exec(text);
   if (!loc) return undefined;
-  const ids = new Set<string>([loc[3]!]);
+  const id = loc[5]!;
+  const runCount = loc[4] ? Number(loc[4]) : 1;
+  const restIds = backticks(loc[6] ?? "");
+  const runIds = restIds.slice(0, Number.isFinite(runCount) && runCount > 0 ? runCount : 1);
+  const ids = new Set<string>([id]);
+  const runs = [...runIds];
   for (const line of text.split(/\r?\n/)) {
     const copy = COPY_LINE.exec(line);
-    if (copy?.[1]) ids.add(copy[1]);
+    if (copy?.[1] && copy[2]) {
+      if (!runs.includes(copy[1])) runs.push(copy[1]);
+      ids.add(copy[2]);
+    }
   }
   return {
-    id: loc[3]!,
+    id,
     ids: [...ids],
+    runIds: runs,
+    key: cardKey(runs, id),
     kind: loc[1]!,
     severity: loc[2]!,
     title,
@@ -68,11 +88,39 @@ export function parseReportFindings(markdown: string): ReportFinding[] {
   return out;
 }
 
+/** Resolve `--ids` tokens to card keys. Bare `fnd_*` is ok when it matches one card. */
+export function resolveDropKeys(findings: ReportFinding[], tokens: Iterable<string>): string[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const push = (key: string) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  };
+  for (const raw of tokens) {
+    const token = raw.trim();
+    if (!token) continue;
+    const byKey = findings.find((f) => f.key === token);
+    if (byKey) {
+      push(byKey.key);
+      continue;
+    }
+    const hits = findings.filter(
+      (f) =>
+        f.id === token ||
+        f.ids.includes(token) ||
+        f.ids.some((id, i) => `${f.runIds[i] ?? f.runIds[0]}/${id}` === token),
+    );
+    if (hits.length === 1) push(hits[0]!.key);
+  }
+  return keys;
+}
+
 function dropSet(findings: ReportFinding[], dropIds: Iterable<string>): Set<string> {
-  const want = new Set(dropIds);
+  const want = new Set(resolveDropKeys(findings, dropIds));
   const drop = new Set<string>();
   for (const f of findings) {
-    if (want.has(f.id) || f.ids.some((id) => want.has(id))) drop.add(f.id);
+    if (want.has(f.key)) drop.add(f.key);
   }
   return drop;
 }
@@ -100,8 +148,8 @@ export function dropReportFindings(
 ): { markdown: string; dropped: ReportFinding[]; kept: ReportFinding[] } {
   const findings = parseReportFindings(markdown);
   const drop = dropSet(findings, dropIds);
-  const dropped = findings.filter((f) => drop.has(f.id));
-  const kept = findings.filter((f) => !drop.has(f.id));
+  const dropped = findings.filter((f) => drop.has(f.key));
+  const kept = findings.filter((f) => !drop.has(f.key));
   if (dropped.length === 0) return { markdown, dropped, kept };
   const bounds = findingsBounds(markdown);
   if (!bounds) return { markdown, dropped, kept };
@@ -158,9 +206,9 @@ export async function suggestFalsePositives(
   const out = new Map<string, string>();
   const brain = config.brain;
   if (!brain?.baseUrl || !brain.model || findings.length === 0) return out;
-  const known = new Set(findings.flatMap((f) => f.ids));
+  const known = new Set(findings.flatMap((f) => [f.key, f.id, ...f.ids]));
   const digest = findings.map((f) => ({
-    id: f.id,
+    id: f.key,
     kind: f.kind,
     severity: f.severity,
     title: f.title,
@@ -200,7 +248,10 @@ export async function suggestFalsePositives(
   for (const item of parsed.data.drop) {
     if (!known.has(item.id)) continue;
     const reason = item.reason.replace(/\s+/g, " ").trim();
-    if (reason) out.set(item.id, reason);
+    if (!reason) continue;
+    const card = findings.find((f) => f.key === item.id || f.id === item.id || f.ids.includes(item.id));
+    if (card) out.set(card.key, reason);
+    else out.set(item.id, reason);
   }
   return out;
 }

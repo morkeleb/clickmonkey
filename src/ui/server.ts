@@ -180,7 +180,8 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
   };
 
   const broadcast = (type: UiEventType): void => {
-    if (lastSnapshot && type !== "map") {
+    if (type === "map") lastSnapshot = undefined;
+    else if (lastSnapshot) {
       try {
         if (type === "nav") {
           lastSnapshot = refreshUiSnapshot(lastSnapshot, configPath, "runs");
