@@ -24,7 +24,7 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 | **A11y scanners** | Contrast, `aria-hidden` + focus, button-name, … | axe-core |
 | **SEO hygiene** | Missing title/description/OG on public paths; the same title on every route | `seo` on the leash |
 | **Testability** | Unlabeled fields, unnamed controls, click on `<svg>`/`<div>`, no `main`, occluded widgets, duplicate names, missing stable ids | Inspect audit |
-| **Layout** | Overlap, clip, overflow, z-index, scanline, contrast in the pixels | Vision model plus a DOM pass on tables (clipped cells without `…`, column edges that do not line up); high-confidence extras become findings |
+| **Layout** | Overlap, clip, overflow, z-index, scanline, sparse, contrast; type that is sheared, unreadable, or off a shared baseline (not font taste) | Vision model plus a DOM pass: clipped table cells without `…`, ragged column edges, and left-locked main panes with more than half the width empty on the right (centered cards are not sparse); high-confidence extras become findings |
 | **Empty required** | Blank required field + submit must look invalid | Playbook `empty-required` |
 | **Junk not invalid** | `--nasty` / typed junk + submit **sent those values or left the form** without `aria-invalid` / visible error / HTML5 constraint validation | Unleash after submit |
 | **Throw instead of invalid** | Fill then uncaught `pageerror` (e.g. `Invalid time value`) | Runtime oracle |
@@ -36,9 +36,9 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 
 Fence bounce (`/logout`, off-app URL) is leash control, not a product finding.
 
-`--nasty` leftover text in a field is content, not a visual bug, unless that text overflows or clips. A table column that shears a name mid-word (no `…`) is clip even when the cell is leftover junk.
+`--nasty` leftover text in a field is content, not a visual bug. The vision prompt lists catalog samples and tells the model to ignore them; parse still drops a finding that *quotes* a catalog string (we typed it). A table column that shears a product name mid-word (no `…`) is clip even when a nearby cell is leftover junk.
 
-Native `<select>` only accepts its `<option>` list. Unleash (and `--nasty`) pick one of those values. Catalog junk still goes into text, textarea, and type-in comboboxes — `selectOption("x")` is not an XSS test, it is Playwright waiting for an option that does not exist. A spec fill that is not in the list fails immediately and names the options.
+Native `<select>` only accepts its `<option>` list. Unleash (and `--nasty`) pick one of those values. A spec fill that is not in the `<option>` list fails immediately and names the options. ARIA comboboxes / typeaheads (`role="combobox"`, `aria-autocomplete`, `<datalist>`) are harvested live. If opening the widget paints no rows, harvest types short probes (`a`, `e`, `s`) and waits for a debounced search to fill `[role="option"]`. Unleash then picks a listed option and clicks it so the form can submit. If the planned fill is not in the open list, the executor clicks a listed row instead of filing “has no option”. The list is found via `aria-controls` / `aria-owns` on the input or its closest combobox — including a listbox portaled to `document.body`. Catalog junk still goes into text, textarea, and type-in comboboxes under `--nasty`.
 
 ### Forms (empty-required)
 
@@ -58,7 +58,7 @@ A `pageerror` after a fill is the worse case of the same class: validation did n
 
 Unleash and explore **prefer empty then invalid then a plausible value**. After `--nasty` junk and a submit, if the form **sent those values or left** and the field is still not invalid, that is a finding. A click on submit that does not send is not a miss: client-side validation blocked the write even if it did not paint invalid marks. A `pageerror` on that fill is reported as a crash because validation is missing.
 
-Unleash fills with Faker, scored from field id/label, HTML `type` / `autocomplete` / `inputmode`, and live `min` / `max` / `minlength` / `maxlength` / `step` / `pattern`. Native `<select>` still uses the option list. `--nasty` still uses catalog junk on type-in fields.
+Unleash fills with Faker, scored from field id/label, HTML `type` / `autocomplete` / `inputmode`, and live `min` / `max` / `minlength` / `maxlength` / `step` / `pattern`. Native `<select>` and ARIA typeaheads still use the option list. `--nasty` still uses catalog junk on type-in fields.
 
 Unleash after submit also flags **typed junk** the control should not accept: HTML `type` (email/url/number/date), `pattern`, `min`/`max`/`minlength`/`maxlength`, and `--nasty` catalog payloads. If the form sent those values or left without marking the fields invalid, that is the same class as empty-required. The `empty-required` playbook still `expect`s visible invalid marks even when the form stays put.
 
@@ -96,6 +96,6 @@ ClickMonkey has no domain brain unless you put it in a **charter**, **skills** (
 | `explore` / `mcp` | Paladin: charter-driven walk + host oracles; `explore_finding` / `screenshot ui` |
 | `spec` | Fences as a real walk; findings still harvest unless you only care about PASS |
 | `replay` | Comparison vs a report, not a new survey |
-| `report` | Shareable markdown: findings first, then quality digest (Start here, Chrome, clusters) |
+| `report` | Shareable markdown: findings first (each with Why it matters), then quality digest (Start here, Chrome, clusters, every page with leftover issues) |
 
 ClickMonkey shrinks the **recurring survey**. It does not own **“is this the right system for this customer.”**

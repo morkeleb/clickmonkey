@@ -229,7 +229,7 @@ async function screenshotFinding(
     screenshotPath = liveShot;
     if (!screenshotPath) {
       screenshotPath = join(state.outDir, `.shot-${id}.png`);
-      await state.page.screenshot({ path: screenshotPath }).catch(() => undefined);
+      await state.page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => undefined);
     }
   }
   const finding: Finding = {
@@ -244,6 +244,7 @@ async function screenshotFinding(
     tapePath: join(state.outDir, "replay.log"),
     stepIndex,
     ...(screenshotPath ? { screenshotPath } : {}),
+    ...(state.pageId ? { pageId: state.pageId } : {}),
   };
   if ("httpStatus" in partial && partial.httpStatus !== undefined) {
     finding.httpStatus = partial.httpStatus;
@@ -364,6 +365,7 @@ async function scanStepVision(
         persistVisualIssueFindings(state.outDir, result.issues, {
           stepIndex: state.log.steps.length,
           url: href,
+          pageId: state.pageId,
           screenshotPath: shotPath,
           tapePath: join(state.outDir, "replay.log"),
           replayLog: compactTape(state, step, "visual issue"),
@@ -588,6 +590,7 @@ async function finish(
             persistVisualIssueFindings(state.outDir, layoutIssues, {
               stepIndex: state.log.steps.length,
               url: loc.href,
+              pageId: state.pageId,
               screenshotPath: shotPath,
               tapePath: join(state.outDir, "replay.log"),
               replayLog: compactTape(state, step, "visual issue"),

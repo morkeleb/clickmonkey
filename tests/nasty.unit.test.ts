@@ -91,6 +91,13 @@ describe("nasty payloads", () => {
       ],
     };
     assert.equal(pickNastyFill(field, () => 0), "mailing");
+    assert.equal(
+      pickNastyFill(
+        { id: "country", value: "", type: "text", options: [{ value: "NO", label: "Norway" }] },
+        () => 0,
+      ),
+      "NO",
+    );
     const catalog = loadPayloads();
     const pool = [
       ...(catalog.xss ?? []),

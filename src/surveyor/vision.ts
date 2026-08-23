@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { ChatClient } from "../brains/chat.js";
-import { textContainsNastyPayload } from "../brains/nasty.js";
+import { nastyIgnoreSamples, textContainsNastyPayload } from "../brains/nasty.js";
 import { VisionError } from "../schema/config.js";
 import type { QualityConfidence, QualityIssue } from "../schema/quality.js";
 
@@ -17,6 +17,7 @@ export const VISUAL_RULES = [
   "zIndex",
   "align",
   "scanline",
+  "sparse",
   "contrast",
   "broken",
   "other",
@@ -44,7 +45,7 @@ const VISUAL_RULE_SET = new Set<string>(VISUAL_RULES);
 const CONFIDENCE_SET = new Set<string>(["high", "medium", "low"]);
 
 const VISUAL_SYSTEM =
-  "You inspect one UI screenshot. Two jobs: (1) list rendering defects you can point to in the pixels; (2) write a sitemap blurb of what the MAIN screen is for. Reply with JSON only. Empty issues if the shot looks clean. Always fill blurb.";
+  "You inspect one UI screenshot. Two jobs: (1) list rendering defects you can point to in the pixels; (2) write a sitemap blurb of what the MAIN screen is for. Reply with JSON only. Always fill blurb.";
 
 /** Sitemap caption: screen type, main-pane job, visible form/table/CTA — not chrome. */
 export const VISUAL_BLURB_PROMPT = [
@@ -62,34 +63,39 @@ export const VISUAL_BLURB_PROMPT = [
 ].join("\n");
 
 export const VISUAL_PROMPT = [
-  "Look at the screenshot first. Then list only defects you can point to in the pixels.",
+  "Look at the screenshot first. File only rendering defects you can point to in the pixels.",
   "",
-  "Report these rules only:",
-  "- overlap: two components or text runs occupy the same pixels (borders crossing, labels on labels, value colliding with a trailing icon)",
+  "Must-check: (1) tables/lists — a column wall shears a word, or gutters between columns collapse;",
+  "(2) tab labels — a title cut mid-glyph; (3) fields — a value colliding with a trailing calendar/search icon;",
+  "(4) repeating row titles, icons, or trailing actions — left or right edges do not share one line;",
+  "(5) the MAIN pane — a left-locked form or column with a clear right edge and more than half the pane empty to the right.",
+  "Leftover test junk in a nearby cell is not a reason to skip this checklist.",
+  "",
+  "Rules (file only these):",
+  "- overlap: two page components occupy the same pixels (borders crossing, labels on labels). An open dropdown, select, combobox, popover, or menu covering the page behind it is expected stacking — not overlap. File the overlay only if it is itself clipped, off-screen, or colliding with another overlay. An open menu does not hide clip or scanline in the table beside it.",
   "- overflow: content leaking outside a card, modal, table, or the viewport",
-  "- clip: text or a control cut off mid-glyph or mid-icon, not a clean ellipsis (…). A table column wall that shears a word (\"Expert Witness Servic\") is clip. A field whose value runs into a calendar/search icon is clip.",
-  "- zIndex: a control, menu, or dialog is visibly covered so a user cannot read or use it",
-  "- align: a single row or column is clearly broken (not a 1px taste difference)",
-  "- scanline: a list, table, or repeating set of similar items whose icons, titles, numbers, or trailing actions do not share a vertical or horizontal edge, so the eye has to hunt instead of scanning down or across. Collapsed gutters between table columns count. A toolbar of filters that do not share a baseline counts.",
-  "- contrast: text is unreadable on its background in this image",
-  "- broken: missing image, empty icon hole, or obvious placeholder instead of content",
+  "- clip: a glyph is physically cut by something else. A table column that shears a word (\"Expert Witness Servic\") is clip. A tab title cut to \"s 1\" is clip. A value running into a trailing icon is clip. If you can read every letter of a field value, it is not clip — padding or a caret after the last letter is empty space. Naming the leftover letters means you read them; omit the issue. A % $ or unit in its own chrome beside a number (100.00 then a separate %) is not clip. A clean ellipsis (…) is not clip.",
+  "- zIndex: a control is covered so a user cannot read or use it (not an open menu over the page)",
+  "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px taste, not a stacked label above its field)",
+  "- scanline: a column of similar repeating row items (list titles, row icons, trailing actions) whose edges do not line up, so the eye has to hunt. Collapsed gutters between two data columns count. Not scanline: a label above its field, a table header vs its body, left-aligned names vs right-aligned amounts, items inside an open menu or overflow-tab list (longer labels next to shorter ones still share a left pad).",
+  "- sparse: the MAIN pane (not the sidebar) is left-locked — a form or content column has a clear right edge, and more than half the pane to the right of that edge is empty. A column that uses ~30% of the pane is sparse. Centered cards/login (similar empty space on left and right) are not sparse. A full-width table or a second column in the right half is not sparse.",
+  "- contrast: type is unreadable in this image (too faint, or too small at this screenshot size)",
+  "- broken: missing image, empty icon hole, or obvious placeholder — not leftover test strings",
   "- other: a user-visible rendering defect that does not fit the list",
   "",
-  "Must-check: every visible table and every filter/search toolbar, even when cells contain leftover test junk. Looking down a column, can you draw one vertical line along the titles or numbers? If text is sheared mid-word with no …, that is clip, not \"ellipsis truncation\".",
+  "Type defects are clip (sheared glyphs) or contrast (unreadable). Not font-family or brand preference.",
+  "Do not report: sticky headers/nav, expected page scroll, missing features, hover/focus you cannot see, WCAG math, inventing that a control is unclickable, masonry or staggered cards, a center-aligned hero title.",
+  nastyIgnorePrompt(),
   "",
-  "Do not report: sticky headers/nav, expected page scroll, clean ellipsis truncation (a real …), brand or typography taste, missing features, hover/focus you cannot see, WCAG math, inventing that a control is unclickable, masonry or intentionally staggered cards, or a center-aligned hero title.",
-  "Do not report an open dropdown, select, combobox, popover, or menu covering the page behind it — that is expected stacking. Do report those only if the overlay itself is clipped, off-screen, or two overlays collide. An open menu does not hide clip or scanline in the table beside it.",
-  "Do not report that a field, cell, or URL contains XSS / SQL-injection / overlong junk (including paraphrases like \"XSS payload text\"). That is leftover --nasty test data, not a rendering defect. After ignoring the junk as content, still report layout: if that text overflows, clips, overlaps an icon, or breaks a shared list edge, you MUST file clip/scanline/overflow. Empty issues is wrong when a column shears names.",
-  "",
-  "confidence: high = two named regions clearly collide, cut, or break a shared list edge in this image; medium = likely but could be intentional chrome; low = a guess — omit low from issues.",
-  "where: name the visible regions (e.g. \"filter chip on table header\"). Do not invent widget ids.",
+  "confidence: high = you can name the column, tab, or control; medium = likely but could be chrome; omit low.",
+  "where: visible region names (e.g. \"Vendor column in the vouchers table\"). Do not invent widget ids.",
   "severity: error if it blocks reading or using a control; warning otherwise (scanline is usually warning).",
-  "sight: 1-2 lines on what is on screen that should guide the next test. Not a defect list. Do not invent widget ids.",
+  "sight: 1-2 lines on what is on screen that should guide the next test. Not a defect list.",
   "",
   VISUAL_BLURB_PROMPT,
   "",
-  'JSON only: { "issues": [ { "rule": "overlap|overflow|clip|zIndex|align|scanline|contrast|broken|other", "severity": "error"|"warning", "confidence": "high"|"medium", "where": "visible region", "message": "one line" } ], "sight": "optional 1-2 lines", "blurb": "required sitemap caption" }',
-  "Empty issues array if the shot looks clean. Always include blurb.",
+  'JSON only: { "issues": [ { "rule": "overlap|overflow|clip|zIndex|align|scanline|sparse|contrast|broken|other", "severity": "error"|"warning", "confidence": "high"|"medium", "where": "visible region", "message": "one line" } ], "sight": "optional 1-2 lines", "blurb": "required sitemap caption" }',
+  "Empty issues only if tables, tabs, and repeating rows are actually clean. Always include blurb.",
 ].join("\n");
 
 function errorText(err: unknown): string {
@@ -146,29 +152,32 @@ function extractJsonObject(raw: string): unknown {
 }
 
 const LAYOUT_DEFECT =
-  /\b(overflow|clip|overlap|z-?index|scanline|unreadable|covered|leaking|cut off|collide|misalign)/i;
+  /\b(overflow|clip|overlap|z-?index|scanline|unreadable|covered|leaking|cut off|collide|misalign|shear(?:ed|s)?|ragged|gutter|truncated|too small to read)/i;
 
-/** VLM often names the attack class instead of quoting the catalog string. */
-const PAYLOAD_AS_CONTENT =
-  /\b(xss|sql\s*injection|sqli|test payloads?|payload texts?|injection (?:text|payload|string)s?|malformed svg|svg[\s/]+onload|onload\s*=\s*alert|leftover (?:test )?data)\b/i;
+/** Product chrome the walker did not type — keep clip of these even if junk is also on screen. */
+const PRODUCT_CHROME = /\b(column|tab titles?|tab labels?|void reason|column header)\b/i;
 
-/** Leftover --nasty fills are content. Layout breakage from that text still counts. */
-export function dropPayloadContentVisual(opts: { rule: string; message: string; where?: string }): boolean {
-  const blob = [opts.message, opts.where].filter(Boolean).join(" ");
-  if (LAYOUT_DEFECT.test(blob)) return false;
-  return textContainsNastyPayload(blob) || PAYLOAD_AS_CONTENT.test(blob);
+function nastyIgnorePrompt(): string {
+  const samples = nastyIgnoreSamples().map((s) => `- ${JSON.stringify(s)}`);
+  return [
+    "Ignore leftover --nasty walker fills as content. If a field or cell shows strings like these, that is expected test data, not a rendering defect:",
+    ...samples,
+    "Also ignore paraphrases of that junk: XSS payload, SQL injection, malformed SVG, onload=alert, UNION SELECT.",
+    "Do not file broken, clip, overflow, align, or other because that junk is visible, looks sheared, runs into an icon, or is \"inappropriate\" for a real name. We put it there.",
+    "Still file clip/scanline when a product string is sheared: a vendor or client name in a table (\"Expert Witness Servic\"), a tab title, a void-reason label, a column header. Leftover junk in a nearby field is not a reason to skip that checklist.",
+  ].join("\n");
 }
 
-const FLOATING_OVERLAY =
-  /\b(drop-?downs?|combobox(?:es)?|popovers?|listboxes?|context menus?|select menus?)\b/i;
-const OVERLAY_ITSELF_BROKEN = /\b(clip|cut off|overflow|off-?screen|leaking|viewport)\b/i;
-
-/** Open menus covering the page behind them is stacking, not a defect. */
-export function dropExpectedOverlayVisual(opts: { rule: string; message: string; where?: string }): boolean {
-  if (opts.rule !== "overlap" && opts.rule !== "zIndex") return false;
+/**
+ * Oracle: the walker typed this catalog string, so quoting it is not a
+ * pixel defect. Does not match paraphrases ("XSS payload"). Product
+ * chrome clip on the same line still counts.
+ */
+export function dropPayloadContentVisual(opts: { rule: string; message: string; where?: string }): boolean {
   const blob = [opts.message, opts.where].filter(Boolean).join(" ");
-  if (!FLOATING_OVERLAY.test(blob)) return false;
-  return !OVERLAY_ITSELF_BROKEN.test(blob);
+  if (!textContainsNastyPayload(blob)) return false;
+  if (PRODUCT_CHROME.test(blob) && LAYOUT_DEFECT.test(blob)) return false;
+  return true;
 }
 
 function visualIssue(opts: {
@@ -222,7 +231,7 @@ export function parseVisualReply(raw: string): ParsedVisualReply {
       const severity = rec.severity === "error" ? "error" : "warning";
       const where = typeof rec.where === "string" ? rec.where.replace(/\s+/g, " ").trim() : "";
       const dropOpts = { rule, message, ...(where ? { where } : {}) };
-      if (dropPayloadContentVisual(dropOpts) || dropExpectedOverlayVisual(dropOpts)) continue;
+      if (dropPayloadContentVisual(dropOpts)) continue;
       issues.push(
         visualIssue({
           rule,

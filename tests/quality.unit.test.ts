@@ -544,11 +544,13 @@ describe("quality ledger", () => {
     assert.match(md, /visual layout extras when a vision model ran/);
     assert.doesNotMatch(md, /No LLM/);
     assert.match(md, /`opaqueControl` block/);
-    assert.match(md, /`no-dup-id` error/);
-    assert.match(md, /`image-alt` error ×2/);
+    assert.match(md, /`no-dup-id` · error/);
+    assert.match(md, /`image-alt` · error ×2/);
     assert.match(md, /\*\*Visual\*\*/);
-    assert.match(md, /`overlap` warning — cards overlap the footer/);
-    assert.match(md, /`console.error` error — cm-quality-error/);
+    assert.match(md, /`overlap` · warning/);
+    assert.match(md, /cards overlap the footer/);
+    assert.match(md, /`console.error` · error/);
+    assert.match(md, /cm-quality-error/);
     const seoOnly = renderFindingsReport(
       [],
       {
@@ -583,7 +585,7 @@ describe("quality ledger", () => {
     );
     assert.match(seoOnly, /`\/about`/);
     assert.match(seoOnly, /\*\*SEO\*\*/);
-    assert.match(seoOnly, /`meta-description` warning/);
+    assert.match(seoOnly, /`meta-description` · warning/);
     const digest = renderFindingsReport(
       [],
       {
@@ -614,7 +616,7 @@ describe("quality ledger", () => {
       },
       "/tmp/findings.md",
     );
-    assert.match(digest, /`overlap` warning — cards overlap the footer/);
+    assert.match(digest, /`overlap` · warning\n\n  cards overlap the footer/);
     assert.doesNotMatch(digest, /\*\*Visual\*\*/);
   });
 });

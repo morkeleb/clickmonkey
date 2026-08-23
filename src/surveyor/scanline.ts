@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import type { QualityIssue } from "../schema/quality.js";
+import { SPARSE_MIN_PANE, sparseLayoutIssue, type SparseSample } from "./sparse.js";
 
 export type LayoutHit = {
   rule: "clip" | "scanline";
@@ -10,7 +11,7 @@ export type LayoutHit = {
 
 const MAX_HITS = 8;
 const CLIP_PX = 4;
-const SCAN_PX = 8;
+const SCAN_PX = 16;
 
 /**
  * Browser-side. Source string so tsx/esbuild `__name` helpers are not
@@ -181,7 +182,7 @@ const COLLECT_SRC = `(() => {
         "scanline",
         label + " in " + whereTable,
         label + " cells do not share a left edge",
-        spread >= 16 ? "high" : "medium",
+        spread >= 28 ? "high" : "medium",
       );
       if (hits.length >= MAX_HITS) return;
     }
@@ -220,22 +221,172 @@ const COLLECT_SRC = `(() => {
   return hits;
 })()`;
 
+/**
+ * Browser-side. Main-pane boxes for left-locked empty-right (sparse).
+ * Source string so tsx/esbuild `__name` helpers are not serialized into the page.
+ */
+const SPARSE_SRC = `(() => {
+  var MIN_PANE = ${SPARSE_MIN_PANE};
+  var vw = window.innerWidth || 0;
+  var vh = window.innerHeight || 0;
+  if (vw < MIN_PANE) return null;
+
+  function shown(el) {
+    if (!el) return false;
+    if (typeof el.checkVisibility === "function") {
+      if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+    }
+    var r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return false;
+    if (r.bottom <= 0 || r.right <= 0) return false;
+    if (r.top >= vh || r.left >= vw) return false;
+    return true;
+  }
+
+  function inChrome(el) {
+    return Boolean(
+      el.closest(
+        "nav, aside, header, footer, [role='navigation'], [role='banner'], [role='complementary'], [role='contentinfo']",
+      ),
+    );
+  }
+
+  function openDialog() {
+    var nodes = document.querySelectorAll("dialog[open], [role='dialog']");
+    var i;
+    for (i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (el.getAttribute("aria-hidden") === "true") continue;
+      if (!shown(el)) continue;
+      var r = el.getBoundingClientRect();
+      if (r.width < 80 || r.height < 80) continue;
+      return { el: el, box: r };
+    }
+    return null;
+  }
+
+  function sidebarRight() {
+    var nodes = document.querySelectorAll("nav, aside, [role='navigation'], [role='complementary']");
+    var right = 0;
+    var i;
+    for (i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (!shown(el)) continue;
+      var r = el.getBoundingClientRect();
+      if (r.left > 48) continue;
+      if (r.height < vh * 0.4) continue;
+      if (r.width > vw * 0.4) continue;
+      if (r.right > right) right = r.right;
+    }
+    return right;
+  }
+
+  var dlg = openDialog();
+  if (dlg && dlg.box.width < vw * 0.7) return null;
+
+  var paneEl = dlg ? dlg.el : document.querySelector("main, [role='main']");
+  var pane;
+  if (paneEl && shown(paneEl)) {
+    pane = paneEl.getBoundingClientRect();
+  } else {
+    var left = sidebarRight();
+    pane = { left: left, right: vw, top: 0, bottom: vh, width: vw - left, height: vh };
+  }
+  if (pane.right - pane.left < MIN_PANE) return null;
+
+  function clipText(s, n) {
+    var one = String(s || "").replace(/\\s+/g, " ").trim();
+    if (!one) return "";
+    return one.length <= n ? one : one.slice(0, n - 1) + "…";
+  }
+
+  function fieldCount(root) {
+    return root.querySelectorAll(
+      "input:not([type='hidden']):not([type='button']):not([type='submit']):not([type='file']), textarea, select",
+    ).length;
+  }
+
+  var boxes = [];
+  var where = "";
+  var h1 = paneEl && paneEl.querySelector ? paneEl.querySelector("h1, h2, [role='heading']") : null;
+  if (h1 && h1.innerText) where = clipText(h1.innerText, 40);
+
+  var forms = (paneEl || document).querySelectorAll("form");
+  var f;
+  for (f = 0; f < forms.length; f++) {
+    var form = forms[f];
+    if (inChrome(form) || !shown(form)) continue;
+    if (fieldCount(form) < 3) continue;
+    var fr = form.getBoundingClientRect();
+    boxes.push({ left: fr.left, right: fr.right, top: fr.top, bottom: fr.bottom });
+    if (!where) {
+      var labelled = form.getAttribute("aria-label") || form.getAttribute("name");
+      if (labelled) where = clipText(labelled, 40);
+    }
+  }
+
+  var tables = (paneEl || document).querySelectorAll("table, [role='table'], [role='grid']");
+  var t;
+  for (t = 0; t < tables.length; t++) {
+    var table = tables[t];
+    if (inChrome(table) || !shown(table)) continue;
+    var tr = table.getBoundingClientRect();
+    boxes.push({ left: tr.left, right: tr.right, top: tr.top, bottom: tr.bottom });
+  }
+
+  if (boxes.length === 0) {
+    var fields = (paneEl || document).querySelectorAll(
+      "input:not([type='hidden']):not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit']):not([type='file']), textarea, select",
+    );
+    var i;
+    var n = 0;
+    var minL = Infinity;
+    var maxR = -Infinity;
+    var minT = Infinity;
+    var maxB = -Infinity;
+    for (i = 0; i < fields.length; i++) {
+      var el = fields[i];
+      if (inChrome(el) || !shown(el)) continue;
+      var r = el.getBoundingClientRect();
+      minL = Math.min(minL, r.left);
+      maxR = Math.max(maxR, r.right);
+      minT = Math.min(minT, r.top);
+      maxB = Math.max(maxB, r.bottom);
+      n += 1;
+    }
+    if (n >= 3 && maxR > minL) {
+      boxes.push({ left: minL, right: maxR, top: minT, bottom: maxB });
+    }
+  }
+
+  if (boxes.length === 0) return null;
+  return {
+    pane: { left: pane.left, right: pane.right },
+    boxes: boxes,
+    where: where || "main pane",
+  };
+})()`;
+
 export async function scanTableLayout(page: Page): Promise<QualityIssue[]> {
   const hits = (await page.evaluate(COLLECT_SRC).catch(() => [])) as LayoutHit[];
-  if (!Array.isArray(hits)) return [];
   const issues: QualityIssue[] = [];
-  for (const hit of hits) {
-    if (hit.rule !== "clip" && hit.rule !== "scanline") continue;
-    if (!hit.message || !hit.where) continue;
-    issues.push({
-      source: "visual",
-      rule: hit.rule,
-      severity: hit.rule === "clip" ? "error" : "warning",
-      message: hit.message,
-      count: 1,
-      confidence: hit.confidence === "high" ? "high" : "medium",
-      where: hit.where,
-    });
+  if (Array.isArray(hits)) {
+    for (const hit of hits) {
+      if (hit.rule !== "clip" && hit.rule !== "scanline") continue;
+      if (!hit.message || !hit.where) continue;
+      issues.push({
+        source: "visual",
+        rule: hit.rule,
+        severity: hit.rule === "clip" ? "error" : "warning",
+        message: hit.message,
+        count: 1,
+        confidence: hit.confidence === "high" ? "high" : "medium",
+        where: hit.where,
+      });
+    }
   }
+  const sample = (await page.evaluate(SPARSE_SRC).catch(() => null)) as SparseSample | null;
+  const sparse = sparseLayoutIssue(sample);
+  if (sparse) issues.push(sparse);
   return issues;
 }

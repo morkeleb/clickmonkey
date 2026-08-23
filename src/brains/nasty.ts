@@ -103,6 +103,13 @@ export function samplePayloads(id: string, opts?: { limit?: number; dir?: string
   return out;
 }
 
+/** Short catalog examples for the vision prompt (xss + sqli). */
+export function nastyIgnoreSamples(opts?: { limitPerCatalog?: number; dir?: string }): string[] {
+  const n = opts?.limitPerCatalog ?? 5;
+  const dir = opts?.dir;
+  return [...samplePayloads("xss", { limit: n, dir }), ...samplePayloads("sqli", { limit: n, dir })];
+}
+
 function pick<T>(items: readonly T[], rng: () => number): T {
   return items[Math.floor(rng() * items.length)]!;
 }
@@ -178,9 +185,11 @@ function numericCatalogPool(fieldType: string | undefined): string[] {
   });
 }
 
-/** Native `<select>` / date / number inputs reject catalog junk; type-in fields still get it. */
+/** Native `<select>` / harvested typeahead lists reject catalog junk; type-in fields still get it. */
 export function pickNastyFill(field: ShownField, rng: () => number = Math.random): string {
-  if (field.type === "select") return pickSelectOption(field.options, rng) ?? "";
+  if (field.type === "select" || (field.options && field.options.length > 0)) {
+    return pickSelectOption(field.options, rng) ?? "";
+  }
   const html = (field.constraints?.htmlType ?? field.type ?? "").toLowerCase();
   if (NATIVE_TEMPORAL.has(html)) return fakerFill(field, rng);
   if (html === "number") {

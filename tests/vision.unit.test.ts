@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { ChatClient, ChatRequest } from "../src/brains/chat.js";
 import {
-  dropExpectedOverlayVisual,
   dropPayloadContentVisual,
   examineScreenshot,
   hashPngFile,
@@ -60,16 +59,23 @@ describe("parseVisualReply", () => {
     assert.match(VISUAL_BLURB_PROMPT, /mapped widgets lists fields or actions/i);
   });
 
-  it("tells the model leftover nasty payloads are content, not a rendering defect", () => {
-    assert.match(VISUAL_PROMPT, /XSS payload text/);
-    assert.match(VISUAL_PROMPT, /you MUST file clip\/scanline\/overflow/);
-    assert.match(VISUAL_PROMPT, /column wall that shears a word/);
-    assert.match(VISUAL_PROMPT, /Must-check: every visible table/);
-  });
-
-  it("tells the model an open dropdown covering the page is expected stacking", () => {
+  it("defines clip, scanline, and leftover nasty fills in the prompt, not as reply filters", () => {
+    assert.match(VISUAL_PROMPT, /Ignore leftover --nasty walker fills/);
+    assert.match(VISUAL_PROMPT, /<script>alert\(1\)<\/script>/);
+    assert.match(VISUAL_PROMPT, /OR '1'='1/);
+    assert.match(VISUAL_PROMPT, /Do not file broken, clip, overflow/);
+    assert.match(VISUAL_PROMPT, /product string is sheared/);
+    assert.match(VISUAL_PROMPT, /column wall shears a word/);
+    assert.match(VISUAL_PROMPT, /If you can read every letter of a field value, it is not clip/);
+    assert.match(VISUAL_PROMPT, /unit in its own chrome beside a number/);
+    assert.match(VISUAL_PROMPT, /Not font-family or brand preference/);
+    assert.match(VISUAL_PROMPT, /Not scanline: a label above its field/);
+    assert.match(VISUAL_PROMPT, /sparse:/);
+    assert.match(VISUAL_PROMPT, /Centered cards\/login/);
+    assert.match(VISUAL_PROMPT, /items inside an open menu/);
     assert.match(VISUAL_PROMPT, /expected stacking/);
     assert.match(VISUAL_PROMPT, /open dropdown/);
+    assert.doesNotMatch(VISUAL_PROMPT, /brand or typography taste/);
   });
 
   it("reads a page blurb from the same JSON", () => {
@@ -182,7 +188,7 @@ describe("parseVisualReply", () => {
     assert.equal(out.issues[0]?.rule, "scanline");
   });
 
-  it("drops a report when it quotes a --nasty catalog payload or paraphrases XSS/SQLi, not the word malicious", () => {
+  it("drops a report only when it quotes a --nasty catalog string, not a paraphrase", () => {
     assert.equal(
       dropPayloadContentVisual({
         rule: "broken",
@@ -192,11 +198,19 @@ describe("parseVisualReply", () => {
     );
     assert.equal(
       dropPayloadContentVisual({
+        rule: "clip",
+        message: "Field value contains SQL injection junk (' OR '1'='1') and is clipped mid-word",
+        where: "Legal Name field",
+      }),
+      true,
+    );
+    assert.equal(
+      dropPayloadContentVisual({
         rule: "broken",
         message: "Input field displays XSS payload text instead of placeholder or error state.",
         where: "Tenant Id input field",
       }),
-      true,
+      false,
     );
     assert.equal(
       dropPayloadContentVisual({
@@ -207,24 +221,25 @@ describe("parseVisualReply", () => {
     );
     assert.equal(
       dropPayloadContentVisual({
-        rule: "broken",
-        message: "Input fields contain malformed SVG code instead of text",
-        where: "Billing Split",
+        rule: "clip",
+        message: "Field contains SQL injection test string that is not clipped but visually inappropriate",
+        where: "Legal Name field",
       }),
-      true,
+      false,
     );
     assert.equal(
       dropPayloadContentVisual({
-        rule: "broken",
-        message: `Contains malformed text: '"<svg onload=alert(1)>"' instead of expected attorney name.`,
-        where: "Originating Split * Attorney input field",
+        rule: "clip",
+        message: "Vendor column shears 'Expert Witness Servic' mid-word with no ellipsis",
+        where: "Ready-to-Pay table",
       }),
-      true,
+      false,
     );
     assert.equal(
       dropPayloadContentVisual({
-        rule: "overflow",
-        message: "XSS payload text overflows the Tenant Id field",
+        rule: "clip",
+        message: "Leftover XSS in search; Vendor column shears Expert Witness Servic",
+        where: "Ready-to-Pay table",
       }),
       false,
     );
@@ -261,52 +276,45 @@ describe("parseVisualReply", () => {
     );
   });
 
-  it("drops an open dropdown covering the page, keeps a clipped menu or colliding cards", () => {
-    assert.equal(
-      dropExpectedOverlayVisual({
-        rule: "overlap",
-        message: "Dropdown menu overlaps with the 'No matching records' message, visually obscuring part of the text.",
-        where: "Readiness dropdown menu and 'No matching records' message",
-      }),
-      true,
-    );
-    assert.equal(
-      dropExpectedOverlayVisual({
-        rule: "overlap",
-        message: "Two cards overlap on the dashboard",
-      }),
-      false,
-    );
-    assert.equal(
-      dropExpectedOverlayVisual({
-        rule: "clip",
-        message: "Dropdown menu is cut off by the viewport",
-      }),
-      false,
-    );
+  it("does not censor clip, scanline, or overlay phrasing in parse — the prompt owns those", () => {
     const out = parseVisualReply(
       JSON.stringify({
         issues: [
           {
-            rule: "overlap",
+            rule: "clip",
             severity: "warning",
-            confidence: "medium",
-            where: "Readiness dropdown menu and 'No matching records' message",
-            message: "Dropdown menu overlaps with the 'No matching records' message",
+            confidence: "high",
+            message: "Text 'Mafalda Boyle' is clipped at the end, with the 'e' and 'y' partially cut off",
+            where: "Legal Name* field",
+          },
+          {
+            rule: "clip",
+            severity: "warning",
+            confidence: "high",
+            message: "Vendor column shears 'Expert Witness Servic' mid-word",
+            where: "vouchers table",
+          },
+          {
+            rule: "scanline",
+            severity: "warning",
+            confidence: "high",
+            message:
+              "Menu items 'AI Training & Learning' and 'Fee entries' are misaligned to the left edge",
+            where: "Active tabs dropdown menu",
           },
           {
             rule: "overlap",
-            severity: "error",
-            confidence: "high",
-            message: "Two cards overlap",
+            severity: "warning",
+            confidence: "medium",
+            message: "Dropdown menu overlaps with the 'No matching records' message",
+            where: "Readiness dropdown menu",
           },
         ],
       }),
     );
     assert.equal(out.ok, true);
     if (!out.ok) return;
-    assert.equal(out.issues.length, 1);
-    assert.equal(out.issues[0]?.message, "Two cards overlap");
+    assert.equal(out.issues.length, 4);
   });
 });
 
