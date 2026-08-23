@@ -144,6 +144,8 @@ describe("mergePageModel", () => {
       status: "ok",
     });
     const saveKey = identityKey("page", "role", "button", "Save");
+    assert.equal(identityKey("page", "role", "button", "Employees"), identityKey("page", "role", "button", "Employees", 0));
+    assert.notEqual(identityKey("page", "role", "button", "Employees"), identityKey("page", "role", "button", "Employees", 1));
     const result = mergePageModel(model, {
       pageId: "home",
       surfaceId: "page",

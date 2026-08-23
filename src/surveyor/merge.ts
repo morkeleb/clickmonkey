@@ -20,8 +20,17 @@ export function identityKey(
   by: string,
   value: string,
   name?: string,
+  nth?: number,
 ): string {
-  return `${surfaceId}\0${by}\0${value}\0${name ?? ""}`;
+  const n = nth && nth > 0 ? String(nth) : "";
+  return `${surfaceId}\0${by}\0${value}\0${name ?? ""}\0${n}`;
+}
+
+export function widgetIdentityKey(
+  surfaceId: string,
+  w: { by: string; value: string; name?: string; nth?: number },
+): string {
+  return identityKey(surfaceId, w.by, w.value, w.name, w.nth);
 }
 
 export interface Candidate {
@@ -29,6 +38,7 @@ export interface Candidate {
   by: "testId" | "name" | "role" | "label";
   value: string;
   name?: string;
+  nth?: number;
   type?: FieldType;
   required?: boolean;
   resolves: boolean;
@@ -59,6 +69,7 @@ export function toFieldOrAction(id: string, c: Candidate): Field | Action {
       by: c.by,
       value: c.value,
       ...(c.by === "role" && c.name ? { name: c.name } : {}),
+      ...(c.nth && c.nth > 0 ? { nth: c.nth } : {}),
       status: "ok",
     });
   }
@@ -67,6 +78,7 @@ export function toFieldOrAction(id: string, c: Candidate): Field | Action {
     by: c.by,
     value: c.value,
     ...(c.by === "role" && c.name ? { name: c.name } : {}),
+    ...(c.nth && c.nth > 0 ? { nth: c.nth } : {}),
     status: "ok",
   });
 }
@@ -177,13 +189,13 @@ function mergeSurface(keep: Surface, other: Surface): { surface: Surface; added:
   const surface = structuredClone(keep);
   if (!surface.locator && other.locator) surface.locator = structuredClone(other.locator);
   const byIdentity = new Map<string, Widget>();
-  for (const w of surface.fields) byIdentity.set(identityKey(surface.id, w.by, w.value, w.name), w);
-  for (const w of surface.actions) byIdentity.set(identityKey(surface.id, w.by, w.value, w.name), w);
+  for (const w of surface.fields) byIdentity.set(widgetIdentityKey(surface.id, w), w);
+  for (const w of surface.actions) byIdentity.set(widgetIdentityKey(surface.id, w), w);
   const used = new Set<string>([...surface.fields.map((f) => f.id), ...surface.actions.map((a) => a.id)]);
   let added = 0;
 
   const take = (w: Widget, kind: "field" | "action") => {
-    const key = identityKey(surface.id, w.by, w.value, w.name);
+    const key = widgetIdentityKey(surface.id, w);
     const found = byIdentity.get(key);
     if (found) {
       const merged = mergeWidget(found, w);
@@ -413,11 +425,11 @@ export function mergePageModel(model: PageModel, input: MergeInput): MergeResult
   applyLastOpensHint(next, input);
 
   const byIdentity = new Map<string, Widget>();
-  for (const w of surface.fields) byIdentity.set(identityKey(input.surfaceId, w.by, w.value, w.name), w);
-  for (const w of surface.actions) byIdentity.set(identityKey(input.surfaceId, w.by, w.value, w.name), w);
+  for (const w of surface.fields) byIdentity.set(widgetIdentityKey(input.surfaceId, w), w);
+  for (const w of surface.actions) byIdentity.set(widgetIdentityKey(input.surfaceId, w), w);
 
   const candidateKeys = new Set(
-    input.candidates.map((c) => identityKey(input.surfaceId, c.by, c.value, c.name)),
+    input.candidates.map((c) => widgetIdentityKey(input.surfaceId, c)),
   );
   const used = new Set<string>([
     ...surface.fields.map((f) => f.id),
@@ -426,7 +438,7 @@ export function mergePageModel(model: PageModel, input: MergeInput): MergeResult
   const appended: string[] = [];
 
   for (const c of input.candidates) {
-    const key = identityKey(input.surfaceId, c.by, c.value, c.name);
+    const key = widgetIdentityKey(input.surfaceId, c);
     const found = byIdentity.get(key);
     if (found) {
       found.status = c.resolves ? "ok" : "unresolved";
@@ -446,7 +458,7 @@ export function mergePageModel(model: PageModel, input: MergeInput): MergeResult
   }
 
   for (const w of [...surface.fields, ...surface.actions]) {
-    const key = identityKey(input.surfaceId, w.by, w.value, w.name);
+    const key = widgetIdentityKey(input.surfaceId, w);
     if (candidateKeys.has(key)) continue;
     applyLeftover(w, key, input.leftoverResolves);
   }

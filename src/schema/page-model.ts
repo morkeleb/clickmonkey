@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Locator, LocatorBy } from "./locator.js";
+import { Locator, LocatorBy, locatorShape } from "./locator.js";
 
 export const FieldType = z.enum([
   "text",
@@ -40,9 +40,7 @@ export const Field = z
     id: Id,
     required: z.boolean().default(false),
     type: FieldType,
-    by: LocatorBy,
-    value: z.string().min(1),
-    name: z.string().min(1).optional(),
+    ...locatorShape,
     status: WidgetStatus.default("ok"),
     previousLabel: z.string().min(1).optional(),
   })
@@ -53,9 +51,7 @@ export type Field = z.infer<typeof Field>;
 export const Action = z
   .object({
     id: Id,
-    by: LocatorBy,
-    value: z.string().min(1),
-    name: z.string().min(1).optional(),
+    ...locatorShape,
     opens: z.string().min(1).optional(),
     status: WidgetStatus.default("ok"),
     previousLabel: z.string().min(1).optional(),
@@ -171,6 +167,41 @@ export type PageModelDraft = z.infer<typeof PageModelDraft>;
 
 export function emptyDraft(app = "app"): PageModelDraft {
   return { schemaVersion: 1, app, generation: 0, pages: [] };
+}
+
+function dropUnrecognizedKeys(
+  data: unknown,
+  issues: { code: string; keys?: string[]; path: PropertyKey[] }[],
+): unknown {
+  const next = structuredClone(data);
+  for (const issue of issues) {
+    if (issue.code !== "unrecognized_keys" || !issue.keys?.length) continue;
+    let cur: unknown = next;
+    for (const p of issue.path) {
+      if (cur == null || typeof cur !== "object") {
+        cur = undefined;
+        break;
+      }
+      cur = (cur as Record<PropertyKey, unknown>)[p];
+    }
+    if (cur == null || typeof cur !== "object") continue;
+    for (const key of issue.keys) delete (cur as Record<string, unknown>)[key];
+  }
+  return next;
+}
+
+/** Read a map.json. `dropUnknown` keeps the UI live when a walker wrote a newer optional key. */
+export function parsePageModelDraft(raw: unknown, opts?: { dropUnknown?: boolean }): PageModelDraft {
+  if (!opts?.dropUnknown) return PageModelDraft.parse(raw);
+  let data = raw;
+  for (let i = 0; i < 16; i++) {
+    const parsed = PageModelDraft.safeParse(data);
+    if (parsed.success) return parsed.data;
+    const unknown = parsed.error.issues.filter((iss) => iss.code === "unrecognized_keys");
+    if (unknown.length === 0) throw parsed.error;
+    data = dropUnrecognizedKeys(data, unknown);
+  }
+  return PageModelDraft.parse(data);
 }
 
 export type Widget = Field | Action;

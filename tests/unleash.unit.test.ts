@@ -167,6 +167,14 @@ describe("pickSelectOption / plausibleFill", () => {
     const name = plausibleFill({ id: "name", value: "", type: "text" }, () => 0.9, false);
     assert.ok(name.length > 0);
     assert.notEqual(name, "x");
+    assert.equal(
+      plausibleFill(
+        { id: "country", value: "", type: "text", options: [{ value: "NO", label: "Norway" }] },
+        () => 0,
+        false,
+      ),
+      "NO",
+    );
     assert.equal(plausibleFill({ id: "agree", value: "false", type: "checkbox" }, () => 0, false), "true");
     assert.equal(plausibleFill({ id: "agree", value: "false", type: "checkbox" }, () => 0.9, false), "false");
     assert.equal(plausibleFill({ id: "agree", value: "false", type: "checkbox" }, () => 0.9, true), "false");

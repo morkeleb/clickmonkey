@@ -4,10 +4,13 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   PageModel,
+  PageModelDraft,
   parseLog,
   formatLog,
   formatStep,
   parseLine,
+  parseMapForUi,
+  parsePageModelDraft,
   Config,
   LeashFile,
   emptyConfig,
@@ -48,6 +51,67 @@ describe("PageModel schema", () => {
 
   it("rejects illegal by", () => {
     assert.throws(() => Locator.parse({ by: "xpath", value: "//div" }));
+  });
+
+  it("accepts nth on a duplicate role locator", () => {
+    const loc = Locator.parse({ by: "role", value: "button", name: "Employees", nth: 1 });
+    assert.equal(loc.nth, 1);
+  });
+
+  it("accepts nth on a duplicate action", () => {
+    const model = PageModel.parse({
+      schemaVersion: 1,
+      app: "x",
+      pages: [
+        {
+          id: "home",
+          path: "/",
+          ready: { by: "testId", value: "home" },
+          surfaces: [
+            {
+              id: "page",
+              kind: "page",
+              fields: [],
+              actions: [
+                { id: "employees", by: "role", value: "button", name: "Employees" },
+                { id: "employeesList", by: "role", value: "button", name: "Employees", nth: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    assert.equal(model.pages[0]?.surfaces[0]?.actions[1]?.nth, 1);
+  });
+
+  it("drops unknown widget keys when reading a map for the UI", () => {
+    const raw = {
+      schemaVersion: 1,
+      app: "x",
+      pages: [
+        {
+          id: "home",
+          path: "/",
+          ready: { by: "testId", value: "home" },
+          surfaces: [
+            {
+              id: "page",
+              kind: "page",
+              fields: [],
+              actions: [
+                { id: "go", by: "testId", value: "go", bogus: true },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    assert.throws(() => PageModelDraft.parse(raw));
+    const draft = parsePageModelDraft(raw, { dropUnknown: true });
+    assert.equal(draft.pages[0]?.surfaces[0]?.actions[0]?.id, "go");
+    assert.equal("bogus" in (draft.pages[0]?.surfaces[0]?.actions[0] ?? {}), false);
+    const ui = parseMapForUi(raw);
+    assert.equal(ui.pages[0]?.surfaces[0]?.actions[0]?.id, "go");
   });
 
   it("rejects name on a non-role locator", () => {

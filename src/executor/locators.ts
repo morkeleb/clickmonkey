@@ -49,19 +49,30 @@ export function cssEscape(value: string): string {
 }
 
 export function toPlaywrightLocator(root: Page | PwLocator, loc: Locator): PwLocator {
+  let raw: PwLocator;
   switch (loc.by) {
     case "testId":
-      return root.getByTestId(loc.value);
+      raw = root.getByTestId(loc.value);
+      break;
     case "name":
-      return root.locator(`[name="${cssEscape(loc.value)}"]`);
+      raw = root.locator(`[name="${cssEscape(loc.value)}"]`);
+      break;
     case "role":
-      return root.getByRole(
+      raw = root.getByRole(
         loc.value as AriaRole,
         loc.name ? { name: loc.name, exact: true } : {},
       );
+      break;
     case "label":
-      return root.getByLabel(loc.value, { exact: true });
+      raw = root.getByLabel(loc.value, { exact: true });
+      break;
+    default: {
+      const _never: never = loc.by;
+      throw new Error(`unknown locator by ${_never}`);
+    }
   }
+  // Always pin an index so a later duplicate cannot steal the first widget.
+  return loc.nth !== undefined && loc.nth > 0 ? raw.nth(loc.nth) : raw.first();
 }
 
 /** Resolve a widget inside its surface (dialog) when the surface has a locator. */
@@ -183,7 +194,7 @@ export async function explainActableMiss(loc: PwLocator, page: Page): Promise<Ac
   return "hidden";
 }
 
-export function actableMissMessage(key: string, miss: ActableMiss): string {
+export function actableMissHeadline(key: string, miss: ActableMiss): string {
   switch (miss) {
     case "missing":
       return `${key} was not found`;
@@ -196,6 +207,90 @@ export function actableMissMessage(key: string, miss: ActableMiss): string {
     default:
       return `${key} is not visible`;
   }
+}
+
+export type ActableMissExtra = {
+  waitSeconds?: number;
+  fills?: Array<{ ref: string; value: string }>;
+  hints?: string[];
+};
+
+/** One-line miss. Pass `extra` on disabled clicks so the finding names fills and edit-mode hints. */
+export function actableMissMessage(key: string, miss: ActableMiss, extra?: ActableMissExtra): string {
+  const head = actableMissHeadline(key, miss);
+  if (miss !== "disabled" || extra === undefined) return head;
+  const wait = extra.waitSeconds ?? Math.round(ACTABLE_WAIT_MS / 1000);
+  const lines = [
+    head,
+    "",
+    `ClickMonkey waited ${wait}s for it to enable, then gave up. Users cannot finish this screen.`,
+  ];
+  if (extra.fills && extra.fills.length > 0) {
+    lines.push("", "Just filled:");
+    for (const f of extra.fills) {
+      lines.push(`- \`${f.ref}\` ${JSON.stringify(f.value)}`);
+    }
+  } else {
+    lines.push(
+      "",
+      "No fills were recorded on this page before the click. Save often stays disabled until a field change is registered (dirty tracking), not because the form is hidden.",
+    );
+  }
+  if (extra.hints && extra.hints.length > 0) {
+    lines.push("", ...extra.hints);
+  }
+  return lines.join("\n");
+}
+
+export async function disabledControlHints(loc: PwLocator, page: Page): Promise<string[]> {
+  const hints: string[] = [];
+  const el = loc.first();
+  await el.scrollIntoViewIfNeeded().catch(() => undefined);
+  const title = (await el.getAttribute("title").catch(() => null))?.trim();
+  if (title) hints.push(`The control's title is ${JSON.stringify(title)}.`);
+  const described = await el
+    .evaluate((node) => {
+      const id = (node as { getAttribute(name: string): string | null }).getAttribute("aria-describedby");
+      if (!id) return "";
+      return id
+        .split(/\s+/)
+        .map((part) => node.ownerDocument.getElementById(part)?.innerText ?? "")
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+    })
+    .catch(() => "");
+  if (described) hints.push(described);
+  const form = await page
+    .evaluate(() => {
+      const root = document.querySelector("main, [role='main']") ?? document.body;
+      const fields = [...root.querySelectorAll("input, textarea, select")].filter((node) => {
+        const r = (node as HTMLElement).getBoundingClientRect();
+        return r.width > 2 && r.height > 2;
+      });
+      let readonly = 0;
+      let disabled = 0;
+      for (const node of fields) {
+        const typed = node as HTMLInputElement;
+        if (typed.readOnly || typed.getAttribute("aria-readonly") === "true") readonly += 1;
+        else if (typed.disabled || typed.getAttribute("aria-disabled") === "true") disabled += 1;
+      }
+      return { fields: fields.length, readonly, disabled };
+    })
+    .catch(() => ({ fields: 0, readonly: 0, disabled: 0 }));
+  if (form.fields > 0) {
+    const live = form.fields - form.readonly - form.disabled;
+    if (form.readonly >= form.fields / 2) {
+      hints.push(`Most fields are readonly (${form.readonly} of ${form.fields}).`);
+    } else if (form.disabled >= form.fields / 2) {
+      hints.push(`Most fields are disabled (${form.disabled} of ${form.fields}).`);
+    } else {
+      hints.push(
+        `The form is visible; ${live} of ${form.fields} fields look editable. Save itself is disabled (often until a change is registered), not hidden.`,
+      );
+    }
+  }
+  return hints;
 }
 
 export async function isPresentWidget(loc: PwLocator, page: Page): Promise<boolean> {

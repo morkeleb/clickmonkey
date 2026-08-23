@@ -40,6 +40,8 @@ export interface BrainContext {
   huntTarget?: string;
   /** Remaining local steps after a submit that changed page. Hunt waits. */
   lootSteps?: number;
+  /** Times this run stood on `page/surface`. Map scout lifts unseen rooms first. */
+  pageVisits?: Readonly<Record<string, number>>;
   plan?: UiExplorePlan;
   pages?: readonly Page[];
   /** Last vision assist note. Context only — never a command or widget id. */

@@ -4,6 +4,7 @@ import type { ShownAction, ShownField, View } from "../schema/view.js";
 import { fakerFill } from "./faker-fill.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
 import { detectWalkerMode } from "./walker-mode.js";
+import { decideMapScout } from "./map-scout.js";
 
 function pick<T>(items: readonly T[], rng: () => number): T {
   return items[Math.floor(rng() * items.length)]!;
@@ -304,6 +305,10 @@ export function plausibleFill(
     return pickSelectOption(field.options, rng) ?? "";
   }
   if (field.type === "checkbox") return rng() < 0.5 ? "true" : "false";
+  if (field.options && field.options.length > 0) {
+    if (emptyOk && rng() < 0.5) return "";
+    return pickSelectOption(field.options, rng) ?? fakerFill(field, rng);
+  }
   if (emptyOk && rng() < 0.5) return "";
   return fakerFill(field, rng);
 }
@@ -538,6 +543,8 @@ export function decideUnleash(ctx: BrainContext, rng: () => number = Math.random
 
 /** Click links and other non-write actions. Never fill. Hop to a known page when stuck. */
 export function decideMap(ctx: BrainContext, rng: () => number = Math.random): BrainDecision {
+  const scout = decideMapScout(ctx, rng);
+  if (scout) return scout;
   const { view } = ctx;
   const nav = usableClicks(navigateActions(view), ctx);
   if (nav.length === 0) return hopPage(view, rng);

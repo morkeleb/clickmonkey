@@ -1,17 +1,11 @@
 import type { Page } from "playwright";
-import type { Locator } from "../schema/locator.js";
-import type { PageModel, Widget } from "../schema/page-model.js";
+import { locatorOf } from "../schema/locator.js";
+import type { PageModel } from "../schema/page-model.js";
 import { resolveCount } from "../surveyor/resolve.js";
 
 export interface LiveFailure {
   widgetRef: string;
   count: number;
-}
-
-function asLocator(widget: Widget): Locator {
-  return widget.name === undefined
-    ? { by: widget.by, value: widget.value }
-    : { by: widget.by, value: widget.value, name: widget.name };
 }
 
 export async function liveValidate(
@@ -41,7 +35,7 @@ export async function liveValidate(
   const pageSurface = target.surfaces.find((s) => s.kind === "page");
   if (pageSurface) {
     for (const widget of [...pageSurface.fields, ...pageSurface.actions]) {
-      const resolved = await resolveCount(page, asLocator(widget));
+      const resolved = await resolveCount(page, locatorOf(widget));
       if (resolved.status !== "ok") {
         failures.push({
           widgetRef: `${pageSurface.id}.${widget.id}`,

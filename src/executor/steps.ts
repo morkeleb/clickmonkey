@@ -18,6 +18,7 @@ import { slug } from "../surveyor/ids.js";
 import {
   ACTABLE_WAIT_MS,
   actableMissMessage,
+  disabledControlHints,
   explainActableMiss,
   pickActable,
   toPlaywrightLocator,
@@ -45,6 +46,7 @@ import {
   readSelectOptions,
   selectOptionQuery,
 } from "./select-options.js";
+import { fillTypeahead } from "./typeahead.js";
 
 export type StepFailure = {
   kind: FindingKind;
@@ -315,6 +317,30 @@ async function checkTrackedFillsAfterSubmit(
   };
 }
 
+async function actableMissFailure(
+  state: RunState,
+  key: string,
+  loc: ReturnType<typeof widgetLocator>,
+): Promise<StepFailure> {
+  const miss = await explainActableMiss(loc, state.page);
+  const extra =
+    miss === "disabled"
+      ? {
+          waitSeconds: Math.round(ACTABLE_WAIT_MS / 1000),
+          fills: (state.lastFills ?? []).map((f) => ({
+            ref: `${f.surface}.${f.id}`,
+            value: clipFillValue(f.value),
+          })),
+          hints: await disabledControlHints(loc, state.page),
+        }
+      : undefined;
+  return {
+    kind: "expectFailed",
+    message: actableMissMessage(key, miss, extra),
+    widgetRef: key,
+  };
+}
+
 async function performClick(
   state: RunState,
   surfaceId: string,
@@ -324,13 +350,7 @@ async function performClick(
   if (!actable.ok) return actable.failure;
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
   const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS, scroll: true });
-  if (!pw) {
-    return {
-      kind: "expectFailed",
-      message: actableMissMessage(actable.key, await explainActableMiss(raw, state.page)),
-      widgetRef: actable.key,
-    };
-  }
+  if (!pw) return actableMissFailure(state, actable.key, raw);
   if (!isField(actable.widget) && !state.inIntro) {
     const blocked = await writePolicyBlocked(state, actable.surface, actable.widget, actable.locator);
     if (blocked) {
@@ -385,13 +405,7 @@ async function performFill(
   const resolved = await resolveSecretAsync(value);
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
   const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS, scroll: true });
-  if (!pw) {
-    return {
-      kind: "expectFailed",
-      message: actableMissMessage(actable.key, await explainActableMiss(raw, state.page)),
-      widgetRef: actable.key,
-    };
-  }
+  if (!pw) return actableMissFailure(state, actable.key, raw);
   recordLocator(state, actable.key, actable.locator);
   const field = isField(actable.widget) ? actable.widget : undefined;
   if (field?.type === "checkbox") {
@@ -410,6 +424,27 @@ async function performFill(
       };
     }
     await pw.selectOption(selectOptionQuery(match), { timeout: 2_000 });
+    return undefined;
+  }
+  const typeahead = await fillTypeahead(pw, state.page, resolved, actable.key);
+  if (typeahead.handled) {
+    if (typeahead.failure) {
+      return { kind: "expectFailed", message: typeahead.failure.message, widgetRef: actable.key };
+    }
+    const constraints = await readFieldConstraints(pw);
+    const validity = await readFieldValidity(pw, state.page, id);
+    const liveValue = await pw.inputValue().catch(() => typeahead.value);
+    const shouldInvalid = fillShouldLookInvalid(
+      {
+        id,
+        type: field?.type,
+        required: field?.required,
+        label: field?.name ?? field?.previousLabel,
+        constraints,
+      },
+      liveValue,
+    );
+    rememberTrackedFill(state, { surface: surfaceId, id, value: liveValue, shouldInvalid, validity });
     return undefined;
   }
   try {

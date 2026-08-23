@@ -187,12 +187,25 @@ function toCandidate(kind: "field" | "action", info: WidgetRead): Candidate | un
   };
 }
 
+function stampDuplicateNth(candidates: Candidate[]): void {
+  const groups = new Map<string, Candidate[]>();
+  for (const c of candidates) {
+    const key = identityKey("", c.by, c.value, c.name);
+    const g = groups.get(key) ?? [];
+    g.push(c);
+    groups.set(key, g);
+  }
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    for (let i = 1; i < g.length; i++) g[i]!.nth = i;
+  }
+}
+
 async function collectKind(
   root: Page | PwLocator,
   kind: "field" | "action",
   selector: string,
   opts: CollectOptions | undefined,
-  seen: Set<string>,
   out: Candidate[],
 ): Promise<void> {
   const loc = root.locator(selector);
@@ -211,9 +224,6 @@ async function collectKind(
     }
     const candidate = toCandidate(kind, info);
     if (!candidate) continue;
-    const key = identityKey("", candidate.by, candidate.value, candidate.name);
-    if (seen.has(key)) continue;
-    seen.add(key);
     out.push(candidate);
   }
 }
@@ -222,9 +232,9 @@ export async function collectCandidates(
   root: Page | PwLocator,
   opts?: CollectOptions,
 ): Promise<Candidate[]> {
-  const seen = new Set<string>();
   const out: Candidate[] = [];
-  await collectKind(root, "field", FIELD_SELECTOR, opts, seen, out);
-  await collectKind(root, "action", ACTION_SELECTOR, opts, seen, out);
+  await collectKind(root, "field", FIELD_SELECTOR, opts, out);
+  await collectKind(root, "action", ACTION_SELECTOR, opts, out);
+  stampDuplicateNth(out);
   return out;
 }

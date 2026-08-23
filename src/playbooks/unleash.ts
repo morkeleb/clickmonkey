@@ -110,6 +110,7 @@ export async function runUnleash(opts: {
     const clicksByPage = new Map<string, string[]>();
     const noopsByPage = new Map<string, string[]>();
     const formHits: Record<string, number> = {};
+    const pageVisits: Record<string, number> = {};
     let huntTarget: string | undefined;
     let lootSteps = 0;
     while (stepsUsed < steps) {
@@ -117,6 +118,8 @@ export async function runUnleash(opts: {
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
         : undefined;
       const onPage = view.page;
+      const hereKey = `${view.page}/${view.surface}`;
+      pageVisits[hereKey] = (pageVisits[hereKey] ?? 0) + 1;
       const decision = await brain.decide({
         view,
         stepsUsed,
@@ -126,6 +129,7 @@ export async function runUnleash(opts: {
         recentClicks: clicksByPage.get(onPage) ?? [],
         noopIds: noopsByPage.get(onPage) ?? [],
         formHits,
+        pageVisits,
         ...(huntTarget ? { huntTarget } : {}),
         ...(lootSteps > 0 ? { lootSteps } : {}),
       });

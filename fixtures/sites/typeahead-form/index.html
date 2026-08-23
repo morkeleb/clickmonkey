@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Typeahead form</title>
+  </head>
+  <body>
+    <main data-testid="home">
+      <form id="create">
+        <label for="country">Country</label>
+        <input
+          id="country"
+          name="country"
+          data-testid="country"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="country-list"
+          autocomplete="off"
+          required
+        />
+        <ul id="country-list" role="listbox" hidden>
+          <li role="option">Norway</li>
+          <li role="option">Sweden</li>
+          <li role="option">Denmark</li>
+        </ul>
+        <input type="hidden" name="countryId" id="countryId" />
+
+        <label for="people">People</label>
+        <div
+          id="people-wrap"
+          role="combobox"
+          aria-expanded="false"
+          aria-haspopup="listbox"
+          aria-controls="people-list"
+        >
+          <input id="people" name="people" data-testid="people" autocomplete="off" aria-label="People" />
+        </div>
+        <ul id="people-list" role="listbox" hidden>
+          <li role="option">Alice</li>
+          <li role="option">Bob</li>
+          <li role="option">Sam</li>
+        </ul>
+        <input type="hidden" name="peopleId" id="peopleId" />
+
+        <label for="city">City</label>
+        <input id="city" name="city" data-testid="city" list="city-list" />
+        <datalist id="city-list">
+          <option value="Oslo"></option>
+          <option value="Bergen"></option>
+          <option value="Tromsø"></option>
+        </datalist>
+
+        <button type="submit" data-testid="submit">Create</button>
+      </form>
+    </main>
+    <script>
+      document.body.appendChild(document.getElementById("people-list"));
+
+      function bindSearch(opts) {
+        const { input, list, hid, wrap, debounceMs } = opts;
+        const all = [...list.querySelectorAll("[role=option]")];
+        let timer;
+        function open(filter) {
+          const q = (filter || "").trim().toLowerCase();
+          let n = 0;
+          for (const o of all) {
+            const show = q.length > 0 && o.textContent.toLowerCase().includes(q);
+            o.hidden = !show;
+            if (show) n++;
+          }
+          list.hidden = n === 0;
+          input.setAttribute("aria-expanded", String(n > 0));
+          wrap?.setAttribute("aria-expanded", String(n > 0));
+        }
+        input.addEventListener("focus", () => open(input.value));
+        input.addEventListener("input", () => {
+          hid.value = "";
+          clearTimeout(timer);
+          timer = setTimeout(() => open(input.value), debounceMs);
+        });
+        list.addEventListener("mousedown", (e) => {
+          const o = e.target.closest("[role=option]");
+          if (!o) return;
+          e.preventDefault();
+          input.value = o.textContent.trim();
+          hid.value = o.textContent.trim();
+          list.hidden = true;
+          input.setAttribute("aria-expanded", "false");
+          wrap?.setAttribute("aria-expanded", "false");
+        });
+      }
+
+      bindSearch({
+        input: document.getElementById("country"),
+        list: document.getElementById("country-list"),
+        hid: document.getElementById("countryId"),
+        debounceMs: 200,
+      });
+      bindSearch({
+        input: document.getElementById("people"),
+        list: document.getElementById("people-list"),
+        hid: document.getElementById("peopleId"),
+        wrap: document.getElementById("people-wrap"),
+        debounceMs: 300,
+      });
+
+      document.getElementById("create").addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (!document.getElementById("countryId").value) {
+          document.getElementById("country").setAttribute("aria-invalid", "true");
+          return;
+        }
+        location.href = "/ok.html";
+      });
+    </script>
+  </body>
+</html>

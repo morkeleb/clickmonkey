@@ -30,6 +30,44 @@ export function matchSelectOption(
   return options.find((o) => o.label === wanted);
 }
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** `AK` in `Alaska (AK)`, not the `ak` inside `Dakota`. */
+function hasToken(hay: string, needle: string): boolean {
+  if (!needle) return false;
+  return new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(needle)}(?:[^A-Za-z0-9]|$)`, "i").test(hay);
+}
+
+/** Typeahead lists: exact, case-insensitive, prefix, then a whole token in the label. */
+export function matchListedOption(
+  options: readonly LiveSelectOption[],
+  wanted: string,
+): LiveSelectOption | undefined {
+  const exact = matchSelectOption(options, wanted);
+  if (exact) return exact;
+  const needle = wanted.trim().toLowerCase();
+  if (!needle) return undefined;
+  const ci = options.find((o) => o.label.toLowerCase() === needle || o.value.toLowerCase() === needle);
+  if (ci) return ci;
+  const prefix = options.find(
+    (o) => o.label.toLowerCase().startsWith(needle) || o.value.toLowerCase().startsWith(needle),
+  );
+  if (prefix) return prefix;
+  return options.find((o) => hasToken(o.label, needle) || hasToken(o.value, needle));
+}
+
+/** Prefer a match for `wanted`; otherwise any listed row. */
+export function pickListedOption(
+  options: readonly LiveSelectOption[],
+  wanted: string,
+): LiveSelectOption | undefined {
+  const hit = matchListedOption(options, wanted);
+  if (hit) return hit;
+  return options.find((o) => (o.label || o.value).trim() !== "") ?? options[0];
+}
+
 /** Playwright `selectOption` query. Empty `value` is ambiguous — use the label. */
 export function selectOptionQuery(
   match: LiveSelectOption,

@@ -136,10 +136,10 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
     const leftoverResolves: Record<string, boolean> = {};
     if (surface) {
       const candKeys = new Set(
-        candidates.map((c) => identityKey(entry.surfaceId, c.by, c.value, c.name)),
+        candidates.map((c) => identityKey(entry.surfaceId, c.by, c.value, c.name, c.nth)),
       );
       for (const w of [...surface.fields, ...surface.actions]) {
-        const key = identityKey(entry.surfaceId, w.by, w.value, w.name);
+        const key = identityKey(entry.surfaceId, w.by, w.value, w.name, w.nth);
         if (candKeys.has(key)) continue;
         leftoverResolves[key] = (await resolveCount(root, locatorOf(w))).count >= 1;
       }

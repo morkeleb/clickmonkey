@@ -15,6 +15,7 @@ import { hoppablePages } from "./hop.js";
 import { formatFont, lookIsEmpty, readLook } from "./look.js";
 import { readFieldConstraints } from "./field-constraints.js";
 import { formatSelectOptionList, readSelectOptions } from "./select-options.js";
+import { looksLikeTypeahead, readTypeaheadOptions } from "./typeahead.js";
 import {
   toPlaywrightLocator,
   widgetLocator,
@@ -215,7 +216,12 @@ export async function buildView(state: {
       if (!includeWalkAction({ inNav: ctx.inNav, inMain: ctx.inMain, ...walkOpts })) continue;
       const value = await liveFieldValue(state.page, surface, field);
       const label = await liveLabel(state.page, surface, field);
-      const options = field.type === "select" ? await readSelectOptions(loc) : [];
+      const options =
+        field.type === "select"
+          ? await readSelectOptions(loc)
+          : (await looksLikeTypeahead(loc))
+            ? await readTypeaheadOptions(loc, state.page)
+            : [];
       const constraints = await readFieldConstraints(loc);
       shown.push({
         id: field.id,
