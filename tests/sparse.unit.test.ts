@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { VISUAL_PROMPT, VISUAL_RULES } from "../src/surveyor/vision.js";
+import { DOM_OWNED_VISUAL_RULES, VISUAL_PROMPT, VISUAL_RULES } from "../src/surveyor/vision.js";
 import { sparseLayoutIssue, sparseMetrics, type SparseSample } from "../src/surveyor/sparse.js";
 
 const pane = { left: 0, right: 1280 };
@@ -12,9 +12,9 @@ function sample(boxes: SparseSample["boxes"], extra?: Partial<SparseSample>): Sp
 describe("sparse layout", () => {
   it("is a visual rule defined as left-locked empty-right, not centered", () => {
     assert.ok(VISUAL_RULES.includes("sparse"));
-    assert.match(VISUAL_PROMPT, /sparse:/);
-    assert.match(VISUAL_PROMPT, /more than half the pane/);
-    assert.match(VISUAL_PROMPT, /Centered cards\/login/);
+    assert.ok((DOM_OWNED_VISUAL_RULES as readonly string[]).includes("sparse"));
+    assert.match(VISUAL_PROMPT, /DOM already measured overflow, clip, scanline, sparse/);
+    assert.doesNotMatch(VISUAL_PROMPT, /sparse:/);
   });
 
   it("flags a 30% left-locked column as high confidence", () => {

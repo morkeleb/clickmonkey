@@ -10,6 +10,9 @@ it in `clickmonkey/`. The log is a line DSL. The view is what a brain
 snapshot, and a `look` block (font palette + hit-tested cover) — not HTML.
 
 What it harvests vs what QA still owns: [docs/issue-classes.md](docs/issue-classes.md).
+Jobs, modes, and fog: [docs/walkers.md](docs/walkers.md).
+Fog ledger and hunger: [docs/fog.md](docs/fog.md).
+Host-LLM MCP (explore, then freeze and prove a spec): [docs/mcp.md](docs/mcp.md).
 
 0.0.7 stays tagged. Those configs will not run here.
 
@@ -58,30 +61,38 @@ playbook should pass there and write no findings.
 `clickmonkey step 'click page.open_create'` runs one line against the live
 page and appends it to `clickmonkey/runs/<id>/log.txt`.
 
-The map is fog of war. Walkers have jobs — they are not the same random clicker:
+The map is fog of war. Walkers have **jobs**; on a tile they pick a **mode**.
+Jobs, modes, and fog hunger: [docs/walkers.md](docs/walkers.md), [docs/fog.md](docs/fog.md).
 
 ```bash
 clickmonkey map --steps 80               # scout — grow pages/surfaces, never fill
 clickmonkey unleash --steps 200          # NPC — hunt mapped forms, fill, submit
 clickmonkey unleash --nasty --steps 200  # rogue — junk in those forms (site you own)
-clickmonkey explore --charter "…"        # paladin — do the job in the charter (needs brain)
-clickmonkey mcp                          # same paladin, host LLM via stdio
+clickmonkey explore --charter "…"        # paladin — exploratory testing, no MCP (needs brain)
+clickmonkey mcp                          # host-LLM paladin, then freeze/replay specs
 ```
 
 **Map** is the scout. It clicks unseen doors (unvisited pages and unopened
 dialogs) and pathfinds toward rooms it has not stood on, instead of grinding
 the same sidebar. It never fills and never clicks submit/save/delete. After
-it, the others have legal ids.
+it, the others have legal ids. Stale rooms (last visit days/weeks ago) should
+pull the same scout — fog drives hunger, not a fourth army.
 
-**Unleash** is an NPC on that map. It pathfinds toward forms (fields + submit),
-fills them, and watches what happens. Forms already filled this run drop in
-priority but stay in the pool. A little local chrome still gets a poke.
-`--nasty` is the rogue version of the same hunt: XSS/SQLi/overlong junk and
-missed validation, only on a site you own.
+**Unleash** is an NPC on that map. It pathfinds toward forms (fields + submit)
+this job has not walked recently, fills them, and watches what happens.
+Forms already filled this run drop in priority but stay in the pool. On the
+tile it picks **wizard** (lock), or the least-recent of **form** / **list** /
+**tab** / **dialog** / **empty**, else **nav**. Wizard fills then Next — it does not hop
+to the sidebar mid-stepper. `--nasty` is the rogue version of the same hunt
+on its own fog clock: XSS/SQLi/overlong junk and missed validation, only on
+a site you own.
 
 **Explore** is the paladin. A charter (ticket, `git log`) says what “doing the
 job” means; the model walks legal ids toward that, not toward random forms.
-MCP is the same role with the host LLM as the brain.
+It sees the same `Mode:` as unleash. `clickmonkey explore` is exploratory
+testing without MCP (needs `brain`). MCP is the same walk with the host LLM
+as the brain, then `spec_save` / `spec_run` to freeze a replayable spec and
+prove it — that is why you would use the MCP server instead of explore-only.
 
 Explore pings `brain` before it opens a browser. If the model is unreachable
 or the API key is missing, it exits 2 instead of walking blind. It will not
@@ -105,6 +116,7 @@ clickmonkey/
   replays/<id>/comparison.md     # before/after vs that report
   explore-context.md             # optional: app architecture for explore --skills
   specs/*.md                     # replayable clickmonkey fences
+  lands.json                     # last land per page, job, and mode (fog / hunger)
 ```
 
 ### Git
@@ -119,6 +131,7 @@ clickmonkey/bundle/
 clickmonkey/reports/
 clickmonkey/dev-origin
 clickmonkey/ui.pid
+clickmonkey/lands.json
 clickmonkey/**/*.json.lock
 clickmonkey/**/*.json.tmp
 ```
@@ -155,15 +168,15 @@ The `seo` block is optional. Leave it off for an app-only site. Use `private` pr
 - **skip** — extra widget id/label substrings the walker will not click. Sign out, log out, and close panel are skipped by default.
 - **screenshots** — per-step screenshots, default on. `"screenshots": false` turns auto shots off.
 - **seo** — optional. Scan the live `<head>` for title, meta description, Open Graph, and canonical problems. Off when omitted. See [SEO / meta](#seo--meta).
-- **vision** — optional screenshot model (blurbs, Sight, extra pixel defects). Same connection shape as `brain` (`baseUrl`, `model`, `apiKeyEnv`). Mix models (qwen text + qwen-vl on another host). `model` is required and is never copied from `brain`. `baseUrl` inherits when omitted. `apiKeyEnv` inherits only when `vision.baseUrl` is also omitted; `"apiKeyEnv": false` means no key. Per-step screenshots must stay on. Layout **geometry** (overflow, clip, overlap, covered controls, scanline, sparse, broken images, 24×24 hit targets) is a DOM pass on inspect and does not need this block. `issues` (default true) lets the model add the same rule names from pixels (contrast/align and anything the DOM cannot see). `high`/`medium` confidence; `low` is dropped. High-confidence extras are findings with the step screenshot (the walk does not stop). Medium stays on the quality ledger. A visual report that quotes a `--nasty` catalog payload is leftover test data, not a defect; overflow or clip of a **product** string still counts. `assist` (default true) adds explore sight notes. decide stays text-only.
+- **vision** — optional screenshot model (blurbs, Sight, pixel-only defects). Same connection shape as `brain` (`baseUrl`, `model`, `apiKeyEnv`). Mix models (qwen text + qwen-vl on another host). `model` is required and is never copied from `brain`. `baseUrl` inherits when omitted. `apiKeyEnv` inherits only when `vision.baseUrl` is also omitted; `"apiKeyEnv": false` means no key. Per-step screenshots must stay on. Layout is a **DOM** pass on inspect and does not need this block (overflow at 1280/375/320, clip, overlap, hit targets, focus, text spacing, dead hashes, and the rest — [docs/issue-classes.md](docs/issue-classes.md)). `issues` (default true) lets the model add **pixel-only** extras (contrast, align, empty-vs-broken, toasts, …). It is grounded with DOM hits and cannot overwrite them. `high`/`medium` confidence; `low` is dropped. High-confidence extras are findings with the step screenshot (the walk does not stop). Medium stays on the quality ledger. A visual report that quotes a `--nasty` catalog payload is leftover test data, not a defect; overflow or clip of a **product** string still counts. `assist` (default true) adds explore sight notes. decide stays text-only.
 
 v1 used `fence.blacklist` only for **URLs** (e.g. `#/login` after the monkey logged itself out). That is still the fence. `skip` is the widget denylist.
 
 Duplicate accessible names (two **Employees** buttons) are a `duplicateName` **warn**. Collect keeps both: the first match stays the plain locator, the rest get `nth` so the walker can open the child list, not only the section expander.
 
-`clickmonkey/map.json` is the page model `inspect` / `map` grow. Each page gets a one-line `description` (path, heading, fields, dialogs). With `vision` configured, a page-level screenshot upgrades that to what is actually on screen (dashboard, list, form, details) — not a modal shot. Explore may still polish with the text brain. Extra widgets never fail a replay. Several processes may share that file: each step takes a short lock, unions the trees, and writes back. That is cheap next to Playwright and the LLM.
+`clickmonkey/map.json` is the page model `inspect` / `map` grow. Each page gets a one-line `description` (path, heading, fields, dialogs). With `vision` configured, a page-level screenshot upgrades that to what is actually on screen (dashboard, list, form, details) — not a modal shot. A page whose last land before this run is within ~2 days and whose PNG hash matches the last scan skips extras (a missing caption still asks). Explore may still polish with the text brain. Extra widgets never fail a replay. Several processes may share that file: each step takes a short lock, unions the trees, and writes back. That is cheap next to Playwright and the LLM.
 
-As the monkey walks, each inspect updates that run's `testability.json` (can we locate the controls?) and `quality.json` (html-validate for HTML, axe-core for WCAG, JS `console` / `pageerror`, and a DOM layout pass: overflow, clip, overlap, covered controls, scanline, sparse panes, broken images, undersized hit targets). A report also flags when most walked pages share one `document.title` (tabs, screen readers, and search cannot tell routes apart). A 404 goes in that run's `broken.json`. The shared sitemap stays in `map.json`. Testability, HTML, axe, and layout issues keep a short `where` (accessible name, testid, id, or compacted CSS — not XPath). Per-step screenshots are on by default (`shots/step-NNN.png`). With `vision` configured, a second model may add pixel extras and a short Sight note for explore. High-confidence visual extras are also findings (with the screenshot); medium stays on the ledger. `clickmonkey report` combines quality/testability from the selected runs so two reports can be compared. Console warnings are ledger-only; the first uncaught `pageerror` per message is still a finding.
+As the monkey walks, each inspect updates that run's `testability.json` (can we locate the controls?) and `quality.json` (html-validate for HTML, axe-core for WCAG 2.0/2.1 A/AA plus a small extra allowlist, JS `console` / `pageerror`, and a DOM layout pass — overflow, clip, overlap, focus, text spacing, dead hashes, and the rest in [docs/issue-classes.md](docs/issue-classes.md)). A report also flags when most walked pages share one `document.title` (tabs, screen readers, and search cannot tell routes apart). A 404 goes in that run's `broken.json`. The shared sitemap stays in `map.json`. Testability, HTML, axe, and layout issues keep a short `where` (accessible name, testid, id, or compacted CSS — not XPath). Per-step screenshots are on by default (`shots/step-NNN.png`). With `vision` configured, a second model may add pixel extras and a short Sight note for explore; it cannot overwrite DOM layout hits. High-confidence visual extras are also findings (with the screenshot); medium stays on the ledger. `clickmonkey report` combines quality/testability from the selected runs so two reports can be compared. Console warnings are ledger-only; the first uncaught `pageerror` per message is still a finding.
 
 A page that lives on another host than the leash `url` (SSO, IdP) gets an `origin`. Pages seen during intro (login, callback) are marked `entry`. Walkers only hop to leash-origin pages that have widgets, are not `entry`, and would not cross the fence. `open` uses the page origin so a path like `/u/login` is not rewritten onto the app host. Intro waits until the browser has left the start URL and landed on a real app page before the walk starts.
 
@@ -220,101 +233,9 @@ clickmonkey ui --stop
 
 ## Exploratory testing via MCP
 
-The host LLM (Grok, Claude, Cursor, …) decides the next click. ClickMonkey still owns the browser, fence, map, and run tape. Visits are compact (pagemap, mode, look) — no page HTML. `config.brain` is not required; the host is the brain.
+`clickmonkey explore` is exploratory testing without the MCP server (needs `brain` in the leash). Use it in CI and when you want an unattended paladin.
 
-Prompt `clickmonkey` and resource `clickmonkey://guide` are the product menu (map / unleash / explore / spec / replay). Map, unleash, spec, and replay stay CLI.
-
-Unattended CI still uses `clickmonkey explore` and needs `brain` in the leash.
-
-### Where files live
-
-The MCP server uses the **same folder as the CLI**. Settings are `clickmonkey.json` (the leash). The sitemap, runs, and reports sit next to it in `clickmonkey/`. That folder is *the product under test* (or a testing sibling), not the ClickMonkey git repo.
-
-```
-my-app/                            # cwd for `clickmonkey` and for `clickmonkey mcp`
-  clickmonkey.json                 # leash: url, fence, intro, …
-  clickmonkey/
-    map.json
-    explore-context.md             # optional architecture for --skills
-    specs/*.md                     # replayable fences (commit these)
-    runs/<id>/                     # this MCP walk
-    reports/<id>/findings.md
-```
-
-Default config path is `./clickmonkey.json` in the MCP process cwd. `--config /abs/path/clickmonkey.json` (CLI flag or `explore_start` argument) pins the leash even if cwd is wrong. The workspace is always `dirname(that json)/clickmonkey/`. Gitignore for that folder is under [Git](#git).
-
-Optional `clickmonkey/dev-origin` is one line (`http://127.0.0.1:3001`). When that file exists, load keeps the leash **path** and replaces scheme/host/port. It is not written back into `clickmonkey.json`. Tools that assign ports (for example `fde dev up`) write this file; gitignore it. No sidecar → the leash `url` is used as written.
-
-### 1. Leash
-
-From the app (or testing) folder:
-
-```bash
-clickmonkey init --url http://127.0.0.1:3000/
-# optional: grow the sitemap before the host walks
-clickmonkey inspect
-clickmonkey map --steps 40
-```
-
-Or call `explore_init` from MCP with the same `url` (creates the json + folder if they are missing).
-
-`clickmonkey` must be on `PATH` (`npm run link` from this repo, or a global install).
-
-### 2. Wire the host
-
-The stdio server is `clickmonkey mcp`. The **browser starts on `explore_start`**, not when the MCP process connects. Playwright cold start can exceed a 30s MCP startup timeout — raise it.
-
-**Grok** (project-scoped — put this *in the folder that has `clickmonkey.json`* so cwd is correct):
-
-```toml
-# my-app/.grok/config.toml
-[mcp_servers.clickmonkey]
-command = "clickmonkey"
-args = ["mcp"]
-startup_timeout_sec = 60
-```
-
-Or pin the leash from `~/.grok/config.toml` if you start Grok from other directories:
-
-```toml
-[mcp_servers.clickmonkey]
-command = "clickmonkey"
-args = ["mcp", "--config", "/abs/path/to/my-app/clickmonkey.json"]
-startup_timeout_sec = 60
-```
-
-Then `grok mcp list` / `grok mcp doctor clickmonkey`. Open Grok with cwd in `my-app/` (or always pass `--config`).
-
-**Claude Code** (`~/.claude.json` or project `.mcp.json`) and **Cursor**:
-
-```json
-{
-  "mcpServers": {
-    "clickmonkey": {
-      "command": "clickmonkey",
-      "args": ["mcp"],
-      "cwd": "/abs/path/to/my-app"
-    }
-  }
-}
-```
-
-If the client has no `cwd` field, pass `"args": ["mcp", "--config", "/abs/path/to/my-app/clickmonkey.json"]`.
-
-### 3. Optional dashboard
-
-From the same folder: `clickmonkey ui`. Live MCP walks show up as a monkey on the map (`brain: mcp`).
-
-### 4. Loop
-
-1. `explore_start` with a charter (and `skills` from `clickmonkey/explore-context.md` if you have it)
-2. `explore_set_plan` from the sitemap cards (`clickmonkey://map`)
-3. `explore_step` / `nasty_fill` while reading `mode` (form vs list vs nav)
-4. `explore_note` / `explore_good`; `explore_finding` to file a bug with a screenshot
-5. `explore_shot` when you need pixels; `explore_findings` for this run’s persisted list
-6. `explore_finish` with `summary` (what you tried, what you trust). Writes `session.md` and a findings report. Disconnect writes the report if you skip finish.
-
-After a good walk, freeze the compact tape into `clickmonkey/specs/*.md` (`spec_writer`). Prose, mermaid, and photos stay outside the fence. `spec_check` or `clickmonkey spec --check` before claiming done. `clickmonkey spec` plays the fences as a real walk (not `replay`); the run writes `spec-results.md` only. PASS with findings is exit 0 unless `--fail-on-findings`.
+The MCP server is the host LLM walking, then **freezing that walk as a replayable spec** and **proving the replay**. How to wire Grok / Claude / Cursor, which prompts to read (`explore_tester`, `spec_writer`), and the explore → `spec_save` → `spec_run` loop: [docs/mcp.md](docs/mcp.md).
 
 `--nasty` / `nasty_*` is for a site you own.
 

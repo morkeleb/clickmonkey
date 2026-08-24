@@ -25,7 +25,7 @@ Commands:
   map         Scout: navigate-only walk — grow the sitemap, no fill/submit
   unleash     NPC: hunt mapped forms, fill and submit [--nasty rogue payloads]
   explore     Paladin: charter-driven LLM walk of legal map ids
-  mcp         Exploratory testing over MCP (stdio)
+  mcp         Host-LLM walk + spec freeze/replay (stdio)
   report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
   prune       Drop false positives from a report (inquirer; --ids for scripts)
   replay      Replay a log file or a findings-report markdown file
@@ -136,10 +136,16 @@ export const VISION_HELP = `vision is optional. Same connection shape as brain (
   "brain":  { "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5" }
   "vision": { "baseUrl": "http://127.0.0.1:8080/v1", "model": "qwen2.5-vl" }
 
-Layout geometry (overflow, clip, overlap, scanline, sparse, broken images,
-24×24 hit targets) is a DOM pass on inspect and does not need vision.
+Layout is a DOM pass on inspect and does not need vision (overflow at
+1280/375/320, clip, overlap, hit targets, focus, text spacing, dead hashes,
+and more — docs/issue-classes.md). The model is grounded with those hits
+and cannot overwrite them.
 
-issues (default true) lets the model add the same rule names from pixels.
+issues (default true) lets the model add pixel-only defects (contrast, align,
+empty-vs-broken, toasts, missing mapped chrome, abnormal ellipsis, mojibake).
+A page whose last land before this run is within ~2 days and whose PNG hash
+matches the last scan skips extras (a missing or loading caption still asks).
+Stale fog still asks even when the pixels look the same.
 High-confidence visual extras are also filed as findings with the step screenshot.
 Medium stays on the quality ledger. The walk does not stop.
 assist (default true) adds explore sight notes.

@@ -6,9 +6,9 @@ A report counts **sites** (pages that show the class), not “10 unique bugs.”
 
 ## How to use the split
 
-1. **Map** (scout) then **unleash** (form NPC) on staging — soak chrome, crashes, locatability, HTML/axe, empty-required. `--nasty` is the rogue pass for junk and missed validation. Engineers fix classes.
-2. **Explore** (paladin) / MCP with a charter from the ticket (`git log`, “can Test Mode start a Salesforce → Filevine flow”). A person still aims the monkey.
-3. **Specs** for paths you will not debate again (login lands, empty create is invalid).
+1. **Map** (scout) then **unleash** (NPC) on staging — soak chrome, crashes, locatability, HTML/axe, empty-required. Fog sends them to rooms and forms they have not stood on recently ([fog.md](fog.md)). On a tile the NPC is in wizard / form / list / tab / dialog / empty / nav mode ([walkers.md](walkers.md)). `--nasty` is the rogue pass for junk and missed validation. Engineers fix classes.
+2. **Explore** (paladin) with a charter from the ticket (`git log`, “can Test Mode start a Salesforce → Filevine flow”). CLI `clickmonkey explore` is exploratory testing without MCP. MCP is the same walk plus freeze/replay of a spec ([mcp.md](mcp.md)). A person still aims the monkey.
+3. **Specs** for paths you will not debate again (login lands, empty create is invalid) — MCP `spec_save` / `spec_run`, or CLI `clickmonkey spec`.
 4. **Humans** on money, permissions, “does this customer’s data look right,” and anything that needs a second user or an inbox.
 
 `data-testid` is an upgrade (unique, stable). It is not required. Role + accessible name, field `name`, and `<label>` are enough to walk a random site. Unnamed icon buttons, duplicate names, and disabled/covered controls are the real limits.
@@ -21,36 +21,69 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 |---|---|---|
 | **Runtime** | Uncaught JS, HTTP 4xx/5xx on document/XHR/fetch, 404 (including soft SPA 404) | Walk oracles |
 | **HTML validity** | Illegal nesting, duplicate ids, … | html-validate after inspect |
-| **A11y scanners** | Contrast, `aria-hidden` + focus, button-name, … | axe-core |
+| **A11y scanners** | WCAG 2.0/2.1 A/AA (contrast, names, ARIA, labels, …) plus a small extra allowlist — not all axe `best-practice` | axe-core after inspect |
 | **SEO hygiene** | Missing title/description/OG on public paths; the same title on every route | `seo` on the leash |
 | **Testability** | Unlabeled fields, unnamed controls, click on `<svg>`/`<div>`, no `main`, occluded widgets, duplicate names, missing stable ids | Inspect audit |
-| **Layout** | Overflow, clip, overlap, covered controls, scanline, sparse panes, broken images, undersized hit targets; VLM may add contrast/align | DOM geometry on every inspect (no model). Optional `vision.issues` can name the same rules from a screenshot. High-confidence extras become findings; medium stays on the quality ledger |
+| **Layout / DOM extras** | Overflow (1280, 375, 320), clip, overlap, z-index, scanline, sparse, broken images, hit targets, focus-obscured, focus rings, text occlusion, tiny type, text-spacing, dead hashes, implicit submit, noopener, scroll-padding, pointer-events:none | DOM on every inspect (no model). High confidence → finding folder; medium → quality ledger |
 | **Empty required** | Blank required field + submit must look invalid | Playbook `empty-required` |
 | **Junk not invalid** | `--nasty` / typed junk + submit **sent those values or left the form** without `aria-invalid` / visible error / HTML5 constraint validation | Unleash after submit |
 | **Throw instead of invalid** | Fill then uncaught `pageerror` (e.g. `Invalid time value`) | Runtime oracle |
 | **Map / harness** | Unknown or drifted ids, ambiguous locators | Inspect + replay |
 | **Shallow payload** | XSS/SQLi/overlong in fields on a site you own | `unleash --nasty` / `nasty_*` |
 | **Explore oracles** | Claim vs behavior, purpose, consistency, interruption, affordance | MCP / `explore` when the host files them |
-| **Frozen contracts** | Path, text, value, visible/hidden, invalid | `clickmonkey spec` fences |
+| **Frozen contracts** | Path, text, value, visible/hidden, invalid | MCP `spec_save` / `spec_run`, CLI `clickmonkey spec` fences |
 | **Regression** | Same finding tape still fails or is fixed | `clickmonkey replay` (STILL / FIXED / LOOK) |
+
+### A11y extras (axe, not the full best-practice dump)
+
+On top of `wcag2a` / `wcag2aa` / `wcag21a` / `wcag21aa`, inspect enables these rules only (landmarks / `region` / `frame-tested` stay off):
+
+| Rule | What it catches |
+|---|---|
+| **tabindex** | `tabindex` greater than 0 |
+| **heading-order** | Skipped heading level (h1 then h3) |
+| **skip-link** | Skip link whose target is missing or not focusable |
+| **empty-heading** | Heading with no discernible text |
+| **label-title-only** | Field named only by `title` / hidden label |
+| **aria-dialog-name** | Dialog / alertdialog with no accessible name |
+| **label-content-name-mismatch** | Visible label not in the accessible name (WCAG 2.5.3) |
+
+WCAG 2.2 `target-size` is **not** taken from axe — the DOM **targetSize** rule owns 2.5.8.
 
 ### Layout (DOM, always)
 
-Inspect measures boxes, overflow, and hit-testing on the live page. It does **not** need `vision`. High confidence → finding folder; medium → quality ledger only.
+Inspect measures boxes, overflow, hit-testing, and a few markup defects on the live page. It does **not** need `vision`. DOM hits stamp `via: dom` and **win** if the model later files the same rule. High confidence → finding folder; medium → quality ledger only.
 
 | Rule | What it catches | Not this |
 |---|---|---|
-| **overflow** | Page or container leaking past its edge (document wider than the viewport past the scrollbar gutter; ~40px+ is high) | Intended `overflow: auto` / `scroll`, closed off-canvas drawers, sticky `100vh` chrome, `overflow: hidden` clip (that is **clip**) |
+| **overflow** | Page or container leaking past its edge (document wider than the viewport past the scrollbar gutter; ~40px+ is high). Also at **375px** (phone) and **320px** (WCAG 1.4.10 reflow) | Intended `overflow: auto` / `scroll`, closed off-canvas drawers, sticky `100vh` chrome, `overflow: hidden` clip (that is **clip**), data tables that need two-axis scroll |
 | **clip** | Text cut mid-word with no `…` — table cells, fields, tabs, chips, headings | Clean ellipsis, scrollable panes, roomy inputs whose letters are readable |
 | **overlap** | Two actable controls sharing ≥8×8 px | Parent/child, labels on labels, an open menu covering the page |
 | **zIndex** | `elementFromPoint` at a control's center is something else | Sticky header/nav, an open dialog/menu covering the page behind it |
 | **scanline** | Repeating list or table row titles/icons whose edges do not line up (≥16px) | Nested nav indent, masonry / multi-column cards, items inside a menu |
 | **sparse** | Main pane is left-locked and the content column uses ≤50% of the width (~30% is high) | Centered cards/login, a second column on the right, small dialogs |
 | **broken** | Visible `<img>` that finished loading with `naturalWidth === 0` | `data:` placeholders, hidden/empty `src`, still loading |
-| **targetSize** | Actable control smaller than 24×24 CSS px on **both** axes | Inline text links, native checkbox/radio/file, disabled, a wrapping label that is ≥24×24 |
-| **contrast** / **align** | Unreadable type in a screenshot; a row of the same kind obviously stepped | WCAG contrast (axe); 1px taste; stacked label above its field |
+| **targetSize** | Actable control smaller than 24×24 CSS px on **both** axes, unless a 24px circle around it misses every other target (WCAG 2.5.8 spacing) | Inline text links, native checkbox/radio/file, isolated icons with enough gap, disabled, a wrapping label ≥24×24 |
+| **focusObscured** | Focused control is **entirely** hidden (sticky header, cookie/chat) — WCAG 2.4.11 | Partial cover; open modal covering the page |
+| **focusVisible** | Focused control has no outline, box-shadow, border, or fill change — WCAG 2.4.7 | Native checkbox/radio/range; author `:focus-visible` ring |
+| **textOcclusion** | Heading/body text fully covered by a painted sibling (badge, overlay) | Partial corner overlap; clip inside the same box; actable overlap |
+| **fontSize** | Body copy in main under 12px (&lt;10px is high) | `code`/`pre`, nav chrome |
+| **textSpacing** | Clip or overflow after WCAG 1.4.12 spacing (line-height 1.5, letter-spacing 0.12em, word-spacing 0.16em) | Wrapping body copy that still fits; axe `avoid-inline-spacing` (inline styles that *block* spacing) |
+| **deadHash** | Visible `a[href="#id"]` whose id/`name` is not on the page | `href="#"`, `#top`, hidden links, hash-router state (`#/route`, `#!/app`, `#tab=x`) |
+| **implicitSubmit** | `<button>` with no `type` that owns a form (HTML default is submit) | Explicit `type="button|submit|reset"`; buttons outside a form; toolbar chrome |
+| **noopener** | `target="_blank"` without `rel` containing `noopener` or `noreferrer` | Same-tab links; hidden; either token is a pass |
+| **scrollPadding** | Sticky/fixed top chrome taller than `scroll-padding-top` | Static headers; padding ≥ header height |
+| **pointerEvents** | Shown, enabled actable with computed `pointer-events: none` | Disabled/`aria-hidden`; child with `auto` under a `none` parent |
 
-Optional `vision` can still file these rule names from pixels (blurbs and Sight too). Do not treat leftover `--nasty` catalog strings as broken/clip; a sheared **product** name in a table still counts.
+### Vision (optional)
+
+`vision` adds sitemap blurbs, Sight, and **pixel-only** defects. It does not re-file DOM-owned rules. Parse drops geometry restated as `other`.
+
+| Hunt | What it catches | Not this |
+|---|---|---|
+| **contrast** | Type unreadable in this screenshot | WCAG ratio (axe `color-contrast`) |
+| **align** | One control in a row obviously stepped vs siblings | 1px taste; stacked label above its field |
+| **other** | Empty-vs-broken, toast chrome, missing mapped widgets, icon collision, canvas/icon-font holes, abnormal ellipsis, mojibake/tofu, chart labels cut, leftover lorem/TODO | Overflow/clip/overlap (DOM); hash-router state; `--nasty` catalog strings |
 
 Fence bounce (`/logout`, off-app URL) is leash control, not a product finding.
 
@@ -109,7 +142,7 @@ ClickMonkey has no domain brain unless you put it in a **charter**, **skills** (
 | Command | Harvests |
 |---|---|
 | `map` | Scout: pages/surfaces, testability, quality + DOM layout on navigate-only |
-| `unleash` | NPC: hunt mapped forms, fill/submit; `--nasty` rogue payloads; same layout pass |
+| `unleash` | NPC: hunt mapped forms; wizard/form/list/nav on the tile; `--nasty` rogue; same layout pass |
 | `playbook empty-required` | Blank required + submit → invalid |
 | `explore` / `mcp` | Paladin: charter-driven walk + host oracles; `explore_finding` / `screenshot ui` |
 | `spec` | Fences as a real walk; findings still harvest unless you only care about PASS |

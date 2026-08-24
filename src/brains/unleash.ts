@@ -113,6 +113,22 @@ export function inPageActions(view: View, pages?: readonly Page[]): ShownAction[
   return view.actions.filter((a) => !a.nav && !chrome.has(a.id));
 }
 
+/** Mapped dialog on this page, opened from a live action. Not a page hop. */
+export function isDialogOpener(
+  action: ShownAction,
+  view: View,
+  pages?: readonly Page[],
+): boolean {
+  if (!action.opens || isSelfOpen(action, view.surface)) return false;
+  if (isPageHop(action, pages, view.pages)) return false;
+  const page = pages?.find((p) => p.id === view.page);
+  return Boolean(page?.surfaces.some((s) => s.kind === "dialog" && s.id === action.opens));
+}
+
+export function dialogOpeners(view: View, pages?: readonly Page[]): ShownAction[] {
+  return view.actions.filter((a) => isDialogOpener(a, view, pages));
+}
+
 /** `opens` another map page — a hop, not a dialog on this surface. */
 export function isPageHop(
   action: ShownAction,
@@ -167,6 +183,21 @@ const PAGINATION_ID = /(^|_)(previous|next|prev)$/i;
 export function isComboboxAction(action: ShownAction): boolean {
   if ((action.role ?? "").toLowerCase() === "combobox") return true;
   return action.id.toLowerCase().startsWith("combobox_");
+}
+
+/** Minted tab widgets (`tab_overview`, `tabs_billing`). Not “new tab” / close-tab chrome. */
+const TAB_ID = /(^|_)tabs?_/;
+const NOT_TAB_ID = /(^|_)(new|close)_tabs?(_|$)|open_in_.*_tabs?(_|$)/;
+const NOT_TAB_LABEL = /\b((open in|new|close)\s+tabs?)\b/;
+
+export function isTabAction(action: ShownAction): boolean {
+  if ((action.role ?? "").toLowerCase() === "tab") return true;
+  const id = action.id.toLowerCase();
+  if (NOT_TAB_ID.test(id)) return false;
+  if (id.includes("tablist") || TAB_ID.test(id)) return true;
+  const label = (action.label ?? "").toLowerCase();
+  if (!/\btabs?\b/.test(label) || /\btable\b/.test(label) || NOT_TAB_LABEL.test(label)) return false;
+  return true;
 }
 
 export function isSortToggleAction(action: ShownAction): boolean {
@@ -417,6 +448,25 @@ function hasPagerPair(actions: readonly ShownAction[]): boolean {
   const hasPrev = pool.some((a) => /(^|_)(previous|prev)$/i.test(a.id));
   const hasNext = pool.some((a) => /(^|_)next$/i.test(a.id));
   return hasPrev && hasNext;
+}
+
+/** Next/Continue on a stepper — not list Previous+Next. */
+export function isWizardAdvance(action: ShownAction): boolean {
+  if (isLeaveAction(action) || isDismissAction(action) || isSortToggleAction(action)) return false;
+  const id = action.id.toLowerCase();
+  const label = (action.label ?? "").toLowerCase();
+  if (/(^|_)(previous|prev)(_|$)/.test(id) || /\b(previous|prev|back)\b/.test(label)) return false;
+  if (/(^|_)(next|continue)$/.test(id)) return true;
+  if (/^(next|continue)$/i.test(label.trim())) return true;
+  return false;
+}
+
+/** Fields plus Next/Continue, and not a list pager. */
+export function looksLikeWizard(view: View): boolean {
+  if (formSubmitIsListPager(view.actions, view)) return false;
+  const bodyFields = view.shown.filter((f) => !looksLikeSearchField(f) && !looksLikeRowSelectCheckbox(f));
+  if (bodyFields.length === 0) return false;
+  return formSubmitActions(view.actions, view.surface, view).some(isWizardAdvance);
 }
 
 /** Wizard Next stays submit; a Previous+Next pair with other list chrome is pagination. */

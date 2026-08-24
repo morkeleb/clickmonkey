@@ -65,6 +65,20 @@ const RULE_WHY: Record<string, string> = {
   "scrollable-region-focusable":
     "A scrollable region cannot take focus. Keyboard users cannot scroll to the rest of the content.",
   listitem: "A list item is not inside a list. Screen readers lose the “1 of N” context.",
+  tabindex:
+    "tabindex is greater than 0. Keyboard order no longer follows the page, so users skip or land in the wrong control.",
+  "heading-order":
+    "A heading level was skipped (h1 then h3). Screen-reader users hunting by heading miss the section.",
+  "skip-link":
+    "The skip link does not point at a focusable target. Keyboard users cannot jump past chrome.",
+  "empty-heading":
+    "A heading has no text. Outline navigation announces a blank section.",
+  "label-title-only":
+    "The field’s only name is title or a hidden label. Sighted users see a blank control; the accessible name is easy to miss.",
+  "aria-dialog-name":
+    "The dialog has no accessible name. Screen readers say “dialog” with no title, and inspect cannot tell two modals apart.",
+  "label-content-name-mismatch":
+    "The visible label is not in the accessible name. Voice control that speaks what is on screen misses the widget (WCAG 2.5.3).",
   "document-title":
     "This route never sets document.title. Every tab and search snippet looks the same.",
   // seo (also axe document-title)
@@ -101,9 +115,29 @@ const RULE_WHY: Record<string, string> = {
   sparse:
     "The main pane is left-locked: the form or column stops short and more than half the width is empty on the right. Centered cards are not this; it is unused canvas, not a layout choice.",
   targetSize:
-    "The control is smaller than 24×24 CSS pixels, so taps miss or hit the neighbor. WCAG 2.5.8 (Target Size Minimum) is the 24×24 floor; inline text links are not this.",
+    "The control is smaller than 24×24 CSS pixels and too close to another target, so taps miss or hit the neighbor. Isolated tiny icons with a 24px-clear circle still pass; inline text links are not this.",
   contrast: "Text is unreadable on its background in the screenshot, not only in the WCAG math.",
   broken: "A missing image, empty icon hole, or obvious placeholder instead of content.",
+  focusObscured:
+    "The control is entirely hidden when it receives keyboard focus (WCAG 2.4.11). Keyboard users cannot see where they are; sticky chrome or a cookie/chat widget ate the focus.",
+  focusVisible:
+    "The control takes keyboard focus but shows no ring, glow, or border change (WCAG 2.4.7). Keyboard users cannot tell which control is active.",
+  textOcclusion:
+    "Text is hidden under a control, icon, or badge. Labels and values become unreadable even when the DOM still has the full string.",
+  fontSize:
+    "Body copy is under 12 CSS pixels. Users zoom or skip the pane; this is not a brand font choice.",
+  textSpacing:
+    "When line-height, letter-spacing, and word-spacing are increased to WCAG 1.4.12 values, text clips or the pane overflows. Low-vision users who space letters cannot read the control.",
+  deadHash:
+    "An in-page link points at an id that is not on this screen. Skip-to-content and “jump to section” land nowhere.",
+  implicitSubmit:
+    "A <button> with no type inside a form defaults to submit. Cancel or a toolbar icon can send the form by accident.",
+  noopener:
+    "target=_blank without rel=noopener lets the new page rewrite window.opener (tabnabbing) and share the process.",
+  scrollPadding:
+    "Sticky/fixed header is taller than scroll-padding-top, so keyboard focus and in-page jumps tuck under the chrome (WCAG 2.4.11 companion).",
+  pointerEvents:
+    "The control is shown and enabled but pointer-events is none, so a mouse click never hits it. Keyboard may still focus it.",
   other: "A user-visible rendering defect that does not fit overlap, clip, or overflow.",
 };
 

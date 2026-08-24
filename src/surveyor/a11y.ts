@@ -3,10 +3,27 @@ import type { Page } from "playwright";
 import { joinWheres, mergeQualityIssues, type QualityIssue } from "../schema/quality.js";
 import { describeQualityWhere } from "./where.js";
 
-const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
+export const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] as const;
+export const EXTRA_RULES = [
+  "tabindex",
+  "heading-order",
+  "skip-link",
+  "empty-heading",
+  "label-title-only",
+  "aria-dialog-name",
+  "label-content-name-mismatch",
+] as const;
 
 export async function scanA11y(page: Page): Promise<QualityIssue[]> {
-  const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+  const extra: Record<string, { enabled: boolean }> = {};
+  for (const id of EXTRA_RULES) extra[id] = { enabled: true };
+  // options() replaces the builder config; do not chain withTags() then options({ rules }).
+  const results = await new AxeBuilder({ page })
+    .options({
+      runOnly: { type: "tag", values: [...TAGS] },
+      rules: extra,
+    })
+    .analyze();
   const issues: QualityIssue[] = [];
   for (const v of results.violations) {
     if (!v.id || v.nodes.length === 0) continue;

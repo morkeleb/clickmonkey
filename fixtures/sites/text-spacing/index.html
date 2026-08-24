@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Text spacing</title>
+    <style>
+      body { margin: 16px; font: 16px/1.4 sans-serif; }
+      main { max-width: 40em; }
+      .chip {
+        box-sizing: border-box;
+        display: inline-block;
+        height: 22px;
+        padding: 0 8px;
+        border: 1px solid #333;
+        background: #f4f4f4;
+        font: 16px/22px sans-serif;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+      .roomy {
+        box-sizing: border-box;
+        height: 40px;
+        padding: 8px 24px;
+        font: 16px/1.4 sans-serif;
+        overflow: visible;
+        white-space: nowrap;
+      }
+      .copy { max-width: 36em; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Text spacing</h1>
+      <p>
+        <button type="button" class="chip" data-testid="tight-chip" data-lock-width>Project archive</button>
+        <button type="button" class="roomy" data-testid="roomy-btn">Save workspace</button>
+      </p>
+      <p class="copy" data-testid="body-copy">
+        A wrapping paragraph of ordinary body copy that can reflow when letter-spacing
+        and line-height increase. Names, amounts, and the rest of this sentence stay
+        readable instead of clipping inside a fixed box.
+      </p>
+    </main>
+    <script>
+      document.querySelectorAll("[data-lock-width]").forEach(function (el) {
+        var w = el.getBoundingClientRect().width;
+        if (w > 0) el.style.width = w + "px";
+      });
+    </script>
+  </body>
+</html>

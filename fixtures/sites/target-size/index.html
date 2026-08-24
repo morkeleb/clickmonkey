@@ -40,15 +40,29 @@
         padding: 8px;
       }
       .tiny-check { width: 12px; height: 12px; margin: 0; padding: 0; }
+      .toolbar {
+        display: inline-flex;
+        gap: 0;
+        vertical-align: middle;
+      }
+      .toolbar .icon { margin: 0; }
+      .lonely {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        margin: 0;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>Target size</h1>
       <p>
-        <button type="button" class="icon" data-testid="icon-btn" aria-label="Close">×</button>
+        <span class="toolbar">
+          <button type="button" class="icon" data-testid="icon-btn" aria-label="Close">×</button>
+          <a href="/settings" class="icon" data-testid="icon-link" aria-label="Settings">⚙</a>
+        </span>
         <button type="button" class="ok" data-testid="save">Save</button>
-        <a href="/settings" class="icon" data-testid="icon-link" aria-label="Settings">⚙</a>
         <button type="button" class="icon" data-testid="disabled-icon" aria-label="Muted" disabled>×</button>
         <button type="button" class="icon" data-testid="aria-disabled-icon" aria-label="Off" aria-disabled="true">×</button>
         <button type="button" class="icon ghost" data-testid="ghost-icon" aria-label="Ghost">×</button>
@@ -64,6 +78,7 @@
       <ul id="more-menu" role="menu" hidden>
         <li role="menuitem" data-testid="collapsed-item" class="icon">Copy</li>
       </ul>
+      <button type="button" class="icon lonely" data-testid="lonely-icon" aria-label="Help">?</button>
     </main>
   </body>
 </html>

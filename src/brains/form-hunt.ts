@@ -1,7 +1,7 @@
 import type { Page, Surface } from "../schema/page-model.js";
 import type { BrainContext, BrainDecision } from "./types.js";
 import { formSubmitAction, looksLikeSearchField } from "./unleash.js";
-import { formatNpcStep, npcHunger, npcKey, planNpc } from "./npc.js";
+import { formatNpcStep, npcHunger, npcKey, planNpc, staleMsForPage } from "./npc.js";
 
 export { floodNpc as floodHunt, npcHunger as huntHunger, npcKey as huntNodeKey, npcScore as huntScore, pageSurfaceId } from "./npc.js";
 export type { NpcEdge as HuntEdge, NpcNode as HuntNode, NpcReach as HuntReach } from "./npc.js";
@@ -74,7 +74,7 @@ export function decideFormHunt(ctx: BrainContext, rng: () => number): BrainDecis
     ctx,
     goals: forms.map((g) => ({
       key: formGoalKey(g),
-      hunger: npcHunger(ctx.formHits?.[formGoalKey(g)] ?? 0),
+      hunger: npcHunger(ctx.formHits?.[formGoalKey(g)] ?? 0, staleMsForPage(ctx.pageLands, g.pageId)),
     })),
     rng,
     committed: ctx.huntTarget,

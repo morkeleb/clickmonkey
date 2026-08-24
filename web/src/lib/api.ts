@@ -16,6 +16,35 @@ function readRuns(raw: unknown): UiRun[] | undefined {
   return Array.isArray(runs) ? runs : undefined;
 }
 
+function readLastLands(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const lands = (raw as UiEvent).lastLands;
+  if (!lands || typeof lands !== "object" || Array.isArray(lands)) return undefined;
+  return lands;
+}
+
+/** Full last-land map: stamp present pages, drop times the server no longer has. */
+export function applyLastLands(
+  snapshot: UiSnapshot,
+  lastLands: Record<string, string>,
+): UiSnapshot {
+  return {
+    ...snapshot,
+    graph: {
+      ...snapshot.graph,
+      nodes: snapshot.graph.nodes.map((node) => {
+        const lastLandAt = lastLands[node.pageId];
+        if (!lastLandAt) {
+          if (!node.lastLandAt) return node;
+          const { lastLandAt: _drop, ...rest } = node;
+          return rest;
+        }
+        return { ...node, lastLandAt };
+      }),
+    },
+  };
+}
+
 export function useSnapshot(): {
   snapshot: UiSnapshot | null;
   error: string | null;
@@ -64,8 +93,13 @@ export function useSnapshot(): {
           return;
         }
         const runs = readRuns(parsed);
-        if (runs && !cancelled) {
-          setSnapshot((prev) => (prev ? { ...prev, runs } : prev));
+        const lastLands = readLastLands(parsed);
+        if ((runs || lastLands) && !cancelled) {
+          setSnapshot((prev) => {
+            if (!prev) return prev;
+            const next = lastLands ? applyLastLands(prev, lastLands) : prev;
+            return runs ? { ...next, runs } : next;
+          });
         }
       } catch {
         /* ignore malformed SSE payloads */

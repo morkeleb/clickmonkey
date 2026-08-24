@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Noopener</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Noopener</h1>
+      <p>
+        <a href="https://example.com" target="_blank" data-testid="bare">Bare</a>
+        <a href="https://example.com" target="_blank" rel="noopener" data-testid="ok">Ok</a>
+        <a href="https://example.com" target="_blank" rel="noreferrer" data-testid="referrer">Referrer</a>
+        <a href="/local" data-testid="same">Same tab</a>
+        <a href="https://example.com" target="_blank" hidden data-testid="hidden">Hidden</a>
+        <a href="https://example.com" target="_blank" data-testid="below" style="position:absolute;top:2000px;left:16px">Below</a>
+      </p>
+    </main>
+  </body>
+</html>

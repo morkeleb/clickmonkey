@@ -25,6 +25,8 @@ export const QualityIssue = z
     confidence: QualityConfidence.optional(),
     /** Short locator (testid / id / name / compacted CSS). Visual and scanners. */
     where: z.string().min(1).optional(),
+    /** Who filed this visual issue. DOM wins when the same rule is merged. */
+    via: z.enum(["dom", "vlm"]).optional(),
   });
 export type QualityIssue = z.infer<typeof QualityIssue>;
 
@@ -126,7 +128,34 @@ export function mergeQualityIssues(issues: QualityIssue[]): QualityIssue[] {
     const key = qualityIssueKey({ ...i, message });
     const prev = byKey.get(key);
     if (prev) {
+      const prevDom = prev.via !== "vlm";
+      if (prevDom && i.via === "vlm") {
+        continue;
+      }
       prev.count += i.count;
+      const where = joinWheres(prev.where, i.where);
+      if (where) prev.where = where;
+      if (i.via === "dom" && prev.via === "dom") {
+        if (SEVERITY_RANK[i.severity] > SEVERITY_RANK[prev.severity]) {
+          prev.severity = i.severity;
+        }
+        if (
+          i.confidence &&
+          CONFIDENCE_RANK[i.confidence] > CONFIDENCE_RANK[prev.confidence ?? "low"]
+        ) {
+          prev.confidence = i.confidence;
+          prev.message = message;
+        }
+        continue;
+      }
+      if (i.via === "dom") {
+        prev.message = message;
+        prev.severity = i.severity;
+        prev.via = "dom";
+        if (i.confidence) prev.confidence = i.confidence;
+        else delete prev.confidence;
+        continue;
+      }
       if (SEVERITY_RANK[i.severity] > SEVERITY_RANK[prev.severity]) {
         prev.severity = i.severity;
       }
@@ -137,8 +166,6 @@ export function mergeQualityIssues(issues: QualityIssue[]): QualityIssue[] {
         prev.confidence = i.confidence;
         prev.message = message;
       }
-      const where = joinWheres(prev.where, i.where);
-      if (where) prev.where = where;
       continue;
     }
     byKey.set(key, { ...i, message, count: i.count });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
-import { scanOverflow } from "../src/surveyor/overflow.js";
+import { scanOverflow, scanOverflowMobile, scanOverflowReflow } from "../src/surveyor/overflow.js";
 import { withPage } from "./helpers/with-page.js";
 
 const html = fileURLToPath(new URL("../fixtures/sites/overflow/index.html", import.meta.url));
@@ -59,6 +59,53 @@ describe("scanOverflow", () => {
       const dlgHit = withDialog.find((i) => i.rule === "overflow");
       assert.ok(dlgHit, `small dialog should not hide the leak, got ${JSON.stringify(withDialog)}`);
       assert.equal(/help|dialog/i.test(dlgHit.where ?? ""), false);
+    });
+  });
+});
+
+describe("scanOverflowMobile", () => {
+  it("flags a min-width:400px block at 375px and restores the 1280 viewport", async () => {
+    await withPage(html, async (page) => {
+      await setCase(page, "phone");
+      const desktop = await scanOverflow(page);
+      assert.equal(
+        desktop.some((i) => i.rule === "overflow"),
+        false,
+        `min-width 400px must fit at 1280, got ${JSON.stringify(desktop)}`,
+      );
+
+      const mobile = await scanOverflowMobile(page);
+      const hit = mobile.find((i) => i.rule === "overflow");
+      assert.ok(hit, `expected overflow at 375px, got ${JSON.stringify(mobile)}`);
+      assert.match(hit.where ?? hit.message, /@ 375px/);
+      assert.equal(page.viewportSize()?.width, 1280);
+    });
+  });
+});
+
+describe("scanOverflowReflow", () => {
+  it("flags a min-width:340px block at 320px, not at 1280 or 375, and restores the 1280 viewport", async () => {
+    await withPage(html, async (page) => {
+      await setCase(page, "reflow");
+      const desktop = await scanOverflow(page);
+      assert.equal(
+        desktop.some((i) => i.rule === "overflow"),
+        false,
+        `min-width 340px must fit at 1280, got ${JSON.stringify(desktop)}`,
+      );
+
+      const mobile = await scanOverflowMobile(page);
+      assert.equal(
+        mobile.some((i) => i.rule === "overflow"),
+        false,
+        `min-width 340px must fit at 375, got ${JSON.stringify(mobile)}`,
+      );
+
+      const reflow = await scanOverflowReflow(page);
+      const hit = reflow.find((i) => i.rule === "overflow");
+      assert.ok(hit, `expected overflow at 320px, got ${JSON.stringify(reflow)}`);
+      assert.match(hit.where ?? hit.message, /@ 320px/);
+      assert.equal(page.viewportSize()?.width, 1280);
     });
   });
 });

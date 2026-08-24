@@ -66,10 +66,10 @@ function StepRow({ step }: { step: UiRunStep }) {
             ) : null}
           </div>
           <p className="mt-1 text-xs break-all text-zinc-300">{step.findingMessage}</p>
-          {step.screenshotUrl ? <Shot url={step.screenshotUrl} alt={step.findingMessage} /> : null}
+          {step.screenshotUrl ? <Shot url={step.screenshotUrl} alt={step.findingMessage} fit="thumb" /> : null}
         </div>
       ) : step.screenshotUrl ? (
-        <Shot url={step.screenshotUrl} alt={step.line} />
+        <Shot url={step.screenshotUrl} alt={step.line} fit="thumb" />
       ) : null}
     </li>
   );
@@ -120,7 +120,7 @@ function TapeSkeleton() {
           <span className="absolute top-1.5 -left-[31px] size-2.5 rounded-full bg-zinc-700" aria-hidden />
           <Bone className="h-3 w-36" />
           <Bone className="mt-2 h-4 w-64" />
-          <ShotSkeleton />
+          <ShotSkeleton className="max-w-md" frameClassName="h-56" />
         </li>
       ))}
     </ol>

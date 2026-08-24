@@ -10,5 +10,6 @@ export * from "./broken.js";
 export * from "./testability.js";
 export * from "./quality.js";
 export * from "./report.js";
+export * from "./fog.js";
 export * from "./ui.js";
 export * from "./dsl.js";

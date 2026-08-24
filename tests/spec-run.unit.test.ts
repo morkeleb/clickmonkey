@@ -1,19 +1,27 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { saveConfig } from "../src/persist/config.js";
+import { specsDir } from "../src/persist/workspace.js";
 import {
   countHarvestedFindings,
+  defaultSpecSkills,
   formatSpecResults,
   formatSpecTable,
   shouldFailOnFindings,
+  SPEC_SKILL_FALLBACK,
+  specFenceHasExpect,
   specFenceIdleError,
+  specSlug,
   specStepFailed,
   surveyorErrorCount,
   surveyorShouldFail,
+  writeSpecMarkdown,
   type SpecRunCase,
 } from "../src/playbooks/spec.js";
+import { emptyConfig } from "../src/schema/config.js";
 import { FindingKind } from "../src/schema/finding.js";
 import { QualityReport } from "../src/schema/quality.js";
 import { TestabilityReport } from "../src/schema/testability.js";
@@ -112,6 +120,143 @@ describe("specFenceIdleError", () => {
     assert.equal(specFenceIdleError(3, 0), "fence is only intro");
     assert.equal(specFenceIdleError(0, 0), "empty fence");
     assert.equal(specFenceIdleError(3, 1), undefined);
+  });
+});
+
+describe("specFenceHasExpect", () => {
+  it("requires an expect step on the replayable tape", () => {
+    assert.equal(
+      specFenceHasExpect([
+        { kind: "open", page: "home" },
+        { kind: "click", surface: "page", id: "go" },
+      ]),
+      false,
+    );
+    assert.equal(
+      specFenceHasExpect([
+        { kind: "open", page: "home" },
+        { kind: "expectPath", path: "/" },
+      ]),
+      true,
+    );
+  });
+});
+
+describe("default spec pack", () => {
+  it("teaches when to freeze, how to walk, and how to prove", () => {
+    const skills = defaultSpecSkills();
+    assert.match(skills, /frozen contract/);
+    assert.match(skills, /spec_save/);
+    assert.match(skills, /Do not invent widget ids/);
+    assert.match(skills, /Do not write the fence by hand/);
+    assert.match(skills, /at least one `expect`/);
+    assert.match(skills, /clickmonkey:\/\/map/);
+    assert.match(skills, /\$CLICKMONKEY_/);
+    assert.match(skills, /expect surface.id invalid/);
+    assert.match(skills, /spec_check/);
+    assert.match(skills, /spec_run/);
+    assert.match(skills, /Add customer requires a name/);
+    assert.doesNotMatch(skills, /The host writes the markdown file/);
+    assert.equal(skills.trim(), SPEC_SKILL_FALLBACK.trim());
+  });
+});
+
+describe("writeSpecMarkdown", () => {
+  it("writes a clickmonkey fence, strips intro, and rejects empty tapes", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-spec-write-"));
+    const configPath = join(dir, "clickmonkey.json");
+    saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/", "fixture"));
+    try {
+      const written = writeSpecMarkdown({
+        configPath,
+        title: "Add customer requires a name",
+        intro: ["click page.login"],
+        log: {
+          schemaVersion: 1,
+          comments: [],
+          steps: [
+            { kind: "click", surface: "page", id: "login" },
+            { kind: "open", page: "home" },
+            { kind: "fill", surface: "page", id: "name", value: "" },
+            { kind: "click", surface: "page", id: "save" },
+            { kind: "expectInvalid", surface: "page", id: "name" },
+          ],
+          usedLocators: {},
+        },
+      });
+      assert.equal(written.relative, "clickmonkey/specs/add-customer-requires-a-name.md");
+      assert.equal(written.steps, 4);
+      const body = readFileSync(written.path, "utf8");
+      assert.match(body, /^# Add customer requires a name/m);
+      assert.match(body, /```clickmonkey/);
+      assert.doesNotMatch(body, /click page\.login/);
+      assert.match(body, /^open home$/m);
+      assert.match(body, /expect page\.name invalid/);
+      assert.equal(specSlug("Add customer requires a name"), "add-customer-requires-a-name");
+
+      assert.throws(
+        () =>
+          writeSpecMarkdown({
+            configPath,
+            title: "Wander",
+            log: {
+              schemaVersion: 1,
+              comments: [],
+              steps: [
+                { kind: "open", page: "home" },
+                { kind: "click", surface: "page", id: "go" },
+              ],
+              usedLocators: {},
+            },
+          }),
+        /fence has no expect/,
+      );
+      assert.throws(
+        () =>
+          writeSpecMarkdown({
+            configPath,
+            title: "Empty",
+            log: { schemaVersion: 1, comments: [], steps: [], usedLocators: {} },
+          }),
+        /empty fence/,
+      );
+      assert.throws(
+        () =>
+          writeSpecMarkdown({
+            configPath,
+            title: "Intro only",
+            intro: ["click page.login"],
+            log: {
+              schemaVersion: 1,
+              comments: [],
+              steps: [{ kind: "click", surface: "page", id: "login" }],
+              usedLocators: {},
+            },
+          }),
+        /fence is only intro/,
+      );
+      assert.throws(
+        () =>
+          writeSpecMarkdown({
+            configPath,
+            title: "Nope",
+            fileName: "../escape.md",
+            log: {
+              schemaVersion: 1,
+              comments: [],
+              steps: [
+                { kind: "open", page: "home" },
+                { kind: "expectPath", path: "/" },
+              ],
+              usedLocators: {},
+            },
+          }),
+        /under clickmonkey\/specs/,
+      );
+      assert.ok(existsSync(join(specsDir(configPath), "add-customer-requires-a-name.md")));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

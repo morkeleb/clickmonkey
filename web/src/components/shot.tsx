@@ -118,8 +118,8 @@ export function Shot({
   alt: string;
   className?: string;
   frameClassName?: string;
-  /** `contain` keeps the full page (findings). `cover` is a top crop (tape). */
-  fit?: "cover" | "contain";
+  /** `thumb` = scaled-down page (tape). `contain` = full page in the frame (findings). `cover` = top crop. */
+  fit?: "cover" | "contain" | "thumb";
 }) {
   const href = shotHref(url);
   const openHost = useContext(ShotCtx);
@@ -128,6 +128,7 @@ export function Shot({
   const [inView, setInView] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
+  const thumb = fit === "thumb";
   useEffect(() => {
     setLoaded(false);
   }, [href]);
@@ -155,11 +156,18 @@ export function Shot({
           else setLocal(true);
         }}
         className={cn(
-          "mt-2 block w-full min-w-0 max-w-full cursor-zoom-in overflow-hidden rounded-md border border-border text-left",
+          "mt-2 block min-w-0 cursor-zoom-in overflow-hidden rounded-md border border-border text-left",
+          thumb ? "w-full max-w-md" : "w-full max-w-full",
           className,
         )}
       >
-        <span className={cn("relative block h-40 w-full min-w-0 overflow-hidden bg-zinc-950", frameClassName)}>
+        <span
+          className={cn(
+            "relative block min-w-0 overflow-hidden bg-zinc-950",
+            thumb ? "h-56 w-full" : "h-40 w-full",
+            frameClassName,
+          )}
+        >
           {!loaded && !failed ? <Pulse /> : null}
           {failed ? <span className="absolute inset-0 bg-zinc-900" aria-hidden /> : null}
           {inView && !failed ? (
@@ -168,8 +176,13 @@ export function Shot({
               src={href}
               alt={alt}
               className={cn(
-                "absolute inset-0 h-full w-full max-w-full object-top",
-                fit === "contain" ? "object-contain" : "object-cover",
+                "max-w-full object-top",
+                thumb
+                  ? "relative block h-auto w-full"
+                  : cn(
+                      "absolute inset-0 h-full w-full",
+                      fit === "contain" ? "object-contain" : "object-cover",
+                    ),
                 loaded ? "opacity-100" : "opacity-0",
               )}
               onLoad={() => setLoaded(true)}

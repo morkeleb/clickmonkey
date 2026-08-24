@@ -35,6 +35,7 @@ import { formatExplorePlanItemLine } from "../src/schema/ui.js";
 import { PageModel } from "../src/schema/page-model.js";
 import type { ChatMessage } from "../src/brains/chat.js";
 import { saveConfig } from "../src/persist/config.js";
+import { loadLands } from "../src/persist/lands.js";
 import { loadPresence, startPresence } from "../src/persist/presence.js";
 import { Config, emptyConfig } from "../src/schema/config.js";
 import type { View } from "../src/schema/view.js";
@@ -1285,6 +1286,34 @@ describe("applyExploreStep", () => {
     assert.equal(ran, 1);
     if (result.ok) assert.equal(result.result.finding?.severity, "major");
   });
+
+  it("stamps mode fog on a form fill", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "cm-explore-mode-stamp-"));
+    const configPath = join(tmp, "clickmonkey.json");
+    saveConfig(configPath, emptyConfig("http://127.0.0.1/"));
+    const view = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [{ id: "submit" }],
+      mode: "form",
+    });
+    const ctx = walkCtx(view);
+    ctx.state = { ...ctx.state, configPath } as typeof ctx.state;
+    ctx.exec = {
+      ...ctx.exec,
+      runLine: async () => ({
+        ok: true,
+        view,
+        bounced: true,
+      }),
+    };
+    try {
+      const result = await applyExploreStep(ctx, 'fill page.name "Ada"');
+      assert.equal(result.ok, true);
+      assert.ok(loadLands(configPath).pages.home?.modes.form);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("withPriorLast", () => {
@@ -1472,6 +1501,10 @@ describe("ExploreSession outline", () => {
       assert.equal(loadPresence(join(outDir, "presence.json"))?.outline?.now, "Empty invoice name");
       session.advancePlan("done");
       assert.equal(loadPresence(join(outDir, "presence.json"))?.outline?.now, "Runtime errors");
+      const tape = session.tape();
+      assert.equal(tape.logPath, join(outDir, "log.txt"));
+      assert.equal(tape.log.steps.length, 0);
+      assert.equal(session.started, true);
       const result = await session.finish();
       const body = readFileSync(result.sessionPath, "utf8");
       assert.match(body, /Empty: tried name/);

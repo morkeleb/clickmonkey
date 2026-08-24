@@ -94,7 +94,9 @@ function eventTypeOf(filename: string | null): UiEventType | undefined {
   if (base === "findings.md" || base === "report.json" || base === "finding.json" || base === "replay.log") {
     return "run";
   }
-  if (base === "nav.jsonl" || base === "presence.json" || base === "log.txt") return "nav";
+  if (base === "nav.jsonl" || base === "presence.json" || base === "log.txt" || base === "lands.json") {
+    return "nav";
+  }
   return undefined;
 }
 
@@ -185,7 +187,13 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
       try {
         if (type === "nav") {
           lastSnapshot = refreshUiSnapshot(lastSnapshot, configPath, "runs");
-          const event: UiEvent = { type, runs: lastSnapshot.runs };
+          const event: UiEvent = {
+            type,
+            runs: lastSnapshot.runs,
+            lastLands: Object.fromEntries(
+              lastSnapshot.graph.nodes.flatMap((n) => (n.lastLandAt ? [[n.pageId, n.lastLandAt] as const] : [])),
+            ),
+          };
           for (const client of clients) writeSse(client, event);
           return;
         }

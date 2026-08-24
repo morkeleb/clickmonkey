@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Scroll padding</title>
+    <style>
+      body { margin: 0; font: 16px/1.4 sans-serif; }
+      header.sticky {
+        position: sticky;
+        top: 0;
+        height: 80px;
+        background: #111;
+        color: #fff;
+        z-index: 20;
+        padding: 0 16px;
+        line-height: 80px;
+      }
+      header.static {
+        position: static;
+        height: 80px;
+        background: #444;
+        color: #fff;
+        padding: 0 16px;
+        line-height: 80px;
+      }
+      main { min-height: 1600px; padding: 16px; }
+      nav.in-page { margin-top: 40px; }
+      nav.side {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 220px;
+        height: 100vh;
+        background: #222;
+        color: #fff;
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="side" data-testid="side-nav">Side</nav>
+    <header class="sticky" data-testid="app-header">App header</header>
+    <header class="static" data-testid="static-header">Static header</header>
+    <main>
+      <h1>Scroll padding</h1>
+      <p>Tall page so the sticky header can stick. No scroll-padding-top on html/body.</p>
+      <label>
+        Name
+        <input type="text" data-testid="name" />
+      </label>
+      <nav class="in-page" data-testid="in-page-nav">
+        <a href="#bottom">Skip</a>
+      </nav>
+      <p id="bottom">Bottom</p>
+    </main>
+  </body>
+</html>

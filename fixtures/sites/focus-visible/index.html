@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Focus visible</title>
+    <style>
+      body { margin: 16px; font: 16px/1.4 sans-serif; }
+      button {
+        box-sizing: border-box;
+        font: inherit;
+        padding: 8px 16px;
+        border: 1px solid #333;
+        background: #eee;
+        color: #111;
+      }
+      /* Author kills the ring and does not replace it. */
+      #bare,
+      #bare:focus,
+      #bare:focus-visible {
+        outline: none;
+        box-shadow: none;
+        border: 1px solid #333;
+        background: #eee;
+        color: #111;
+        text-decoration: none;
+      }
+      #ok:focus,
+      #ok:focus-visible {
+        outline: 2px solid #000;
+        outline-offset: 2px;
+      }
+      #disabled-bare,
+      #disabled-bare:focus,
+      #disabled-bare:focus-visible {
+        outline: none;
+        box-shadow: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main data-testid="home">
+      <button type="button" id="bare" data-testid="bare">Save</button>
+      <button type="button" id="ok" data-testid="ok">Continue</button>
+      <button type="button" id="disabled-bare" data-testid="disabled-bare" disabled>Off</button>
+      <input type="checkbox" id="agree" data-testid="agree" />
+      <a href="#ok" id="skip" style="position:absolute;left:-10000px;width:1px;height:1px">Skip to continue</a>
+    </main>
+  </body>
+</html>

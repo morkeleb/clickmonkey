@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { Page } from "playwright";
 import {
   MAX_OVERFLOW_HITS,
   OVERFLOW_PX,
@@ -11,6 +12,8 @@ import {
   isIntendedScroll,
   isSmallOpenDialog,
   overflowLayoutIssue,
+  scanOverflowMobile,
+  scanOverflowReflow,
   takeOverflowHits,
   xOverflowContained,
   type OverflowBox,
@@ -146,5 +149,71 @@ describe("overflowLayoutIssue", () => {
     assert.equal(top.length, MAX_OVERFLOW_HITS);
     assert.equal(top[0]?.px, 12);
     assert.equal(top[7]?.px, 5);
+  });
+});
+
+describe("scanOverflowMobile restore", () => {
+  it("restores the previous viewport when the 375 pass throws", async () => {
+    const prev = { width: 1280, height: 720 };
+    const sizes: { width: number; height: number }[] = [];
+    const page = {
+      viewportSize: () => prev,
+      async setViewportSize(size: { width: number; height: number }) {
+        sizes.push({ ...size });
+        if (size.width === 375) throw new Error("resize failed");
+      },
+    };
+    await assert.rejects(() => scanOverflowMobile(page as unknown as Page), /resize failed/);
+    assert.deepEqual(sizes.at(-1), prev);
+  });
+
+  it("restores the previous viewport when collect throws", async () => {
+    const prev = { width: 1280, height: 720 };
+    const sizes: { width: number; height: number }[] = [];
+    const page = {
+      viewportSize: () => prev,
+      async setViewportSize(size: { width: number; height: number }) {
+        sizes.push({ ...size });
+      },
+      evaluate() {
+        throw new Error("collect failed");
+      },
+    };
+    await assert.rejects(() => scanOverflowMobile(page as unknown as Page), /collect failed/);
+    assert.deepEqual(sizes.at(-1), prev);
+    assert.equal(sizes.some((s) => s.width === 375), true);
+  });
+});
+
+describe("scanOverflowReflow restore", () => {
+  it("restores the previous viewport when the 320 pass throws", async () => {
+    const prev = { width: 1280, height: 720 };
+    const sizes: { width: number; height: number }[] = [];
+    const page = {
+      viewportSize: () => prev,
+      async setViewportSize(size: { width: number; height: number }) {
+        sizes.push({ ...size });
+        if (size.width === 320) throw new Error("resize failed");
+      },
+    };
+    await assert.rejects(() => scanOverflowReflow(page as unknown as Page), /resize failed/);
+    assert.deepEqual(sizes.at(-1), prev);
+  });
+
+  it("restores the previous viewport when collect throws", async () => {
+    const prev = { width: 1280, height: 720 };
+    const sizes: { width: number; height: number }[] = [];
+    const page = {
+      viewportSize: () => prev,
+      async setViewportSize(size: { width: number; height: number }) {
+        sizes.push({ ...size });
+      },
+      evaluate() {
+        throw new Error("collect failed");
+      },
+    };
+    await assert.rejects(() => scanOverflowReflow(page as unknown as Page), /collect failed/);
+    assert.deepEqual(sizes.at(-1), prev);
+    assert.equal(sizes.some((s) => s.width === 320), true);
   });
 });

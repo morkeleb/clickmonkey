@@ -1,7 +1,7 @@
 import type { Page } from "../schema/page-model.js";
 import type { ShownAction } from "../schema/view.js";
 import type { BrainContext, BrainDecision } from "./types.js";
-import { formatNpcStep, npcHunger, npcKey, pageSurfaceId, planNpc } from "./npc.js";
+import { formatNpcStep, npcHunger, npcKey, pageSurfaceId, planNpc, staleMsForPage } from "./npc.js";
 import { formatClick, navigateActions, pickAction, usableClicks } from "./unleash.js";
 
 export function visitKey(pageId: string, surfaceId: string): string {
@@ -45,7 +45,11 @@ function mapRoomGoals(ctx: BrainContext): { key: string; hunger: number }[] {
   const add = (key: string) => {
     if (seen.has(key)) return;
     seen.add(key);
-    goals.push({ key, hunger: npcHunger(visitsOf(ctx.pageVisits, key)) });
+    const pageId = key.split("/")[0] ?? key;
+    goals.push({
+      key,
+      hunger: npcHunger(visitsOf(ctx.pageVisits, key), staleMsForPage(ctx.pageLands, pageId)),
+    });
   };
   for (const page of pages) {
     if (!hoppable.has(page.id) && page.id !== ctx.view.page) continue;

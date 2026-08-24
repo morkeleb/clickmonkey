@@ -21,6 +21,8 @@ export const UiGraphNode = z
     yellow: z.number().int().nonnegative(),
     /** Latest still taken while on this page (`/files/runs/.../shots/pages/{pageId}.png`). */
     screenshotUrl: z.string().min(1).optional(),
+    /** Last land on this page (any job). Missing = full fog. */
+    lastLandAt: z.string().min(1).optional(),
   })
   .strict();
 export type UiGraphNode = z.infer<typeof UiGraphNode>;
@@ -284,6 +286,8 @@ export const UiEvent = z
     snapshot: UiSnapshot.optional(),
     /** Cheap live patch: walker pageId / presence without rebuilding the map. */
     runs: z.array(UiRun).optional(),
+    /** Cheap live patch: last land ISO times by page id. */
+    lastLands: z.record(z.string().min(1), z.string().min(1)).optional(),
   })
   .strict();
 export type UiEvent = z.infer<typeof UiEvent>;

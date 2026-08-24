@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { detectWalkerMode } from "../brains/walker-mode.js";
+import { WalkerModeName } from "./fog.js";
 import { formatView } from "../executor/view.js";
 import { WritePolicy } from "./config.js";
 import { Locator } from "./locator.js";
@@ -7,7 +8,7 @@ import { View } from "./view.js";
 
 export const ExploreVisit = z
   .object({
-    mode: z.enum(["form", "list", "nav"]),
+    mode: WalkerModeName,
     formatted: z.string().min(1),
     ready: Locator.optional(),
     legalOpen: z.array(z.string()).default([]),

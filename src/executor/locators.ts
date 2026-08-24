@@ -261,23 +261,32 @@ export async function disabledControlHints(loc: PwLocator, page: Page): Promise<
     })
     .catch(() => "");
   if (described) hints.push(described);
-  const form = await page
-    .evaluate(() => {
-      const root = document.querySelector("main, [role='main']") ?? document.body;
-      const fields = [...root.querySelectorAll("input, textarea, select")].filter((node) => {
-        const r = (node as HTMLElement).getBoundingClientRect();
-        return r.width > 2 && r.height > 2;
-      });
-      let readonly = 0;
-      let disabled = 0;
-      for (const node of fields) {
-        const typed = node as HTMLInputElement;
+  const form = ((await page
+    .evaluate(
+      `(() => {
+      var root = document.querySelector("main, [role='main']") || document.body;
+      var nodes = root.querySelectorAll("input, textarea, select");
+      var fields = [];
+      var i;
+      for (i = 0; i < nodes.length; i++) {
+        var r = nodes[i].getBoundingClientRect();
+        if (r.width > 2 && r.height > 2) fields.push(nodes[i]);
+      }
+      var readonly = 0;
+      var disabled = 0;
+      for (i = 0; i < fields.length; i++) {
+        var typed = fields[i];
         if (typed.readOnly || typed.getAttribute("aria-readonly") === "true") readonly += 1;
         else if (typed.disabled || typed.getAttribute("aria-disabled") === "true") disabled += 1;
       }
-      return { fields: fields.length, readonly, disabled };
-    })
-    .catch(() => ({ fields: 0, readonly: 0, disabled: 0 }));
+      return { fields: fields.length, readonly: readonly, disabled: disabled };
+    })()`,
+    )
+    .catch(() => ({ fields: 0, readonly: 0, disabled: 0 }))) as {
+    fields: number;
+    readonly: number;
+    disabled: number;
+  });
   if (form.fields > 0) {
     const live = form.fields - form.readonly - form.disabled;
     if (form.readonly >= form.fields / 2) {

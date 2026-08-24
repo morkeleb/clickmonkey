@@ -63,6 +63,8 @@ export {
   dropPayloadContentVisual,
   examineScreenshot,
   hashPngFile,
+  shouldSkipVision,
+  visionPass,
   parseVisualReply,
   probeVisionChat,
   VISION_PROBE,
@@ -73,17 +75,27 @@ export {
 export type { ParsedVisualReply, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
 export { scanTableLayout } from "./surveyor/scanline.js";
 export type { LayoutHit } from "./surveyor/scanline.js";
-export { scanLayout } from "./surveyor/layout.js";
+export { scanLayout, type LayoutScan } from "./surveyor/layout.js";
 export { sparseLayoutIssue, sparseMetrics } from "./surveyor/sparse.js";
 export type { SparseBox, SparseMetrics, SparsePane, SparseSample } from "./surveyor/sparse.js";
-export { scanOverflow } from "./surveyor/overflow.js";
+export { scanOverflow, scanOverflowMobile, scanOverflowReflow } from "./surveyor/overflow.js";
 export { scanBroken } from "./surveyor/broken.js";
 export { scanTextClip } from "./surveyor/text-clip.js";
 export { scanOverlap } from "./surveyor/overlap.js";
 export { scanListScanline } from "./surveyor/list-scanline.js";
 export { scanTargetSize } from "./surveyor/target-size.js";
+export { scanFocusObscured } from "./surveyor/focus-obscured.js";
+export { scanFocusVisible } from "./surveyor/focus-visible.js";
+export { scanTextOcclusion } from "./surveyor/text-occlusion.js";
+export { scanFontSize } from "./surveyor/font-size.js";
+export { scanTextSpacing } from "./surveyor/text-spacing.js";
+export { scanDeadHash } from "./surveyor/dead-hash.js";
+export { scanImplicitSubmit } from "./surveyor/implicit-submit.js";
+export { scanNoopener } from "./surveyor/noopener.js";
+export { scanScrollPadding } from "./surveyor/scroll-padding.js";
+export { scanPointerEvents } from "./surveyor/pointer-events.js";
 export { validateHtml } from "./surveyor/html.js";
-export { scanA11y } from "./surveyor/a11y.js";
+export { scanA11y, TAGS as A11Y_TAGS, EXTRA_RULES as A11Y_EXTRA_RULES } from "./surveyor/a11y.js";
 export { scanSeo, scanSeoHtml, seoIsPrivate, issuesFromMeta, metaFromHtml, applyDuplicateTitles } from "./surveyor/seo.js";
 export type { PageMeta } from "./surveyor/seo.js";
 export { auditVisible, formatTestabilityLine } from "./surveyor/audit.js";
@@ -175,6 +187,7 @@ export {
   listPresences,
 } from "./persist/presence.js";
 export { collectFindingCases, listRuns } from "./persist/runs.js";
+export { loadLands, touchLand, recordLand, recordMode, landsPath, shouldStampLand } from "./persist/lands.js";
 export {
   unleashBrain,
   mapBrain,
@@ -196,6 +209,9 @@ export {
   looksLikeSearchField,
   looksLikeRowSelectCheckbox,
   isEmptyStateAction,
+  isTabAction,
+  isDialogOpener,
+  dialogOpeners,
   sharedChromeIds,
   formSubmitAction,
   formSubmitActions,
@@ -220,11 +236,24 @@ export {
   RECENT_CLICK_LIMIT,
   LIST_CHROME_LIMIT,
 } from "./brains/unleash.js";
-export { detectWalkerMode, UNLEASH_MODES } from "./brains/walker-mode.js";
+export {
+  detectWalkerMode,
+  UNLEASH_MODES,
+  isFormWorkNote,
+  isFormCommitNote,
+  shouldStampMode,
+  lineMatchesMode,
+} from "./brains/walker-mode.js";
+export { jobOfBrain, landTimes, jobLandTimes, modeLandTimes } from "./schema/fog.js";
+export type { WalkerJobName, WalkerModeName } from "./schema/fog.js";
 export {
   floodNpc,
   formatNpcStep,
   npcHunger,
+  fogHunger,
+  FOG_FRESH_MS,
+  FOG_OLD_MS,
+  staleMsForPage,
   npcKey,
   npcScore,
   pageSurfaceId,
@@ -245,7 +274,7 @@ export {
 } from "./brains/form-hunt.js";
 export type { FormGoal, HuntEdge, HuntNode, HuntReach } from "./brains/form-hunt.js";
 export { decideMapScout, fogClicks, visitKey } from "./brains/map-scout.js";
-export type { WalkerMode, WalkerModeName } from "./brains/walker-mode.js";
+export type { WalkerMode } from "./brains/walker-mode.js";
 export { decisionLines } from "./brains/types.js";
 export { fakerFill, fillRuleId } from "./brains/faker-fill.js";
 export { pickNasty, pickNastyFill, decideUnleashNasty, listCatalogs, samplePayloads, textContainsNastyPayload } from "./brains/nasty.js";

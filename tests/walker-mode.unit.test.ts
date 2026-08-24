@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decideUnleash } from "../src/brains/unleash.js";
+import { decideUnleash, isTabAction } from "../src/brains/unleash.js";
 import type { BrainContext } from "../src/brains/types.js";
-import { detectWalkerMode, UNLEASH_MODES } from "../src/brains/walker-mode.js";
+import {
+  detectWalkerMode,
+  isFormCommitNote,
+  isFormWorkNote,
+  lineMatchesMode,
+  shouldStampMode,
+  UNLEASH_MODES,
+} from "../src/brains/walker-mode.js";
+import type { Page } from "../src/schema/page-model.js";
 import { formatExploreVisit } from "../src/schema/visit.js";
 import type { View } from "../src/schema/view.js";
 
@@ -23,10 +31,10 @@ function burstText(ctx: BrainContext, rng: () => number): string {
 }
 
 describe("walker modes", () => {
-  it("lists form then list then nav", () => {
+  it("lists wizard then form then list then tab then dialog then empty then nav", () => {
     assert.deepEqual(
       UNLEASH_MODES.map((m) => m.name),
-      ["form", "list", "nav"],
+      ["wizard", "form", "list", "tab", "dialog", "empty", "nav"],
     );
   });
 
@@ -227,7 +235,7 @@ describe("walker modes", () => {
     assert.doesNotMatch(decideUnleash({ view, stepsUsed: 0 }, () => 0).line, /button_next/);
   });
 
-  it("keeps a wizard with dropdowns and Next as form", () => {
+  it("keeps a wizard with dropdowns and Next in wizard mode", () => {
     const view = viewOf({
       shown: [{ id: "name", value: "", type: "text" }],
       actions: [
@@ -237,7 +245,7 @@ describe("walker modes", () => {
       ],
     });
     const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow" };
-    assert.equal(detectWalkerMode(ctx).name, "form");
+    assert.equal(detectWalkerMode(ctx).name, "wizard");
     assert.match(burstText(ctx, () => 0.5), /click page\.button_next/);
   });
 
@@ -261,6 +269,98 @@ describe("walker modes", () => {
     assert.equal(detectWalkerMode({ view, stepsUsed: 0 }).name, "nav");
   });
 
+  it("detects wizard on fields + Next and stays on Next instead of hopping", () => {
+    const view = viewOf({
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "email", value: "", type: "email" },
+      ],
+      actions: [
+        { id: "button_back", label: "Back" },
+        { id: "button_next", label: "Next" },
+      ],
+      pages: ["home", "checkout"],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow" };
+    assert.equal(detectWalkerMode(ctx).name, "wizard");
+    const d = decideUnleash(ctx, () => 0.5);
+    assert.equal(d.mode, "wizard");
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.name /);
+    assert.match(text, /click page\.button_next/);
+    assert.doesNotMatch(text, /open /);
+  });
+
+  it("keeps wizard Next after the same advance id was just clicked", () => {
+    const view = viewOf({
+      shown: [{ id: "name", value: "Ada", type: "text" }],
+      actions: [{ id: "button_next", label: "Next" }],
+    });
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 2,
+      writePolicy: "allow",
+      recentClicks: ["button_next"],
+    };
+    assert.equal(detectWalkerMode(ctx).name, "wizard");
+    const d = decideUnleash(ctx, () => 0.5);
+    assert.equal(d.mode, "wizard");
+    assert.match(d.line, /click page\.button_next/);
+  });
+
+  it("fills a wizard under validationOnly and does not click Next", () => {
+    const view = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [{ id: "button_next", label: "Next" }],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "validationOnly" };
+    assert.equal(detectWalkerMode(ctx).name, "wizard");
+    const text = burstText(ctx, () => 0.5);
+    assert.match(text, /^fill page\.name /);
+    assert.doesNotMatch(text, /click /);
+  });
+
+  it("treats wizard notes as form work so hunt does not immediately re-target", () => {
+    assert.equal(isFormWorkNote("wizard"), true);
+    assert.equal(isFormWorkNote("wizard dismiss"), true);
+    assert.equal(isFormCommitNote("wizard"), true);
+    assert.equal(isFormCommitNote("wizard dismiss"), false);
+    assert.equal(isFormWorkNote("form hunt"), false);
+  });
+
+  it("stamps only when the note is that mode's own work", () => {
+    assert.equal(shouldStampMode({ line: "click page.tab_a", mode: "tab", note: "tab" }), true);
+    assert.equal(shouldStampMode({ line: "click page.open_share", mode: "dialog", note: "dialog" }), true);
+    assert.equal(shouldStampMode({ line: "click page.create_your_first", mode: "empty", note: "empty" }), true);
+    assert.equal(shouldStampMode({ line: "click page.chrome", mode: "tab" }), false);
+    assert.equal(shouldStampMode({ line: "open invoices", mode: "list", note: "form hunt" }), false);
+    assert.equal(shouldStampMode({ line: "open home", mode: "nav", note: "hop" }), false);
+  });
+
+  it("matches paladin lines to mode work, not hops", () => {
+    const view = viewOf({
+      actions: [
+        { id: "tab_billing", role: "tab", label: "Billing" },
+        { id: "link_home", opens: "home" },
+      ],
+    });
+    assert.equal(lineMatchesMode("click page.tab_billing", "tab", view), true);
+    assert.equal(lineMatchesMode("open home", "tab", view), false);
+    assert.equal(lineMatchesMode("screenshot", "form", view), false);
+  });
+
+  it("does not treat list Previous+Next with filters as wizard", () => {
+    const view = viewOf({
+      shown: [{ id: "search", value: "", type: "text" }],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "button_previous", label: "Previous" },
+        { id: "button_next", label: "Next" },
+      ],
+    });
+    assert.equal(detectWalkerMode({ view, stepsUsed: 0 }).name, "list");
+  });
+
   it("keeps form when fields, filters, and a real submit share a surface", () => {
     const view = viewOf({
       shown: [{ id: "name", value: "", type: "text" }],
@@ -274,6 +374,164 @@ describe("walker modes", () => {
     assert.equal(detectWalkerMode(ctx).name, "form");
     const text = burstText(ctx, () => 0.5);
     assert.match(text, /click page\.submit/);
+  });
+
+  it("picks the staler of form and list when both apply", () => {
+    const view = viewOf({
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "search", value: "", type: "text" },
+      ],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "submit" },
+      ],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow" };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    assert.equal(detectWalkerMode({ ...ctx, modeLands: { "home/form": hourAgo } }).name, "list");
+    assert.equal(detectWalkerMode({ ...ctx, modeLands: { "home/list": hourAgo } }).name, "form");
+  });
+
+  it("does not lock wizard on Continue shopping", () => {
+    const view = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [
+        { id: "button_continue_shopping", label: "Continue shopping" },
+        { id: "submit", label: "Save" },
+      ],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow" };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    assert.match(burstText(ctx, () => 0.5), /click page\.submit/);
+  });
+
+  it("locks wizard even when its own stamp is recent", () => {
+    const view = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [{ id: "button_next", label: "Next" }],
+    });
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    assert.equal(
+      detectWalkerMode({
+        view,
+        stepsUsed: 0,
+        writePolicy: "allow",
+        modeLands: { "home/wizard": hourAgo },
+      }).name,
+      "wizard",
+    );
+  });
+
+  it("detects tab and empty modes", () => {
+    const tabs = viewOf({
+      actions: [
+        { id: "tab_overview", role: "tab", label: "Overview" },
+        { id: "tab_billing", role: "tab", label: "Billing" },
+      ],
+    });
+    assert.equal(detectWalkerMode({ view: tabs, stepsUsed: 0 }).name, "tab");
+    const d = decideUnleash({ view: tabs, stepsUsed: 0 }, () => 0);
+    assert.equal(d.mode, "tab");
+    assert.match(d.line, /tab_/);
+
+    const chromeOnly = viewOf({
+      actions: [
+        { id: "link_open_in_new_tab", label: "Open in new tab" },
+        { id: "button_close_tab", label: "Close tab" },
+        { id: "button_new_tab", label: "New tab" },
+      ],
+    });
+    assert.notEqual(detectWalkerMode({ view: chromeOnly, stepsUsed: 0 }).name, "tab");
+    assert.equal(isTabAction({ id: "tab_overview" }), true);
+    assert.equal(isTabAction({ id: "tabs_settings" }), true);
+    assert.equal(isTabAction({ id: "link_open_in_new_tab", label: "Open in new tab" }), false);
+    assert.equal(isTabAction({ id: "button_close_tab", label: "Close tab" }), false);
+    assert.equal(isTabAction({ id: "button_new_tab", label: "New tab" }), false);
+
+    const empty = viewOf({
+      actions: [{ id: "button_create_your_first_fee_entry", label: "Create your first fee entry" }],
+    });
+    assert.equal(detectWalkerMode({ view: empty, stepsUsed: 0 }).name, "empty");
+    assert.match(decideUnleash({ view: empty, stepsUsed: 0 }, () => 0).line, /create_your_first/);
+  });
+
+  it("opens a mapped dialog and stands down once inside it", () => {
+    const customers: Page = {
+      id: "customers",
+      path: "/customers",
+      params: [],
+      ready: { by: "testId", value: "customers" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [{ id: "button_add_customer", by: "testId", value: "add", status: "ok", opens: "add_customer" }],
+        },
+        {
+          id: "add_customer",
+          kind: "dialog",
+          fields: [{ id: "name", required: false, type: "text", by: "name", value: "name", status: "ok" }],
+          actions: [{ id: "create", by: "testId", value: "create", status: "ok" }],
+        },
+      ],
+    };
+    const view = viewOf({
+      page: "customers",
+      pages: ["home", "customers"],
+      actions: [{ id: "button_add_customer", opens: "add_customer" }],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, pages: [customers] };
+    assert.equal(detectWalkerMode(ctx).name, "dialog");
+    const d = decideUnleash(ctx, () => 0);
+    assert.equal(d.mode, "dialog");
+    assert.equal(d.line, "click page.button_add_customer");
+
+    const inside = viewOf({
+      page: "customers",
+      surface: "add_customer",
+      stack: ["page", "add_customer"],
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [{ id: "create" }, { id: "button_cancel" }],
+      pages: ["home", "customers"],
+    });
+    assert.equal(detectWalkerMode({ view: inside, stepsUsed: 1, pages: [customers], writePolicy: "allow" }).name, "form");
+  });
+
+  it("prefers an unopened dialog over one already visited this run", () => {
+    const page: Page = {
+      id: "home",
+      path: "/",
+      params: [],
+      ready: { by: "testId", value: "home" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "open_filters", by: "testId", value: "filters", status: "ok", opens: "filters" },
+            { id: "open_share", by: "testId", value: "share", status: "ok", opens: "share" },
+          ],
+        },
+        { id: "filters", kind: "dialog", fields: [], actions: [] },
+        { id: "share", kind: "dialog", fields: [], actions: [] },
+      ],
+    };
+    const view = viewOf({
+      actions: [
+        { id: "open_filters", opens: "filters" },
+        { id: "open_share", opens: "share" },
+      ],
+    });
+    const d = decideUnleash(
+      { view, stepsUsed: 2, pages: [page], pageVisits: { "home/filters": 1 } },
+      () => 0,
+    );
+    assert.equal(d.mode, "dialog");
+    assert.equal(d.line, "click page.open_share");
   });
 
   it("samples list chrome once then opens a row instead of flipping sort", () => {

@@ -30,5 +30,6 @@ export async function resetToSeed(
     intro: state.config.intro,
     skip: state.config.skip,
     inIntro: Boolean(state.inIntro),
+    ...(state.configPath ? { configPath: state.configPath } : {}),
   });
 }

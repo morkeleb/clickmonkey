@@ -165,19 +165,25 @@ export function persistQualityVisual(
     visualHash: string;
   },
   outDir?: string,
+  opts?: { /** Drop prior DOM hits; keep VLM-only rows (layout snapshot). */ replaceDom?: boolean },
 ): QualityReport {
   const path = resolveQualityWritePath(configPath, outDir);
   return withFileLock(path, () => {
     const disk = loadQualityReport(path);
     const key = { path: ledgerPath(page.path), ...(page.origin ? { origin: page.origin } : {}) };
     const prev = findPage(disk, key);
+    const prior = opts?.replaceDom
+      ? (prev?.visual ?? []).filter(
+          (i) => i.via === "vlm" || (i.via !== "dom" && (i.rule === "contrast" || i.rule === "align" || i.rule === "other")),
+        )
+      : (prev?.visual ?? []);
     const nextPage: QualityPage = {
       path: key.path,
       foundAt: page.foundAt,
       html: prev?.html ?? [],
       a11y: prev?.a11y ?? [],
       seo: prev?.seo ?? [],
-      visual: mergeQualityIssues([...(prev?.visual ?? []), ...page.visual]),
+      visual: mergeQualityIssues([...prior, ...page.visual]),
       runtime: prev?.runtime ?? [],
       visualHash: page.visualHash,
       ...(key.origin ? { origin: key.origin } : {}),

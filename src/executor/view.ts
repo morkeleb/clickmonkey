@@ -9,6 +9,8 @@ import {
 import type { Fence } from "../schema/config.js";
 import { auditVisible } from "../surveyor/audit.js";
 import { detectWalkerMode } from "../brains/walker-mode.js";
+import { loadLands } from "../persist/lands.js";
+import { modeLandTimes } from "../schema/fog.js";
 import { isLeaveAction, isRecordRowAction, looksLikeNavWidget, matchesSkip } from "../brains/unleash.js";
 import { pageNotesFromModel } from "../surveyor/describe.js";
 import { hoppablePages } from "./hop.js";
@@ -197,6 +199,7 @@ export async function buildView(state: {
   /** Intro steps are running. Nav chrome stays available for login. */
   inIntro?: boolean;
   hasIntro?: boolean;
+  configPath?: string;
 }): Promise<View> {
   const stack = state.surfaceStack.length > 0 ? [...state.surfaceStack] : [state.pageId];
   const surfaceId = stack[stack.length - 1] ?? state.pageId;
@@ -313,7 +316,13 @@ export async function buildView(state: {
       : {}),
     ...(state.last ? { last: state.last } : {}),
   };
-  const mode = detectWalkerMode({ view: draft, pages: state.model.pages, stepsUsed: 0 }).name;
+  const modeLands = state.configPath ? modeLandTimes(loadLands(state.configPath)) : undefined;
+  const mode = detectWalkerMode({
+    view: draft,
+    pages: state.model.pages,
+    stepsUsed: 0,
+    ...(modeLands ? { modeLands } : {}),
+  }).name;
   return { ...draft, mode };
 }
 

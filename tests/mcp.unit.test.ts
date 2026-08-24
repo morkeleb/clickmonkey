@@ -26,6 +26,8 @@ import {
   handleNastySamples,
   handleSpecCheck,
   handleSpecList,
+  handleSpecRun,
+  handleSpecSave,
   sessionResourceText,
   type McpHost,
   type McpSession,
@@ -72,6 +74,7 @@ function stubSession(overrides: Partial<McpSession> = {}): McpSession {
     addGood: () => undefined,
     finish: async () => emptyResult("", ""),
     abort: async () => undefined,
+    tape: () => ({ log: emptyResult("", "").log, logPath: "" }),
     ...overrides,
   };
 }
@@ -145,6 +148,8 @@ describe("mcp tools", () => {
       assert.match(readFileSync(sessionPath, "utf8"), /walk the form/);
       assert.match(textOf(result), /sessionPath:/);
       assert.match(textOf(result), /logPath:/);
+      assert.equal(host.lastWalk?.logPath, logPath);
+      assert.equal(host.lastWalk?.configPath, join(dir, "clickmonkey.json"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -258,6 +263,7 @@ describe("mcp tools", () => {
       assert.match(text, /Legal open ids: home/);
       assert.match(text, /sitemap: clickmonkey:\/\/map/);
       assert.match(text, /guide: clickmonkey:\/\/guide/);
+      assert.match(text, /spec: clickmonkey:\/\/spec/);
       assert.match(text, /clickmonkey/);
       assert.match(text, /explore_tester/);
       assert.match(text, /spec_writer/);
@@ -676,9 +682,183 @@ describe("mcp tools", () => {
     }
   });
 
-  it("guide names map, unleash, spec, and replay and does not mention spec_run", () => {
+  it("spec_save writes a compacted fence from lastWalk and increments the slug", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-specsave-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/", "fixture"));
+      const host = createMcpHost({ config: configPath });
+      host.lastWalk = {
+        log: {
+          schemaVersion: 1,
+          comments: [],
+          steps: [
+            { kind: "open", page: "home" },
+            { kind: "click", surface: "page", id: "go" },
+            { kind: "expectPath", path: "/" },
+          ],
+          usedLocators: {},
+          result: "passed",
+        },
+        logPath: join(dir, "log.txt"),
+        configPath,
+      };
+      const first = await handleSpecSave(host, { title: "Go home" });
+      assert.equal(first.isError, undefined);
+      assert.match(textOf(first), /spec: clickmonkey\/specs\/go-home\.md/);
+      assert.match(textOf(first), /steps: 3/);
+      assert.match(textOf(first), /spec_run/);
+      const body = readFileSync(join(specsDir(configPath), "go-home.md"), "utf8");
+      assert.match(body, /^# Go home/m);
+      assert.match(body, /```clickmonkey/);
+      assert.match(body, /^open home$/m);
+      assert.match(body, /^click page\.go$/m);
+
+      const second = await handleSpecSave(host, { title: "Go home" });
+      assert.equal(second.isError, undefined);
+      assert.match(textOf(second), /spec: clickmonkey\/specs\/go-home-2\.md/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("spec_save prefers a live tape over lastWalk, and lastWalk when the live tape is idle", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-specsave-live-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/", "fixture"));
+      const last = {
+        log: {
+          schemaVersion: 1,
+          comments: [],
+          steps: [
+            { kind: "open" as const, page: "home" },
+            { kind: "click" as const, surface: "page", id: "saved" },
+            { kind: "expectPath" as const, path: "/" },
+          ],
+          usedLocators: {},
+          result: "passed" as const,
+        },
+        logPath: join(dir, "old-log.txt"),
+        configPath,
+      };
+      const liveLog = {
+        schemaVersion: 1 as const,
+        comments: [] as string[],
+        steps: [
+          { kind: "open" as const, page: "home" },
+          { kind: "click" as const, surface: "page", id: "live" },
+          { kind: "expectPath" as const, path: "/" },
+        ],
+        usedLocators: {},
+        result: "passed" as const,
+      };
+      const host: McpHost = {
+        configFlag: configPath,
+        lastWalk: last,
+        session: stubSession({
+          started: true,
+          configPath,
+          tape: () => ({ log: liveLog, logPath: join(dir, "live-log.txt") }),
+        }),
+      };
+      const live = await handleSpecSave(host, { title: "Live walk", file: "from-live.md" });
+      assert.equal(live.isError, undefined);
+      assert.match(readFileSync(join(specsDir(configPath), "from-live.md"), "utf8"), /click page\.live/);
+
+      host.session = stubSession({
+        started: true,
+        configPath,
+        tape: () => ({ log: emptyResult("", "").log, logPath: join(dir, "empty-log.txt") }),
+      });
+      const fallback = await handleSpecSave(host, { title: "Saved walk", file: "from-last.md" });
+      assert.equal(fallback.isError, undefined);
+      assert.match(readFileSync(join(specsDir(configPath), "from-last.md"), "utf8"), /click page\.saved/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("spec_save errors when there is no walk and when the tape is empty", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-specsave-empty-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/", "fixture"));
+      const none = await handleSpecSave(createMcpHost({ config: configPath }), { title: "Nope" });
+      assert.equal(none.isError, true);
+      assert.match(textOf(none), /no walk to freeze/);
+
+      const host = createMcpHost({ config: configPath });
+      host.lastWalk = {
+        log: emptyResult("", "").log,
+        logPath: join(dir, "log.txt"),
+        configPath,
+      };
+      const empty = await handleSpecSave(host, { title: "Nope" });
+      assert.equal(empty.isError, true);
+      assert.match(textOf(empty), /empty fence/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("spec_run live-replays via the playbook and refuses a live explore session", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-specrun-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, {
+        ...emptyConfig("http://127.0.0.1:4173/", "fixture"),
+        map: PageModel.parse({
+          schemaVersion: 1,
+          app: "fixture",
+          generation: 0,
+          pages: [
+            {
+              id: "home",
+              path: "/",
+              params: [],
+              ready: { by: "testId", value: "home" },
+              surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+            },
+          ],
+        }),
+      });
+      const specs = specsDir(configPath);
+      mkdirSync(specs, { recursive: true });
+      writeFileSync(join(specs, "ok.md"), `# Go\n\n\`\`\`clickmonkey\nopen home\n\`\`\`\n`);
+      let seen: string[] | undefined;
+      const host: McpHost = {
+        configFlag: configPath,
+        runSpecs: async (opts) => {
+          seen = opts.files;
+          return {
+            ok: true,
+            cases: [{ file: opts.files[0]!, title: "Go", ok: true, findingCount: 0 }],
+            logPath: join(dir, "log.txt"),
+            mdPath: join(dir, "spec-results.md"),
+            findingErrors: 0,
+          };
+        },
+      };
+      const result = await handleSpecRun(host, { path: "ok.md" });
+      assert.equal(result.isError, undefined);
+      assert.ok(seen?.[0]?.endsWith("ok.md"));
+      assert.match(textOf(result), /PASS/);
+      assert.match(textOf(result), /mdPath:/);
+
+      host.session = stubSession({ started: true });
+      const blocked = await handleSpecRun(host, {});
+      assert.equal(blocked.isError, true);
+      assert.match(textOf(blocked), /explore_finish before spec_run/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("guide names map, unleash, spec, and replay and MCP spec_save/spec_run", () => {
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey map/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey unleash/);
+    assert.match(CLICKMONKEY_GUIDE, /clickmonkey explore/);
     assert.match(CLICKMONKEY_GUIDE, /\(scout\)/);
     assert.match(CLICKMONKEY_GUIDE, /\(NPC\)/);
     assert.match(CLICKMONKEY_GUIDE, /\(paladin\)/);
@@ -687,7 +867,10 @@ describe("mcp tools", () => {
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey replay/);
     assert.match(CLICKMONKEY_GUIDE, /explore_start/);
     assert.match(CLICKMONKEY_GUIDE, /spec_writer/);
-    assert.doesNotMatch(CLICKMONKEY_GUIDE, /spec_run/);
+    assert.match(CLICKMONKEY_GUIDE, /clickmonkey:\/\/spec/);
+    assert.match(CLICKMONKEY_GUIDE, /spec_save/);
+    assert.match(CLICKMONKEY_GUIDE, /spec_run/);
+    assert.match(CLICKMONKEY_GUIDE, /without MCP/);
     assert.ok(CLICKMONKEY_GUIDE.split("\n").length <= 40, "guide should stay short");
   });
 

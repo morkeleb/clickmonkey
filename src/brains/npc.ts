@@ -1,8 +1,11 @@
 import { formatStep } from "../schema/dsl.js";
+import { fogHunger } from "../schema/fog.js";
 import type { Action, Page } from "../schema/page-model.js";
 import type { ShownAction } from "../schema/view.js";
 import type { BrainContext } from "./types.js";
 import { formatClick, usableClicks } from "./unleash.js";
+
+export { fogHunger, FOG_FRESH_MS, FOG_OLD_MS, staleMsForPage } from "../schema/fog.js";
 
 export type NpcNode = { page: string; surface: string };
 
@@ -34,12 +37,13 @@ export function pageSurfaceId(page: Page): string {
   return page.surfaces.find((s) => s.kind === "page")?.id ?? page.id;
 }
 
-export function npcHunger(hits: number): number {
-  return 1 / (1 + Math.max(0, hits));
+/** This-run visit term × fog (last land). */
+export function npcHunger(hits: number, staleMs: number): number {
+  return (1 / (1 + Math.max(0, hits))) * fogHunger(staleMs);
 }
 
-export function npcScore(hits: number, dist: number): number {
-  return npcHunger(hits) * (1 + 1 / (1 + Math.max(0, dist)));
+export function npcScore(hits: number, dist: number, staleMs: number): number {
+  return npcHunger(hits, staleMs) * (1 + 1 / (1 + Math.max(0, dist)));
 }
 
 function okAction(action: Action): boolean {

@@ -10,6 +10,7 @@ import {
   unleashBrain,
   viewWidgetSig,
 } from "../brains/unleash.js";
+import { isFormCommitNote, isFormWorkNote, shouldStampMode } from "../brains/walker-mode.js";
 import { decisionLines, type Brain } from "../brains/types.js";
 import { parseLine } from "../schema/dsl.js";
 import { bootRun } from "../executor/boot.js";
@@ -18,6 +19,8 @@ import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
 import { shouldPersistFinding } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
+import { loadLands, recordMode } from "../persist/lands.js";
+import { jobLandTimes, jobOfBrain, landTimes, modeLandKey, modeLandTimes } from "../schema/fog.js";
 import { stopPresence } from "../persist/presence.js";
 import { requireVisionShots, resolveVision, VisionError, type Config } from "../schema/config.js";
 import type { Finding } from "../schema/finding.js";
@@ -104,6 +107,7 @@ export async function runUnleash(opts: {
       intro: state.config.intro,
       skip: state.config.skip,
       inIntro: Boolean(state.inIntro),
+      ...(opts.configPath ? { configPath: opts.configPath } : {}),
     });
 
     let stepsUsed = 0;
@@ -111,6 +115,12 @@ export async function runUnleash(opts: {
     const noopsByPage = new Map<string, string[]>();
     const formHits: Record<string, number> = {};
     const pageVisits: Record<string, number> = {};
+    const ledger = loadLands(opts.configPath);
+    const job = jobOfBrain(brain.name);
+    const pageLands: Record<string, string> = {
+      ...(job ? jobLandTimes(ledger, job) : landTimes(ledger)),
+    };
+    const modeLands: Record<string, string> = { ...modeLandTimes(ledger) };
     let huntTarget: string | undefined;
     let lootSteps = 0;
     while (stepsUsed < steps) {
@@ -120,6 +130,7 @@ export async function runUnleash(opts: {
       const onPage = view.page;
       const hereKey = `${view.page}/${view.surface}`;
       pageVisits[hereKey] = (pageVisits[hereKey] ?? 0) + 1;
+      pageLands[view.page] = new Date().toISOString();
       const decision = await brain.decide({
         view,
         stepsUsed,
@@ -130,6 +141,9 @@ export async function runUnleash(opts: {
         noopIds: noopsByPage.get(onPage) ?? [],
         formHits,
         pageVisits,
+        pageLands,
+        modeLands,
+        ...(job ? { job } : {}),
         ...(huntTarget ? { huntTarget } : {}),
         ...(lootSteps > 0 ? { lootSteps } : {}),
       });
@@ -138,10 +152,7 @@ export async function runUnleash(opts: {
         else delete state.navMeta.mode;
       }
       const formKey = `${view.page}/${view.surface}`;
-      const filledForm =
-        decision.note === "form" ||
-        decision.note === "form submit" ||
-        decision.note === "form dismiss";
+      const filledForm = isFormWorkNote(decision.note);
       if (decision.huntTarget) huntTarget = decision.huntTarget;
       if (filledForm) huntTarget = undefined;
       let formOk = false;
@@ -190,10 +201,13 @@ export async function runUnleash(opts: {
         }
         formOk = true;
       }
+      if (formOk && shouldStampMode(decision) && decision.mode) {
+        const at = new Date().toISOString();
+        modeLands[modeLandKey(onPage, decision.mode)] = at;
+        recordMode(state, onPage, decision.mode);
+      }
       if (filledForm && formOk) formHits[formKey] = (formHits[formKey] ?? 0) + 1;
-      const submitted =
-        decision.note === "form" || decision.note === "form submit";
-      if (submitted && formOk && view.page !== onPage) {
+      if (isFormCommitNote(decision.note) && formOk && view.page !== onPage) {
         lootSteps = LOOT_EXPLORE_STEPS;
         huntTarget = undefined;
       } else if (lootSteps > 0) {

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Font size</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <a href="/" style="font-size:11px" data-testid="nav-tiny">Home</a>
+    </nav>
+    <aside>
+      <p style="font-size:9px" data-testid="aside-tiny">Sidebar note</p>
+    </aside>
+    <main>
+      <h1>Font size</h1>
+      <p style="font-size:9px" data-testid="tiny-copy">This body copy is 9px.</p>
+      <p style="font-size:16px" data-testid="ok-copy">This body copy is 16px.</p>
+      <p>See <code style="font-size:11px" data-testid="tiny-code">const x = 1;</code></p>
+      <p style="font-size:9px" hidden data-testid="hidden-tiny">Hidden 9px</p>
+      <p style="font-size:9px" aria-hidden="true" data-testid="aria-hidden-tiny">Aria hidden 9px</p>
+      <p style="font-size:9px" inert data-testid="inert-tiny">Inert 9px</p>
+      <p style="font-size:9px" data-testid="empty-tiny"></p>
+      <button type="button" style="font-size:9px" data-testid="tiny-btn">Go</button>
+    </main>
+    <footer>
+      <p style="font-size:9px" data-testid="footer-tiny">Footer 9px</p>
+    </footer>
+  </body>
+</html>

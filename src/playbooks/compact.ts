@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { formatStep, parseLine } from "../schema/dsl.js";
 import type { Log, Step } from "../schema/log.js";
 
@@ -77,6 +79,12 @@ function isResetStep(step: Step, index: number, hopped?: ReadonlySet<number>): b
 }
 
 /** Step indexes whose step→stepDone window contains a URL change. */
+export function compactOptsForLog(logPath: string): CompactOpts | undefined {
+  const sibling = join(dirname(logPath), "nav.jsonl");
+  if (!existsSync(sibling)) return undefined;
+  return { hopped: hoppedStepIndexes(readFileSync(sibling, "utf8")) };
+}
+
 export function hoppedStepIndexes(navText: string): Set<number> {
   const hopped = new Set<number>();
   let n = -1;

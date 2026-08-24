@@ -7,6 +7,7 @@ import { listCatalogs, pickNastyFill, SAMPLE_MAX_CHARS, samplePayloads } from ".
 import { resolveConfigPath, resolveOutDir } from "../cli/common.js";
 import { loadConfig, saveConfig } from "../persist/config.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
+import { readLog } from "../persist/log.js";
 import { collectFindingCases } from "../persist/runs.js";
 import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
 import { mapPath } from "../persist/workspace.js";
@@ -17,12 +18,22 @@ import {
   type ExploreStepOpts,
   type ExploreStepResult,
 } from "../playbooks/explore-session.js";
-import { checkSpecFile, formatCheckReport, listSpecFiles } from "../playbooks/spec.js";
+import {
+  checkSpecFile,
+  defaultSpecSkills,
+  formatCheckReport,
+  formatSpecTable,
+  listSpecFiles,
+  runSpecs,
+  writeSpecMarkdown,
+  type SpecRunResult,
+} from "../playbooks/spec.js";
 import { renderQualityDigest, writeRunsReport } from "../reports/findings-report.js";
 import type { Config } from "../schema/config.js";
 import { emptyConfig, requirePageModel } from "../schema/config.js";
 import { formatStep } from "../schema/dsl.js";
 import type { Finding, FindingSeverity } from "../schema/finding.js";
+import type { Log } from "../schema/log.js";
 import type { Page } from "../schema/page-model.js";
 import { formatExplorePlanItemLine, type UiExploreOutline, type UiExplorePlan } from "../schema/ui.js";
 import type { View } from "../schema/view.js";
@@ -41,7 +52,7 @@ export type McpToolResult = {
 
 export type McpSession = Pick<
   ExploreSession,
-  "start" | "visit" | "step" | "setPlan" | "advancePlan" | "addNote" | "addGood" | "finish" | "abort"
+  "start" | "visit" | "step" | "setPlan" | "advancePlan" | "addNote" | "addGood" | "finish" | "abort" | "tape"
 > & {
   started?: boolean;
   outDir?: string;
@@ -59,6 +70,14 @@ export type McpSession = Pick<
   findings?: readonly Finding[];
 };
 
+/** Compacted walk MCP can freeze after explore_finish (or a log you pass). */
+export type McpLastWalk = {
+  log: Log;
+  logPath: string;
+  configPath: string;
+  intro?: readonly string[];
+};
+
 export type McpHost = {
   configFlag?: string;
   session?: McpSession;
@@ -73,6 +92,10 @@ export type McpHost = {
     extra?: string;
     outlines?: Array<{ runId: string; outline: UiExploreOutline }>;
   };
+  /** Last finished MCP walk; spec_save uses this when no live tape is worth freezing. */
+  lastWalk?: McpLastWalk;
+  /** Test seam; defaults to playbook runSpecs (live browser). */
+  runSpecs?: (opts: Parameters<typeof runSpecs>[0]) => Promise<SpecRunResult>;
 };
 
 const HOST_TEXT_MAX = 8000;
@@ -91,16 +114,17 @@ const PROMPT_NAMES = "prompts: clickmonkey, explore_tester, explore_plan, explor
 export const CLICKMONKEY_GUIDE = [
   "# ClickMonkey",
   "",
-  "The host LLM walks via MCP. Map, unleash, spec, and replay are CLI.",
+  "The host LLM walks via MCP, then freezes the tape as a spec and proves replay.",
+  "`clickmonkey explore` is exploratory testing without MCP. Map, unleash, and replay stay CLI.",
   "Read clickmonkey://map for the sitemap. This text is also prompt `clickmonkey`.",
   "",
-  "## Modes",
+  "## Jobs",
   "",
-  "- **Map** (scout) — CLI `clickmonkey map`. Lifts fog: unseen doors, then unvisited pages. Never fills or submits.",
-  "- **Unleash** (NPC) — CLI `clickmonkey unleash`. Pathfinds to mapped forms, fills, submits. `--nasty` is the rogue pass (junk + missed validation) on a site you own.",
-  "- **Explore** (paladin) — MCP `explore_start` … `explore_finish`. Charter-driven: do the job. You are the brain. Skills: prompts explore_tester, explore_plan, explore_report.",
-  "- **Spec** — freeze a compact tape into `clickmonkey/specs/*.md` (prompt spec_writer). Validate with spec_check or `clickmonkey spec --check`. Play in CI with CLI `clickmonkey spec`. Not MCP.",
-  "- **Replay** — CLI `clickmonkey replay`. Comparison vs a findings report, not a new walk.",
+  "- **Map** (scout) — CLI `clickmonkey map`. Lifts fog: unseen doors, then unvisited (and later stale) pages. Never fills or submits.",
+  "- **Unleash** (NPC) — CLI `clickmonkey unleash`. Pathfinds to mapped forms, fills, submits. On the tile: wizard (Next, no hop), or the least-recent of form / list / tab / dialog / empty, else nav. `--nasty` is the rogue pass (junk + missed validation) on its own fog clock, on a site you own.",
+  "- **Explore** (paladin) — charter-driven exploratory testing. CLI `clickmonkey explore` (needs brain). MCP `explore_start` … `explore_finish` when the host is the brain. Same Mode: as unleash. Skills: prompts explore_tester, explore_plan, explore_report.",
+  "- **Spec** — MCP `spec_save` writes the compacted walk to `clickmonkey/specs/*.md`. Skill: prompt spec_writer (clickmonkey://spec). `spec_check` is ids-only. `spec_run` (and CLI `clickmonkey spec`) live-replays. That freeze+replay is why MCP exists besides explore.",
+  "- **Replay** — CLI `clickmonkey replay`. Comparison vs a findings report, not a spec.",
   "",
   "## Leash",
   "",
@@ -109,21 +133,10 @@ export const CLICKMONKEY_GUIDE = [
   "- Commit clickmonkey.json, clickmonkey/map.json, clickmonkey/specs/, clickmonkey/explore-context.md.",
   "- Ignore clickmonkey/runs/, replays/, reports/, bundle/.",
   "",
-  "## Explore loop",
+  "## MCP loop",
   "",
   "explore_start (charter) → explore_set_plan from sitemap cards → explore_step / nasty_fill → explore_note / explore_good / explore_finding → explore_finish with summary.",
-  "After a good walk, freeze the tape (spec_writer). Do not invent widget ids.",
-  "MCP does not drive map, unleash, spec, or replay. Shell the CLI, or ask the human.",
-].join("\n");
-
-const SPEC_WRITER_PROMPT = [
-  "Specs live in clickmonkey/specs/*.md next to the leash (clickmonkey.json).",
-  "The playable part is ```clickmonkey fences only. mermaid, photos, and prose stay outside the fence.",
-  "Legal DSL: open <page>, click surface.id, fill surface.id <value>, expect surface.id invalid, expect surface.id text|value \"…\", expect surface visible|hidden, expect path /…, expect text \"…\".",
-  "Ids only from the map (clickmonkey://map). Intro belongs in clickmonkey.json, not the fence.",
-  "Validate with spec_check or `clickmonkey spec --check` before claiming done.",
-  "The host writes the markdown file. Do not invent widget ids.",
-  "After a good MCP explore, freeze the compact tape into a spec.",
+  "Read prompt spec_writer before freezing. Then spec_save (title) → spec_check → spec_run. Do not invent widget ids. Map, unleash, and replay stay CLI.",
 ].join("\n");
 
 const NASTY_WARNING =
@@ -202,6 +215,7 @@ function startExtras(visit: ExploreVisit, pageCount: number): string {
     `Legal open ids: ${visit.legalOpen.join(", ") || "(none)"}`,
     "sitemap: clickmonkey://map",
     "guide: clickmonkey://guide",
+    "spec: clickmonkey://spec",
     PROMPT_NAMES,
   ];
   if (pageCount < THIN_MAP_PAGES) {
@@ -514,12 +528,23 @@ export async function finishExplore(
       : undefined;
   const summary = clipHostText(args.summary);
   const extra = clipHostText(args.extra);
+  const intro = session.config?.intro;
   let result: ExploreResult;
   try {
     result = await session.finish();
   } catch (err) {
     return textResult(errText(err), true);
   }
+  host.lastWalk = {
+    log: {
+      ...result.log,
+      steps: [...result.log.steps],
+      usedLocators: { ...result.log.usedLocators },
+    },
+    logPath: result.logPath,
+    configPath,
+    ...(intro ? { intro } : {}),
+  };
   const lines = [`sessionPath: ${result.sessionPath}`, `logPath: ${result.logPath}`];
   if (args.report !== false && outDir) {
     let leash = config;
@@ -607,6 +632,128 @@ export async function handleSpecList(host: McpHost): Promise<McpToolResult> {
   const root = dirname(configPath);
   const lines = files.map((file) => relative(root, file).split("\\").join("/"));
   return textResult(lines.join("\n"));
+}
+
+function resolveWalkLog(configPath: string, given: string): string | undefined {
+  if (isAbsolute(given)) return existsSync(given) ? given : undefined;
+  const fromLeash = resolve(dirname(configPath), given);
+  if (existsSync(fromLeash)) return fromLeash;
+  const fromCwd = resolve(process.cwd(), given);
+  return existsSync(fromCwd) ? fromCwd : undefined;
+}
+
+function walksToFreeze(host: McpHost, logPath?: string): McpLastWalk[] | McpToolResult {
+  const configPath = configPathOf(host);
+  if (logPath) {
+    const resolved = resolveWalkLog(configPath, logPath);
+    if (!resolved) return textResult(`log not found: ${logPath}`, true);
+    try {
+      const config = loadConfig(configPath);
+      return [{ log: readLog(resolved), logPath: resolved, configPath, intro: config.intro }];
+    } catch (err) {
+      return textResult(errText(err), true);
+    }
+  }
+  const out: McpLastWalk[] = [];
+  const live = liveSession(host);
+  if (live) {
+    try {
+      const t = live.tape();
+      out.push({
+        log: t.log,
+        logPath: t.logPath,
+        configPath: live.configPath ?? configPath,
+        ...(live.config?.intro ? { intro: live.config.intro } : {}),
+      });
+    } catch {
+      // started flag without a tape
+    }
+  }
+  if (host.lastWalk) out.push(host.lastWalk);
+  if (out.length === 0) {
+    return textResult(
+      "no walk to freeze. explore_start … explore_finish, then spec_save — or pass log.",
+      true,
+    );
+  }
+  return out;
+}
+
+export async function handleSpecSave(
+  host: McpHost,
+  args: { title: string; file?: string; log?: string },
+): Promise<McpToolResult> {
+  const walks = walksToFreeze(host, args.log);
+  if (!Array.isArray(walks)) return walks;
+  const title = args.title.trim();
+  if (!title) return textResult("spec title is required", true);
+  let lastErr = "empty fence";
+  for (const walk of walks) {
+    try {
+      const written = writeSpecMarkdown({
+        configPath: walk.configPath,
+        title,
+        log: walk.log,
+        logPath: walk.logPath,
+        ...(walk.intro ? { intro: walk.intro } : {}),
+        ...(args.file ? { fileName: args.file } : {}),
+      });
+      return textResult(
+        [
+          `spec: ${written.relative}`,
+          `steps: ${written.steps}`,
+          "ids: spec_check   replay: spec_run",
+        ].join("\n"),
+      );
+    } catch (err) {
+      lastErr = errText(err);
+    }
+  }
+  return textResult(lastErr, true);
+}
+
+export async function handleSpecRun(
+  host: McpHost,
+  args: { path?: string; headed?: boolean } = {},
+): Promise<McpToolResult> {
+  if (liveSession(host)) {
+    return textResult("explore session is live; explore_finish before spec_run", true);
+  }
+  const configPath = configPathOf(host);
+  let config: Config;
+  try {
+    config = loadConfig(configPath);
+  } catch (err) {
+    return textResult(errText(err), true);
+  }
+  const files = listSpecFiles(configPath, args.path);
+  if (files.length === 0) {
+    return textResult(
+      args.path ? `spec not found: ${args.path}` : "no spec files under clickmonkey/specs/",
+      true,
+    );
+  }
+  if (config.map.pages.length === 0) return textResult("map has no pages (run inspect)", true);
+  const outDir = resolveOutDir(undefined, configPath);
+  mkdirSync(outDir, { recursive: true });
+  try {
+    const play = host.runSpecs ?? runSpecs;
+    const result = await play({
+      config,
+      configPath,
+      outDir,
+      files,
+      headed: args.headed,
+    });
+    const lines = [
+      formatSpecTable(result.cases).trimEnd(),
+      `mdPath: ${result.mdPath}`,
+      `logPath: ${result.logPath}`,
+    ];
+    return textResult(lines.join("\n"), !result.ok);
+  } catch (err) {
+    return textResult(errText(err), true);
+  }
 }
 
 export async function handleSpecCheck(
@@ -790,14 +937,39 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
     async () => handleSpecList(host),
   );
   server.registerTool(
+    "spec_save",
+    {
+      description:
+        "Freeze the last MCP walk (or a log.txt) as clickmonkey/specs/*.md. Compacted tape, intro stays in the leash. Then spec_check and spec_run.",
+      inputSchema: z.object({
+        title: z.string().min(1),
+        file: z.string().min(1).optional(),
+        log: z.string().min(1).optional(),
+      }),
+    },
+    async (args) => handleSpecSave(host, args),
+  );
+  server.registerTool(
     "spec_check",
     {
-      description: "Validate spec fence ids against the map (same as clickmonkey spec --check).",
+      description: "Validate spec fence ids against the map (offline; same as clickmonkey spec --check).",
       inputSchema: z.object({
         path: z.string().min(1).optional(),
       }),
     },
     async (args) => handleSpecCheck(host, args),
+  );
+  server.registerTool(
+    "spec_run",
+    {
+      description:
+        "Live-replay spec fences in a browser (same as CLI clickmonkey spec). Prove the freeze works. explore_finish first.",
+      inputSchema: z.object({
+        path: z.string().min(1).optional(),
+        headed: z.boolean().optional(),
+      }),
+    },
+    async (args) => handleSpecRun(host, args),
   );
   server.registerTool(
     "nasty_list",
@@ -856,8 +1028,8 @@ export function registerMcpPrompts(server: McpServer): void {
   );
   server.registerPrompt(
     "spec_writer",
-    { description: "Write a replayable markdown spec from a compact tape." },
-    () => promptResult(SPEC_WRITER_PROMPT),
+    { description: "How to create a good replayable spec (when, walk, fence, prove)." },
+    () => promptResult(defaultSpecSkills()),
   );
 }
 
@@ -905,7 +1077,7 @@ export function registerMcpResources(server: McpServer, host: McpHost): void {
   server.registerResource(
     "guide",
     "clickmonkey://guide",
-    { title: "ClickMonkey modes (map, unleash, explore, spec, replay)", mimeType: "text/markdown" },
+    { title: "ClickMonkey jobs (map, unleash, explore, spec freeze/replay)", mimeType: "text/markdown" },
     async (uri) => ({ contents: [{ uri: uri.href, text: `${CLICKMONKEY_GUIDE}\n` }] }),
   );
   server.registerResource(
@@ -913,6 +1085,12 @@ export function registerMcpResources(server: McpServer, host: McpHost): void {
     "clickmonkey://oracles",
     { title: "Explore oracles", mimeType: "text/markdown" },
     async (uri) => ({ contents: [{ uri: uri.href, text: defaultExploreSkills() }] }),
+  );
+  server.registerResource(
+    "spec",
+    "clickmonkey://spec",
+    { title: "How to create a replayable spec", mimeType: "text/markdown" },
+    async (uri) => ({ contents: [{ uri: uri.href, text: defaultSpecSkills() }] }),
   );
   server.registerResource(
     "map",

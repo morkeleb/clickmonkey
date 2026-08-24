@@ -466,3 +466,74 @@ export async function scanOverflow(page: Page): Promise<QualityIssue[]> {
   }
   return issues;
 }
+
+const MOBILE_OVERFLOW_VW = 375;
+/** Already phone-narrow — skip the extra resize. */
+const MOBILE_OVERFLOW_SKIP_AT = 420;
+const MOBILE_OVERFLOW_MIN_VH = 667;
+const MOBILE_OVERFLOW_TAG = " @ 375px";
+
+/** WCAG 1.4.10: 1280 CSS px at 400% zoom. */
+export const REFLOW_OVERFLOW_VW = 320;
+/** Already reflow-narrow — skip so a 320 walk is not counted twice. */
+const REFLOW_OVERFLOW_SKIP_AT = 360;
+/** WCAG 1.4.10 horizontal-scroll height; never shrink below this. */
+const REFLOW_OVERFLOW_MIN_VH = 256;
+const REFLOW_OVERFLOW_TAG = " @ 320px";
+
+function tagOverflowAt(issue: QualityIssue, tag: string): QualityIssue {
+  if (issue.where?.trim()) {
+    return { ...issue, where: `${issue.where.trim()}${tag}` };
+  }
+  return { ...issue, message: `${issue.message}${tag}` };
+}
+
+/** Resize, collect, tag, restore — even when collect or resize throws. */
+async function scanOverflowAtViewport(
+  page: Page,
+  width: number,
+  skipAt: number,
+  minHeight: number,
+  tag: string,
+): Promise<QualityIssue[]> {
+  const prev = page.viewportSize();
+  if (!prev || prev.width <= skipAt) return [];
+
+  try {
+    await page.setViewportSize({
+      width,
+      height: Math.max(minHeight, prev.height),
+    });
+    return (await scanOverflow(page)).map((issue) => tagOverflowAt(issue, tag));
+  } finally {
+    await page.setViewportSize(prev);
+  }
+}
+
+/**
+ * Same overflow collect at 375px. Always restores the previous viewport.
+ * Skips the resize when the viewport is already ≤420px wide.
+ */
+export async function scanOverflowMobile(page: Page): Promise<QualityIssue[]> {
+  return scanOverflowAtViewport(
+    page,
+    MOBILE_OVERFLOW_VW,
+    MOBILE_OVERFLOW_SKIP_AT,
+    MOBILE_OVERFLOW_MIN_VH,
+    MOBILE_OVERFLOW_TAG,
+  );
+}
+
+/**
+ * WCAG 1.4.10 reflow: same collect at 320px. Always restores the previous
+ * viewport. Skips when already ≤360px wide.
+ */
+export async function scanOverflowReflow(page: Page): Promise<QualityIssue[]> {
+  return scanOverflowAtViewport(
+    page,
+    REFLOW_OVERFLOW_VW,
+    REFLOW_OVERFLOW_SKIP_AT,
+    REFLOW_OVERFLOW_MIN_VH,
+    REFLOW_OVERFLOW_TAG,
+  );
+}

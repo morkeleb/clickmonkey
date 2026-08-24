@@ -160,6 +160,7 @@ export async function cmdView(opts: {
         intro: state.config.intro,
         skip: state.config.skip,
         inIntro: Boolean(state.inIntro),
+        ...(configPath ? { configPath } : {}),
       });
       process.stdout.write(formatView(view));
     });

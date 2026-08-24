@@ -7,6 +7,7 @@ import {
   huntScore,
   mapFormGoals,
 } from "../src/brains/form-hunt.js";
+import { FOG_OLD_MS } from "../src/brains/npc.js";
 import { decideUnleash } from "../src/brains/unleash.js";
 import type { Page } from "../src/schema/page-model.js";
 import type { View } from "../src/schema/view.js";
@@ -213,6 +214,26 @@ describe("decideFormHunt", () => {
     assert.equal(d, undefined);
   });
 
+  it("prefers a never-landed form over a form landed an hour ago", () => {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const d = decideFormHunt(
+      {
+        view: viewOf({
+          actions: [
+            { id: "link_customers", opens: "customers" },
+            { id: "link_invoices", opens: "invoices" },
+          ],
+        }),
+        stepsUsed: 0,
+        pages: [home, customers, invoices],
+        pageLands: { invoices: hourAgo },
+      },
+      () => 0,
+    );
+    assert.equal(d?.huntTarget, "customers/add_customer");
+    assert.equal(d?.line, "open customers");
+  });
+
   it("deprioritises a form that was already filled", () => {
     const ctx = {
       view: viewOf({
@@ -276,12 +297,12 @@ describe("decideFormHunt", () => {
 
 describe("huntScore", () => {
   it("prefers an untested form over a nearby one already filled", () => {
-    assert.ok(huntScore(0, 2) > huntScore(3, 0));
+    assert.ok(huntScore(0, 2, FOG_OLD_MS) > huntScore(3, 0, FOG_OLD_MS));
   });
 
   it("prefers the closer form when hunger is equal", () => {
-    assert.ok(huntScore(0, 0) > huntScore(0, 1));
-    assert.ok(huntScore(1, 1) > huntScore(1, 4));
+    assert.ok(huntScore(0, 0, FOG_OLD_MS) > huntScore(0, 1, FOG_OLD_MS));
+    assert.ok(huntScore(1, 1, FOG_OLD_MS) > huntScore(1, 4, FOG_OLD_MS));
   });
 });
 

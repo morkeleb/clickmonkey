@@ -12,7 +12,13 @@ export {
   shouldFailOnFindings,
   specStepFailed,
   specFenceIdleError,
+  specFenceHasExpect,
   countHarvestedFindings,
+  specSlug,
+  writeSpecMarkdown,
+  writeSpecFromLogFile,
+  defaultSpecSkills,
+  SPEC_SKILL_FALLBACK,
   SPEC_SOFT_KINDS,
   type SpecCheckCase,
   type SpecCheckFileResult,
@@ -22,6 +28,7 @@ export {
 export { replayReport, formatReplayReport, type ReplayReportResult } from "./replay-report.js";
 export {
   compactLog,
+  compactOptsForLog,
   hoppedStepIndexes,
   introPrefixLength,
   matchingIntroLength,

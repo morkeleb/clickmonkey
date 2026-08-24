@@ -1,11 +1,20 @@
-import { formatStep } from "../schema/dsl.js";
+import { formatStep, parseLine } from "../schema/dsl.js";
+import type { Page } from "../schema/page-model.js";
 import type { View } from "../schema/view.js";
 import type { BrainContext, BrainDecision } from "./types.js";
 import {
   decideForm,
+  dialogOpeners,
   FORM_BURST_MAX,
   formatClick,
   formSubmitAction,
+  formSubmitActions,
+  formSubmitIsListPager,
+  isDialogOpener,
+  isFormSubmit,
+  isRecordRowAction,
+  isTabAction,
+  isWizardAdvance,
   hopPage,
   legalUnleashActions,
   isListChrome,
@@ -17,14 +26,33 @@ import {
   isEmptyStateAction,
   looksLikeSearchField,
   looksLikeRowSelectCheckbox,
+  looksLikeWizard,
   searchIsActive,
   stayActions,
   usableClicks,
+  withoutNoops,
   type FillFn,
 } from "./unleash.js";
 import { decideFormHunt, FORM_HUNT_STAY_RATE } from "./form-hunt.js";
+import { fogHunger, modeLandKey, staleMsForPage, type WalkerModeName } from "../schema/fog.js";
 
-export type WalkerModeName = "form" | "list" | "nav";
+export type { WalkerModeName };
+
+/** Notes that mean the walker just filled or left a form/wizard surface. */
+export function isFormWorkNote(note?: string): boolean {
+  return (
+    note === "form" ||
+    note === "form submit" ||
+    note === "form dismiss" ||
+    note === "wizard" ||
+    note === "wizard dismiss"
+  );
+}
+
+/** Notes that mean a commit click (submit / wizard Next-or-Save), not dismiss. */
+export function isFormCommitNote(note?: string): boolean {
+  return note === "form" || note === "form submit" || note === "wizard";
+}
 
 export interface WalkerMode {
   name: WalkerModeName;
@@ -115,10 +143,42 @@ function decideNav(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDec
   });
 }
 
+function canCommit(ctx: BrainContext): boolean {
+  return ctx.writePolicy === "allow" || ctx.view.stack.length > 1;
+}
+
+function decideWizard(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDecision {
+  const { view } = ctx;
+  if (!canCommit(ctx)) {
+    const leftover = fillEmptyBurst(view, fill);
+    if (leftover) return { ...leftover, note: "wizard" };
+    return hopOrChromeFallback(view, rng, ctx);
+  }
+  const legal = legalUnleashActions(view, ctx.pages);
+  // Same Next id every step is the stepper. usableClicks/~page would drop it.
+  const advances = withoutNoops(
+    formSubmitActions(legal, view.surface, view).filter(isWizardAdvance),
+    ctx.noopIds,
+  );
+  const leftover = fillEmptyBurst(view, fill);
+  if (advances.length > 0) {
+    const fills = leftover ? (leftover.lines ?? [leftover.line]) : [];
+    const click = formatClick(view.surface, pick(advances, rng));
+    if (fills.length > 0) {
+      return { line: fills[0]!, lines: [...fills, click], note: "wizard" };
+    }
+    return { line: click, note: "wizard" };
+  }
+  if (leftover) return { ...leftover, note: "wizard" };
+  const form = decideForm(view, legal, rng, fill, ctx);
+  if (form) return { ...form, note: form.note === "form dismiss" ? "wizard dismiss" : "wizard" };
+  return hopOrChromeFallback(view, rng, ctx);
+}
+
 function decideFormMode(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDecision {
   const { view } = ctx;
   const legal = legalUnleashActions(view, ctx.pages);
-  const commit = ctx.writePolicy === "allow" || view.stack.length > 1;
+  const commit = canCommit(ctx);
   if (commit) {
     const form = decideForm(view, legal, rng, fill, ctx);
     if (form) return form;
@@ -167,16 +227,67 @@ function decideListLocal(ctx: BrainContext, rng: () => number): BrainDecision {
   return hopOrChromeFallback(view, rng, ctx);
 }
 
+const wizardMode: WalkerMode = {
+  name: "wizard",
+  detect: (ctx) => looksLikeWizard(ctx.view),
+  decide: decideWizard,
+};
+
 const formMode: WalkerMode = {
   name: "form",
   detect: (ctx) => ctx.view.shown.length > 0 && hasSurfaceSubmit(ctx),
   decide: decideFormMode,
 };
 
+function decideTab(ctx: BrainContext, rng: () => number, _fill: FillFn): BrainDecision {
+  const tabs = usableClicks(ctx.view.actions.filter(isTabAction), ctx);
+  if (tabs.length > 0) {
+    return { line: formatClick(ctx.view.surface, pick(tabs, rng)), note: "tab" };
+  }
+  return hopOrChromeFallback(ctx.view, rng, ctx);
+}
+
+function decideEmpty(ctx: BrainContext, rng: () => number, _fill: FillFn): BrainDecision {
+  const empty = usableClicks(ctx.view.actions.filter(isEmptyStateAction), ctx);
+  if (empty.length > 0) {
+    return { line: formatClick(ctx.view.surface, pick(empty, rng)), note: "empty" };
+  }
+  return hopOrChromeFallback(ctx.view, rng, ctx);
+}
+
+function decideDialog(ctx: BrainContext, rng: () => number, _fill: FillFn): BrainDecision {
+  const openers = usableClicks(dialogOpeners(ctx.view, ctx.pages), ctx);
+  if (openers.length === 0) return hopOrChromeFallback(ctx.view, rng, ctx);
+  const fresh = openers.filter((a) => {
+    if (!a.opens) return false;
+    return (ctx.pageVisits?.[`${ctx.view.page}/${a.opens}`] ?? 0) === 0;
+  });
+  const pool = fresh.length > 0 ? fresh : openers;
+  return { line: formatClick(ctx.view.surface, pick(pool, rng)), note: "dialog" };
+}
+
 const listMode: WalkerMode = {
   name: "list",
-  detect: (ctx) => !hasSurfaceSubmit(ctx) && listModeScore(ctx.view, ctx.pages) >= 2,
+  detect: (ctx) => listModeScore(ctx.view, ctx.pages) >= 2,
   decide: decideList,
+};
+
+const tabMode: WalkerMode = {
+  name: "tab",
+  detect: (ctx) => ctx.view.actions.some(isTabAction),
+  decide: decideTab,
+};
+
+const dialogMode: WalkerMode = {
+  name: "dialog",
+  detect: (ctx) => ctx.view.stack.length <= 1 && dialogOpeners(ctx.view, ctx.pages).length > 0,
+  decide: decideDialog,
+};
+
+const emptyMode: WalkerMode = {
+  name: "empty",
+  detect: (ctx) => !searchIsActive(ctx.view) && ctx.view.actions.some(isEmptyStateAction),
+  decide: decideEmpty,
 };
 
 const navMode: WalkerMode = {
@@ -185,9 +296,76 @@ const navMode: WalkerMode = {
   decide: decideNav,
 };
 
-/** Ordered detectors: first match owns legal moves. Not a Markov chain. */
-export const UNLEASH_MODES: WalkerMode[] = [formMode, listMode, navMode];
+/** Wizard locks. Other applicable modes compete by least-recent stamp. Nav is fallback. */
+export const UNLEASH_MODES: WalkerMode[] = [
+  wizardMode,
+  formMode,
+  listMode,
+  tabMode,
+  dialogMode,
+  emptyMode,
+  navMode,
+];
+
+function modeHunger(ctx: BrainContext, name: WalkerModeName): number {
+  return fogHunger(staleMsForPage(ctx.modeLands, modeLandKey(ctx.view.page, name)));
+}
 
 export function detectWalkerMode(ctx: BrainContext): WalkerMode {
-  return UNLEASH_MODES.find((m) => m.detect(ctx)) ?? navMode;
+  if (wizardMode.detect(ctx)) return wizardMode;
+  const applicable = UNLEASH_MODES.filter((m) => m.name !== "nav" && m.name !== "wizard" && m.detect(ctx));
+  if (applicable.length === 0) return navMode;
+  let best = applicable[0]!;
+  let bestHunger = modeHunger(ctx, best.name);
+  for (const mode of applicable.slice(1)) {
+    const hunger = modeHunger(ctx, mode.name);
+    if (hunger > bestHunger) {
+      best = mode;
+      bestHunger = hunger;
+    }
+  }
+  return best;
+}
+
+const MODE_WORK_NOTES = new Set([
+  "wizard",
+  "wizard dismiss",
+  "form",
+  "form submit",
+  "form dismiss",
+  "list",
+  "list chrome",
+  "list row",
+  "list stay",
+  "tab",
+  "dialog",
+  "empty",
+]);
+
+export function shouldStampMode(decision: BrainDecision): boolean {
+  return Boolean(decision.mode && MODE_WORK_NOTES.has(decision.note ?? ""));
+}
+
+/** Paladin notes are oracles; stamp only if the DSL line did that mode's work. */
+export function lineMatchesMode(
+  line: string,
+  mode: WalkerModeName,
+  view: View,
+  pages?: readonly Page[],
+): boolean {
+  const parsed = parseLine(line);
+  if (!parsed || "comment" in parsed) return false;
+  if (parsed.kind === "fill") return mode === "form" || mode === "wizard" || mode === "list";
+  if (parsed.kind !== "click") return false;
+  const action = view.actions.find((a) => a.id === parsed.id);
+  if (!action) return false;
+  if (mode === "dialog") return isDialogOpener(action, view, pages);
+  if (mode === "tab") return isTabAction(action);
+  if (mode === "empty") return isEmptyStateAction(action);
+  if (mode === "list") return isListChrome(action) || isRecordRowAction(action);
+  if (mode === "wizard") return isWizardAdvance(action);
+  if (mode === "form") {
+    return isFormSubmit(action, view.surface, formSubmitIsListPager(view.actions, view));
+  }
+  return false;
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WalkerModeName } from "./fog.js";
 import { FieldType } from "./page-model.js";
 import { TestabilityIssue } from "./testability.js";
 
@@ -109,7 +110,7 @@ export const View = z
       .strict()
       .optional(),
     last: ViewLast.optional(),
-    mode: z.enum(["form", "list", "nav"]).optional(),
+    mode: WalkerModeName.optional(),
   })
   .strict();
 export type View = z.infer<typeof View>;

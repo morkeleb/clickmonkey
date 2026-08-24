@@ -3,12 +3,14 @@ import { readFileSync } from "node:fs";
 import type { ChatClient } from "../brains/chat.js";
 import { nastyIgnoreSamples, textContainsNastyPayload } from "../brains/nasty.js";
 import { VisionError } from "../schema/config.js";
+import { FOG_FRESH_MS } from "../schema/fog.js";
 import type { QualityConfidence, QualityIssue } from "../schema/quality.js";
 
 /**
  * Screenshot-only defects a user would notice. Closed list: VLMs invent
  * bugs when the taxonomy is open. Contrast here is "unreadable in the
- * pixels", not a WCAG ratio (axe already owns that).
+ * pixels", not a WCAG ratio (axe already owns that). DOM scanners own
+ * geometry; the VLM must not re-file those rules.
  */
 export const VISUAL_RULES = [
   "overlap",
@@ -21,9 +23,41 @@ export const VISUAL_RULES = [
   "targetSize",
   "contrast",
   "broken",
+  "focusObscured",
+  "focusVisible",
+  "textOcclusion",
+  "fontSize",
+  "textSpacing",
+  "deadHash",
+  "implicitSubmit",
+  "noopener",
+  "scrollPadding",
+  "pointerEvents",
   "other",
 ] as const;
 export type VisualRule = (typeof VISUAL_RULES)[number];
+
+/** Geometry + hit targets the DOM already measured. parseVisualReply drops these. */
+export const DOM_OWNED_VISUAL_RULES = [
+  "overflow",
+  "clip",
+  "scanline",
+  "sparse",
+  "overlap",
+  "zIndex",
+  "broken",
+  "targetSize",
+  "focusObscured",
+  "focusVisible",
+  "textOcclusion",
+  "fontSize",
+  "textSpacing",
+  "deadHash",
+  "implicitSubmit",
+  "noopener",
+  "scrollPadding",
+  "pointerEvents",
+] as const;
 
 export type VisualScan = {
   issues: QualityIssue[];
@@ -42,11 +76,12 @@ export type VisualScanResult =
 
 export const VISION_PROBE = "ClickMonkey vision probe. Reply with the single word pong.";
 
-const VISUAL_RULE_SET = new Set<string>(VISUAL_RULES);
+const VISUAL_RULE_BY_LOWER = new Map<string, string>(VISUAL_RULES.map((r) => [r.toLowerCase(), r]));
+const DOM_OWNED_VISUAL_RULE_SET = new Set<string>(DOM_OWNED_VISUAL_RULES);
 const CONFIDENCE_SET = new Set<string>(["high", "medium", "low"]);
 
 const VISUAL_SYSTEM =
-  "You inspect one UI screenshot. Two jobs: (1) list rendering defects you can point to in the pixels; (2) write a sitemap blurb of what the MAIN screen is for. Reply with JSON only. Always fill blurb.";
+  "You inspect one UI screenshot. Two jobs: (1) list pixel defects the DOM did not already measure; (2) write a sitemap blurb of what the MAIN screen is for. Reply with JSON only. Always fill blurb.";
 
 /** Sitemap caption: screen type, main-pane job, visible form/table/CTA — not chrome. */
 export const VISUAL_BLURB_PROMPT = [
@@ -66,37 +101,39 @@ export const VISUAL_BLURB_PROMPT = [
 export const VISUAL_PROMPT = [
   "Look at the screenshot first. File only rendering defects you can point to in the pixels.",
   "",
-  "Must-check: (1) tables/lists — a column wall shears a word, or gutters between columns collapse;",
-  "(2) tab labels — a title cut mid-glyph; (3) fields — a value colliding with a trailing calendar/search icon;",
-  "(4) repeating row titles, icons, or trailing actions — left or right edges do not share one line;",
-  "(5) the MAIN pane — a left-locked form or column with a clear right edge and more than half the pane empty to the right.",
-  "Leftover test junk in a nearby cell is not a reason to skip this checklist.",
+  "DOM already measured overflow, clip, scanline, sparse, overlap, covered controls, broken images, hit targets, focus-obscured, missing focus rings, text occlusion, tiny type, text-spacing clip, dead in-page hashes, implicit submit buttons, target=_blank without noopener, sticky scroll-padding, and pointer-events:none. Do not re-file those rules.",
+  "",
+  "File only:",
+  "- empty-vs-broken: an empty table or list vs a visible error / failed-load state (not a quiet empty table)",
+  "- visible error/toast chrome the walker might miss",
+  "- mapped widgets listed below that are missing from the pixels",
+  "- a field value colliding with a trailing calendar/search icon",
+  "- canvas or icon-font holes (empty glyph boxes, missing icon ink)",
+  "- abnormal ellipsis: `…` / clipped title when the box still has unused room (not a full column of ellipsis on a narrow table)",
+  "- mojibake / tofu: replacement glyphs, \uFFFD, empty icon-font squares beyond a single canvas hole",
+  "- chart/canvas labels cut or missing (no DOM text)",
+  "- leftover lorem / \"TODO\" / \"lorem ipsum\" / debug copy in the main pane",
+  "- contrast: type is unreadable in this screenshot (too faint on its background)",
+  "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px, not a stacked label above its field)",
   "",
   "Rules (file only these):",
-  "- overlap: two page components occupy the same pixels (borders crossing, labels on labels). An open dropdown, select, combobox, popover, or menu covering the page behind it is expected stacking — not overlap. File the overlay only if it is itself clipped, off-screen, or colliding with another overlay. An open menu does not hide clip or scanline in the table beside it.",
-  "- overflow: content leaking outside a card, modal, table, or the viewport",
-  "- clip: a glyph is physically cut by something else. A table column that shears a word (\"Expert Witness Servic\") is clip. A tab title cut to \"s 1\" is clip. A value running into a trailing icon is clip. If you can read every letter of a field value, it is not clip — padding or a caret after the last letter is empty space. Naming the leftover letters means you read them; omit the issue. A % $ or unit in its own chrome beside a number (100.00 then a separate %) is not clip. A clean ellipsis (…) is not clip.",
-  "- zIndex: a control is covered so a user cannot read or use it (not an open menu over the page)",
+  "- contrast: type is unreadable in this image (too faint on its background)",
   "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px taste, not a stacked label above its field)",
-  "- scanline: a column of similar repeating row items (list titles, row icons, trailing actions) whose edges do not line up, so the eye has to hunt. Collapsed gutters between two data columns count. Not scanline: a label above its field, a table header vs its body, left-aligned names vs right-aligned amounts, items inside an open menu or overflow-tab list (longer labels next to shorter ones still share a left pad).",
-  "- sparse: the MAIN pane (not the sidebar) is left-locked — a form or content column has a clear right edge, and more than half the pane to the right of that edge is empty. A column that uses ~30% of the pane is sparse. Centered cards/login (similar empty space on left and right) are not sparse. A full-width table or a second column in the right half is not sparse.",
-  "- contrast: type is unreadable in this image (too faint, or too small at this screenshot size)",
-  "- broken: missing image, empty icon hole, or obvious placeholder — not leftover test strings",
-  "- other: a user-visible rendering defect that does not fit the list",
+  "- other: a user-visible rendering defect that does not fit the list (empty-vs-broken, toast chrome, missing mapped widget, icon collision, canvas hole, abnormal ellipsis, mojibake/tofu, chart labels, leftover lorem/TODO)",
   "",
-  "Type defects are clip (sheared glyphs) or contrast (unreadable). Not font-family or brand preference.",
+  "Type defects are contrast (unreadable in this image). Not font-family, brand preference, or body copy size (DOM already measured font-size).",
   "Do not report: sticky headers/nav, expected page scroll, missing features, hover/focus you cannot see, WCAG math, inventing that a control is unclickable, masonry or staggered cards, a center-aligned hero title.",
   nastyIgnorePrompt(),
   "",
   "confidence: high = you can name the column, tab, or control; medium = likely but could be chrome; omit low.",
-  "where: visible region names (e.g. \"Vendor column in the vouchers table\"). Do not invent widget ids.",
-  "severity: error if it blocks reading or using a control; warning otherwise (scanline is usually warning).",
+  "where: visible region names (e.g. \"toast in the top-right\"). Do not invent widget ids.",
+  "severity: error if it blocks reading or using a control; warning otherwise.",
   "sight: 1-2 lines on what is on screen that should guide the next test. Not a defect list.",
   "",
   VISUAL_BLURB_PROMPT,
   "",
-  'JSON only: { "issues": [ { "rule": "overlap|overflow|clip|zIndex|align|scanline|sparse|contrast|broken|other", "severity": "error"|"warning", "confidence": "high"|"medium", "where": "visible region", "message": "one line" } ], "sight": "optional 1-2 lines", "blurb": "required sitemap caption" }',
-  "Empty issues only if tables, tabs, and repeating rows are actually clean. Always include blurb.",
+  'JSON only: { "issues": [ { "rule": "contrast|align|other", "severity": "error"|"warning", "confidence": "high"|"medium", "where": "visible region", "message": "one line" } ], "sight": "optional 1-2 lines", "blurb": "required sitemap caption" }',
+  "Empty issues if none of the above are visible. Always include blurb.",
 ].join("\n");
 
 function errorText(err: unknown): string {
@@ -152,6 +189,13 @@ function extractJsonObject(raw: string): unknown {
   }
 }
 
+/** Geometry restated as `other` — still drop. Not icon-collision / toast wording. */
+const LAYOUT_GEOMETRY =
+  /\b(overflow|clip|overlap|z-?index|scanline|shear(?:ed|s)?|ragged|gutter)\b/i;
+/** Pixel-only `other` the prompt asked for — keep even if a geometry word appears. */
+const PIXEL_OTHER_KEEP =
+  /\b(toast|snackbar|icon|calendar|empty|failed.?load|glyph|canvas|missing|ellipsis|mojibake|tofu|replacement.?glyph|lorem|todo|chart)\b/i;
+/** Product-chrome clip of junk still counts (dropPayloadContentVisual). */
 const LAYOUT_DEFECT =
   /\b(overflow|clip|overlap|z-?index|scanline|unreadable|covered|leaking|cut off|collide|misalign|shear(?:ed|s)?|ragged|gutter|truncated|too small to read)/i;
 
@@ -164,8 +208,7 @@ function nastyIgnorePrompt(): string {
     "Ignore leftover --nasty walker fills as content. If a field or cell shows strings like these, that is expected test data, not a rendering defect:",
     ...samples,
     "Also ignore paraphrases of that junk: XSS payload, SQL injection, malformed SVG, onload=alert, UNION SELECT.",
-    "Do not file broken, clip, overflow, align, or other because that junk is visible, looks sheared, runs into an icon, or is \"inappropriate\" for a real name. We put it there.",
-    "Still file clip/scanline when a product string is sheared: a vendor or client name in a table (\"Expert Witness Servic\"), a tab title, a void-reason label, a column header. Leftover junk in a nearby field is not a reason to skip that checklist.",
+    "Do not file contrast, align, other, or a missing-content hole because that junk is visible, looks sheared, or is \"inappropriate\" for a real name. We put it there.",
   ].join("\n");
 }
 
@@ -195,6 +238,7 @@ function visualIssue(opts: {
     message: opts.message,
     count: 1,
     confidence: opts.confidence,
+    via: "vlm",
     ...(opts.where ? { where: opts.where } : {}),
   };
 }
@@ -228,7 +272,10 @@ export function parseVisualReply(raw: string): ParsedVisualReply {
         ? (confidenceRaw as QualityConfidence)
         : "medium";
       if (confidence === "low") continue;
-      const rule = typeof rec.rule === "string" && VISUAL_RULE_SET.has(rec.rule) ? rec.rule : "other";
+      const ruleRaw = typeof rec.rule === "string" ? rec.rule.trim() : "";
+      const rule = VISUAL_RULE_BY_LOWER.get(ruleRaw.toLowerCase()) ?? "other";
+      if (DOM_OWNED_VISUAL_RULE_SET.has(rule)) continue;
+      if (rule === "other" && LAYOUT_GEOMETRY.test(message) && !PIXEL_OTHER_KEEP.test(message)) continue;
       const severity = rec.severity === "error" ? "error" : "warning";
       const where = typeof rec.where === "string" ? rec.where.replace(/\s+/g, " ").trim() : "";
       const dropOpts = { rule, message, ...(where ? { where } : {}) };
@@ -255,6 +302,37 @@ export function parseVisualReply(raw: string): ParsedVisualReply {
   }
 }
 
+export type MeasuredVisualHit = { rule: string; message: string; where?: string };
+
+function visionUserText(opts: { facts?: string; measured?: MeasuredVisualHit[] }): string {
+  let text = VISUAL_PROMPT;
+  if (opts.facts) text += `\n\nMapped widgets (do not invent ids):\n${opts.facts}`;
+  if (opts.measured && opts.measured.length > 0) {
+    const lines = opts.measured.map((m) => `- ${m.rule}: ${m.where ?? m.message}`);
+    text += `\n\nAlready measured (do not repeat):\n${lines.join("\n")}`;
+  }
+  return text;
+}
+
+/** Fog-fresh extras skip. Callers still force a pass when `needBlurb`. */
+export function shouldSkipVision(opts: { staleMs: number; unchanged: boolean }): boolean {
+  return opts.unchanged && opts.staleMs <= FOG_FRESH_MS;
+}
+
+/** Whether to call the VLM. Caption and first-run Sight still force a pass. */
+export function visionPass(opts: {
+  needBlurb: boolean;
+  needSight: boolean;
+  pngUnchanged: boolean;
+  staleMs: number;
+  triedThisRun: boolean;
+}): "skip" | "call" {
+  if (opts.needBlurb || opts.needSight) return "call";
+  if (shouldSkipVision({ staleMs: opts.staleMs, unchanged: opts.pngUnchanged })) return "skip";
+  if (opts.triedThisRun) return "skip";
+  return "call";
+}
+
 export async function examineScreenshot(opts: {
   chat: ChatClient;
   baseUrl: string;
@@ -267,6 +345,8 @@ export async function examineScreenshot(opts: {
   jpeg?: Buffer;
   /** Mapped widgets for the blurb; do not invent ids from this. */
   facts?: string;
+  /** DOM layout hits already on the ledger. Grounding; do not re-file. */
+  measured?: MeasuredVisualHit[];
 }): Promise<VisualScanResult> {
   const hash = hashPngFile(opts.pngPath);
   if (opts.lastHash === hash) return { status: "skip" };
@@ -287,9 +367,7 @@ export async function examineScreenshot(opts: {
             { type: "image_url", image_url: { url: dataUrl } },
             {
               type: "text",
-              text: opts.facts
-                ? `${VISUAL_PROMPT}\n\nMapped widgets (do not invent ids):\n${opts.facts}`
-                : VISUAL_PROMPT,
+              text: visionUserText(opts),
             },
           ],
         },

@@ -11,7 +11,8 @@ import {
   recordPlanStep,
   usefulExploreNote,
 } from "../brains/explore.js";
-import { detectWalkerMode } from "../brains/walker-mode.js";
+import { detectWalkerMode, lineMatchesMode } from "../brains/walker-mode.js";
+import { recordMode } from "../persist/lands.js";
 import { bootRun } from "../executor/boot.js";
 import { logBrainDecide } from "../executor/nav-log.js";
 import { createExecutor, type RunState, type StepResult } from "../executor/run.js";
@@ -70,6 +71,7 @@ export function snapshotView(state: RunState): Promise<View> {
     intro: state.config.intro,
     skip: state.config.skip,
     inIntro: Boolean(state.inIntro),
+    ...(state.configPath ? { configPath: state.configPath } : {}),
   });
 }
 
@@ -261,8 +263,16 @@ export async function applyExploreStep(
   }
   const mode = view.mode ?? detectWalkerMode({ view, stepsUsed: ctx.stepsUsed }).name;
   if (ctx.state.navMeta) ctx.state.navMeta.mode = mode;
+  const onPage = view.page;
 
   const result = await ctx.exec.runLine(trimmed);
+  if (
+    !opts?.hostFinding &&
+    mode !== "nav" &&
+    lineMatchesMode(trimmed, mode, view, ctx.state.model.pages)
+  ) {
+    recordMode(ctx.state, onPage, mode);
+  }
   if (opts?.severity && result.finding && result.finding.severity !== opts.severity) {
     result.finding = { ...result.finding, severity: opts.severity };
     const jsonPath = join(ctx.outDir, "findings", result.finding.id, "finding.json");
@@ -446,6 +456,12 @@ export class ExploreSession {
 
   get skills(): string | undefined {
     return this.ctx?.skills;
+  }
+
+  /** Live tape without finishing. Used by MCP `spec_save`. */
+  tape(): { log: Log; logPath: string } {
+    const ctx = this.requireWalk();
+    return { log: this.snapshotLog(), logPath: ctx.logPath };
   }
 
   async start(opts: {
@@ -648,15 +664,20 @@ export class ExploreSession {
     this.heartbeat = undefined;
   }
 
-  private flush(opts?: { notes?: string[]; goods?: string[] }): ExploreResult {
+  private snapshotLog(): Log {
     const ctx = this.ctx;
-    const log: Log = {
+    return {
       schemaVersion: 1,
       comments: [],
-      steps: ctx?.state.log.steps ?? [],
+      steps: [...(ctx?.state.log.steps ?? [])],
       usedLocators: { ...(ctx?.state.usedLocators ?? {}) },
       result: (ctx?.findings.length ?? 0) > 0 ? "failed" : "passed",
     };
+  }
+
+  private flush(opts?: { notes?: string[]; goods?: string[] }): ExploreResult {
+    const ctx = this.ctx;
+    const log = this.snapshotLog();
     const logPath = ctx?.logPath ?? "";
     const sessionPath = ctx?.sessionPath ?? "";
     if (ctx) {

@@ -32,6 +32,106 @@ export function isUndersizedTarget(width: number, height: number): boolean {
   );
 }
 
+export type TargetRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+export type Circle24 = {
+  cx: number;
+  cy: number;
+  r: number;
+};
+
+/** Sample from the page: hit fields plus the control's bounding box. */
+export type TargetSizeSample = TargetSizeHit &
+  TargetRect & {
+    /** UA widget, inline text link, or disabled — neighbor only, never a hit. */
+    exempt?: boolean;
+  };
+
+/** WCAG 2.5.8 spacing circle: 24px diameter, centered on the target. */
+export function circle24(cx: number, cy: number): Circle24 {
+  return { cx, cy, r: TARGET_MIN_PX / 2 };
+}
+
+function centerOf(rect: TargetRect): { cx: number; cy: number } {
+  return { cx: (rect.left + rect.right) / 2, cy: (rect.top + rect.bottom) / 2 };
+}
+
+/** True when the open disk around (cx, cy) overlaps rect (tangent does not count). */
+export function circleHitsRect(cx: number, cy: number, r: number, rect: TargetRect): boolean {
+  if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r) || r < 0) return false;
+  const x = Math.max(rect.left, Math.min(cx, rect.right));
+  const y = Math.max(rect.top, Math.min(cy, rect.bottom));
+  const dx = cx - x;
+  const dy = cy - y;
+  return dx * dx + dy * dy < r * r;
+}
+
+/**
+ * True when a 24px circle centered on `target` misses every other actable rect
+ * (any size) and every other undersized target's 24px circle. Tangent = pass.
+ */
+export function spacingExceptionHolds(target: TargetRect, others: readonly TargetRect[]): boolean {
+  const { cx, cy } = centerOf(target);
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return false;
+  const { r } = circle24(cx, cy);
+  const minSq = TARGET_MIN_PX * TARGET_MIN_PX;
+  for (const other of others) {
+    if (!other) continue;
+    if (circleHitsRect(cx, cy, r, other)) return false;
+    const ow = other.right - other.left;
+    const oh = other.bottom - other.top;
+    if (!isUndersizedTarget(ow, oh)) continue;
+    const o = centerOf(other);
+    const dx = cx - o.cx;
+    const dy = cy - o.cy;
+    if (dx * dx + dy * dy < minSq) return false;
+  }
+  return true;
+}
+
+function sampleRect(sample: TargetSizeSample): TargetRect | undefined {
+  if (!sample || typeof sample !== "object") return undefined;
+  const { left, top, right, bottom } = sample;
+  if (![left, top, right, bottom].every((n) => typeof n === "number" && Number.isFinite(n))) {
+    return undefined;
+  }
+  return { left, top, right, bottom };
+}
+
+/** Keep undersized hits; drop those whose 24px spacing circle misses every other actable. */
+export function dropSpacedHits(samples: TargetSizeSample[]): TargetSizeHit[] {
+  if (!Array.isArray(samples)) return [];
+  const rects = samples.map(sampleRect);
+  const hits: TargetSizeHit[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const sample = samples[i];
+    if (!sample || typeof sample !== "object") continue;
+    if (sample.exempt) continue;
+    if (!isUndersizedTarget(sample.width, sample.height)) continue;
+    const target = rects[i];
+    if (!target) continue;
+    const others: TargetRect[] = [];
+    for (let j = 0; j < rects.length; j++) {
+      const other = rects[j];
+      if (j === i || !other) continue;
+      others.push(other);
+    }
+    if (spacingExceptionHolds(target, others)) continue;
+    hits.push({
+      kind: sample.kind,
+      width: sample.width,
+      height: sample.height,
+      where: sample.where,
+    });
+  }
+  return hits;
+}
+
 export function targetSizeConfidence(width: number, height: number): "high" | "medium" {
   return width < TARGET_HIGH_PX && height < TARGET_HIGH_PX ? "high" : "medium";
 }
@@ -77,8 +177,6 @@ export function issuesFromTargetHits(hits: TargetSizeHit[]): QualityIssue[] {
  * serialized into the page.
  */
 const COLLECT_SRC = `(() => {
-  var MIN = ${TARGET_MIN_PX};
-  var MAX_HITS = ${TARGET_SIZE_CAP};
   var SEL = "button, [role='button'], a[href], input:not([type='hidden']), select, textarea, [role='tab'], [role='menuitem']";
   var hits = [];
   var seen = {};
@@ -159,29 +257,28 @@ const COLLECT_SRC = `(() => {
     return cs.display === "inline";
   }
 
-  function meetsMin(w, h) {
-    return w >= MIN && h >= MIN;
-  }
-
-  function bumpFrom(el, box) {
-    if (!el) return;
-    var r = el.getBoundingClientRect();
-    if (!meetsMin(r.width, r.height)) return;
-    box.width = Math.max(box.width, r.width);
-    box.height = Math.max(box.height, r.height);
-  }
-
   function targetBox(el) {
     var r = el.getBoundingClientRect();
-    var box = { width: r.width, height: r.height };
+    var box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    function include(node) {
+      if (!node || node === el) return;
+      var o = node.getBoundingClientRect();
+      if (o.width < 1 || o.height < 1) return;
+      box.left = Math.min(box.left, o.left);
+      box.top = Math.min(box.top, o.top);
+      box.right = Math.max(box.right, o.right);
+      box.bottom = Math.max(box.bottom, o.bottom);
+    }
     var wrap = el.closest("label");
-    if (wrap && wrap !== el) bumpFrom(wrap, box);
+    if (wrap) include(wrap);
     if (el.id) {
       try {
         var esc = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(el.id) : el.id;
-        bumpFrom(document.querySelector('label[for="' + esc + '"]'), box);
+        include(document.querySelector('label[for="' + esc + '"]'));
       } catch (err) {}
     }
+    box.width = box.right - box.left;
+    box.height = box.bottom - box.top;
     return box;
   }
 
@@ -230,28 +327,36 @@ const COLLECT_SRC = `(() => {
   var n;
   for (n = 0; n < nodes.length; n++) {
     var el = nodes[n];
-    if (!shown(el) || disabled(el) || collapsedMenu(el) || inlineTextLink(el)) continue;
+    if (!shown(el) || collapsedMenu(el)) continue;
     var tag = el.tagName.toLowerCase();
-    if (tag === "input") {
-      var itype = (el.type || "").toLowerCase();
-      if (itype === "hidden" || itype === "checkbox" || itype === "radio" || itype === "file" || itype === "range" || itype === "color") continue;
-    }
+    var itype = tag === "input" ? (el.type || "").toLowerCase() : "";
+    if (itype === "hidden") continue;
+    var ua = itype === "checkbox" || itype === "radio" || itype === "file" || itype === "range" || itype === "color";
     var box = targetBox(el);
     if (!isFinite(box.width) || !isFinite(box.height)) continue;
-    if (box.width >= MIN || box.height >= MIN) continue;
     if (box.width < 1 || box.height < 1) continue;
     var where = describeWhere(el);
     var kind = kindName(el);
-    var key = kind + "\\0" + where + "\\0" + Math.round(box.width) + "x" + Math.round(box.height);
+    var exempt = Boolean(disabled(el) || ua || inlineTextLink(el));
+    var key = kind + "\\0" + where + "\\0" + Math.round(box.width) + "x" + Math.round(box.height) + (exempt ? "\\0x" : "");
     if (seen[key]) continue;
     seen[key] = true;
-    hits.push({ kind: kind, width: box.width, height: box.height, where: where });
-    if (hits.length >= MAX_HITS) break;
+    hits.push({
+      kind: kind,
+      width: box.width,
+      height: box.height,
+      where: where,
+      left: box.left,
+      top: box.top,
+      right: box.right,
+      bottom: box.bottom,
+      exempt: exempt,
+    });
   }
   return hits;
 })()`;
 
 export async function scanTargetSize(page: Page): Promise<QualityIssue[]> {
-  const hits = (await page.evaluate(COLLECT_SRC).catch(() => [])) as TargetSizeHit[];
-  return issuesFromTargetHits(hits);
+  const samples = (await page.evaluate(COLLECT_SRC).catch(() => [])) as TargetSizeSample[];
+  return issuesFromTargetHits(dropSpacedHits(samples));
 }

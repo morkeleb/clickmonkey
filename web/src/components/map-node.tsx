@@ -1,4 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { fogOf, landAgeLabel } from "@/lib/fog";
 import type { GraphNodeData } from "@/lib/layout";
 import { cn, runHue } from "@/lib/utils";
 
@@ -7,6 +8,8 @@ type GraphNode = Node<GraphNodeData, "graph">;
 export function MapNode({ data, selected }: NodeProps<GraphNode>) {
   const dialog = data.kind === "dialog";
   const sized = data.cardWidth != null && data.cardHeight != null;
+  const fog = dialog ? 0 : fogOf(data.lastLandAt);
+  const haze = fog >= 0.4 ? fog * 0.55 : 0;
   return (
     <div className="relative h-full w-full overflow-visible">
       <Handle type="target" position={Position.Left} className="!size-1.5 !border-zinc-600 !bg-zinc-500" />
@@ -27,14 +30,22 @@ export function MapNode({ data, selected }: NodeProps<GraphNode>) {
         ))}
         <div
           className={cn(
-            "flex h-full w-full items-center gap-2 rounded-lg border px-2.5 py-1.5",
+            "relative flex h-full w-full items-center gap-2 rounded-lg border px-2.5 py-1.5",
             dialog
               ? "border-zinc-800 bg-zinc-900/90 text-zinc-400"
               : "border-zinc-700 bg-zinc-800 text-zinc-100",
             selected && "border-zinc-200",
           )}
+          title={!dialog ? landAgeLabel(data.lastLandAt) : undefined}
         >
-          <div className="min-w-0 flex-1">
+          {haze > 0 ? (
+            <span
+              className="pointer-events-none absolute inset-0 z-0 rounded-lg bg-zinc-950"
+              style={{ opacity: haze }}
+              aria-hidden
+            />
+          ) : null}
+          <div className="relative z-10 min-w-0 flex-1">
             {data.kicker && !data.section ? (
               <div className="truncate text-[10px] tracking-wide text-zinc-500 uppercase">{data.kicker}</div>
             ) : null}
@@ -55,7 +66,7 @@ export function MapNode({ data, selected }: NodeProps<GraphNode>) {
             {dialog ? <div className="text-[10px] leading-4 text-zinc-500">dialog</div> : null}
           </div>
           {(data.red > 0 || data.yellow > 0 || data.rings.length > 0) && (
-            <div className="flex shrink-0 flex-col items-end gap-1">
+            <div className="relative z-10 flex shrink-0 flex-col items-end gap-1">
               <div className="flex gap-0.5">
                 {data.red > 0 ? (
                   <span className="min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] leading-4 font-semibold text-white">

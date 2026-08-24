@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>A11y extra rules</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; color: #111; background: #fff; }
+      /* axe skip-link only matches offscreen hash links at the start of the page */
+      .skip { position: absolute; top: -40px; left: 0; }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#missing" data-testid="skip-link">Skip</a>
+    <main>
+      <h1>Extra a11y</h1>
+      <h3 data-testid="skip-h3">Skipped heading level</h3>
+      <h2 data-testid="empty-h2"></h2>
+      <p>
+        <button type="button" tabindex="3" data-testid="high-tabindex">Jump</button>
+        <button type="button" tabindex="0" data-testid="ok-btn">OK</button>
+        <button type="button" data-testid="unnamed-btn"></button>
+        <button type="button" aria-label="Confirm" data-testid="name-mismatch">Save</button>
+      </p>
+      <p>
+        <input type="text" title="Email" data-testid="title-only" />
+      </p>
+      <div role="dialog" data-testid="unnamed-dialog">Dialog body</div>
+    </main>
+  </body>
+</html>

@@ -6,7 +6,7 @@ import { persistFinding, persistVisualIssueFindings, shouldPersistFinding } from
 import { touchPresence } from "../persist/presence.js";
 import { persistSharedMap } from "../persist/config.js";
 import { lastQualityPage, lastVisualHash, persistQualityRuntime, persistQualityVisual } from "../persist/quality.js";
-import { normalizeQualityMessage } from "../schema/quality.js";
+import { normalizeQualityMessage, type QualityIssue } from "../schema/quality.js";
 import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { parseLine, formatLog, formatStep } from "../schema/dsl.js";
 import {
@@ -25,6 +25,7 @@ import {
 import type { Locator } from "../schema/locator.js";
 import type { Log, Step } from "../schema/log.js";
 import { resolveVision, type Config } from "../schema/config.js";
+import { staleMsForPage } from "../schema/fog.js";
 import type { PageModel, PageModelDraft } from "../schema/page-model.js";
 import type { View } from "../schema/view.js";
 import { attachHttpOracle, isDocumentNotFound, isNotFoundPage, type OracleFinding } from "../oracles/http.js";
@@ -38,7 +39,7 @@ import {
   waitOutLoading,
 } from "../surveyor/loading.js";
 import { scanLayout } from "../surveyor/layout.js";
-import { examineScreenshot, hashPngFile } from "../surveyor/vision.js";
+import { examineScreenshot, hashPngFile, visionPass, type MeasuredVisualHit } from "../surveyor/vision.js";
 import { checkFence } from "./fence.js";
 import {
   captureStepShot,
@@ -80,10 +81,15 @@ export interface RunState {
   lastScreenshotPath?: string;
   /** `page.content()` for this step; quality checks read this, not the live page. */
   stepHtml?: string;
+  lastLandPageId?: string;
+  /** Brain name (`map`, `unleash`, `unleash-nasty`, …) for per-job land stamps. */
+  brain?: string;
   lastSight?: string;
   lastSightByPage?: Record<string, string>;
   /** PNG hash we already asked for a map blurb on, per page. */
   blurbTriedHashByPage?: Record<string, string>;
+  /** Last-land times from before this run stamped. VLM skip must not see this stay. */
+  fogAtStart?: Record<string, string>;
   /** Intro is how we enter the leash; fence applies after it. */
   inIntro?: boolean;
   navMeta?: NavMeta;
@@ -293,6 +299,15 @@ function visionReplyIsLoading(opts: { blurb?: string; sight?: string }): boolean
   return blurbLooksLikeLoading(opts.blurb ?? "") || blurbLooksLikeLoading(opts.sight ?? "");
 }
 
+function measuredHits(issues: QualityIssue[] | undefined): MeasuredVisualHit[] | undefined {
+  if (!issues?.length) return undefined;
+  return issues.map((i) => ({
+    rule: i.rule,
+    message: i.message,
+    ...(i.where ? { where: i.where } : {}),
+  }));
+}
+
 /** PNG + HTTP only. Do not touch `page` — finish() overlaps this with inspect/axe. */
 async function scanStepVision(
   state: RunState,
@@ -300,7 +315,8 @@ async function scanStepVision(
   bounced: boolean,
   shotPath: string | undefined,
   loc: { path: string; origin?: string; href: string },
-  html?: string,
+  html: string | undefined,
+  opts?: { measured?: MeasuredVisualHit[]; ledgerVisualHash?: string },
 ): Promise<string | undefined> {
   const { path, origin, href } = loc;
   const pageKey = sightPageKey(path, origin);
@@ -313,17 +329,23 @@ async function scanStepVision(
     const vision = resolveVision(state.config.vision, state.config.brain);
     if (!vision || (!vision.issues && !vision.assist)) return undefined;
     const key = { path, ...(origin ? { origin } : {}) };
-    const needSight = Boolean(vision.assist && !state.lastSightByPage?.[pageKey]);
     const onPageSurface = state.surfaceStack.length <= 1;
     const mapPage = onPageSurface ? state.model.pages.find((p) => p.id === state.pageId) : undefined;
     const shotHash = hashPngFile(shotPath);
     const needBlurb = Boolean(
       mapPage && visionMayDescribe(mapPage) && state.blurbTriedHashByPage?.[pageKey] !== shotHash,
     );
-    const lastHash =
-      needSight || needBlurb || !state.configPath
-        ? undefined
-        : lastVisualHash(state.configPath, key, state.outDir);
+    const needSight = Boolean(vision.assist && !state.lastSightByPage?.[pageKey]);
+    const pngUnchanged = Boolean(opts?.ledgerVisualHash) && shotHash === opts?.ledgerVisualHash;
+    const staleMs = staleMsForPage(state.fogAtStart, state.pageId);
+    const triedThisRun = state.blurbTriedHashByPage?.[pageKey] === shotHash;
+    if (visionPass({ needBlurb, needSight, pngUnchanged, staleMs, triedThisRun }) === "skip") {
+      applyPageSight(state, pageKey);
+      return undefined;
+    }
+    const markTried = (hash = shotHash) => {
+      state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: hash };
+    };
     const apiKey = vision.apiKeyEnv ? process.env[vision.apiKeyEnv] : undefined;
     const result = await examineScreenshot({
       chat,
@@ -331,20 +353,16 @@ async function scanStepVision(
       model: vision.model,
       apiKey,
       pngPath: shotPath,
-      lastHash,
       ...(mapPage ? { facts: mechanicalDescription(mapPage) } : {}),
+      ...(opts?.measured && opts.measured.length > 0 ? { measured: opts.measured } : {}),
     });
     if (result.status !== "ok") {
-      if (needBlurb) {
-        state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: shotHash };
-      }
+      markTried();
       applyPageSight(state, pageKey);
       return undefined;
     }
     if (visionReplyIsLoading(result)) {
-      if (needBlurb) {
-        state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: result.hash };
-      }
+      markTried(result.hash);
       applyPageSight(state, pageKey);
       return undefined;
     }
@@ -379,10 +397,8 @@ async function scanStepVision(
       }
     }
     applyPageSight(state, pageKey);
-    if (needBlurb) {
-      state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: result.hash };
-      return result.blurb;
-    }
+    markTried(result.hash);
+    if (needBlurb) return result.blurb;
     return undefined;
   } catch {
     applyPageSight(state, pageKey);
@@ -548,8 +564,51 @@ async function finish(
   const prev =
     html && state.configPath ? lastQualityPage(state.configPath, qualityKey, state.outDir) : undefined;
   const hashHit = Boolean(html && prev && prev.htmlHash === hashHtml(html));
+  const ledgerVisualHash = state.configPath
+    ? lastVisualHash(state.configPath, qualityKey, state.outDir)
+    : undefined;
+  let measured: MeasuredVisualHit[] | undefined;
+  if (runInspect && !state.replay && !bounced && state.configPath) {
+    try {
+      const shotHash = shotPath && existsSync(shotPath) ? hashPngFile(shotPath) : undefined;
+      const skipLayout = shotHash ? prev?.visualHash === shotHash : hashHit;
+      if (!skipLayout) {
+        const layout = await scanLayout(state.page);
+        persistQualityVisual(
+          state.configPath,
+          {
+            ...qualityKey,
+            foundAt: new Date().toISOString(),
+            visual: layout.issues,
+            visualHash: shotHash ?? prev?.visualHash ?? "layout",
+          },
+          state.outDir,
+          ...(layout.complete ? [{ replaceDom: true }] : []),
+        );
+        if (layout.issues.length > 0 && shotPath) {
+          persistVisualIssueFindings(state.outDir, layout.issues, {
+            stepIndex: state.log.steps.length,
+            url: loc.href,
+            pageId: state.pageId,
+            screenshotPath: shotPath,
+            tapePath: join(state.outDir, "replay.log"),
+            replayLog: compactTape(state, step, "visual issue"),
+          });
+        }
+        measured = measuredHits(layoutIssues);
+      } else {
+        measured = measuredHits(prev?.visual);
+      }
+    } catch {
+      // layout extras must not stall a walk
+      measured = measuredHits(prev?.visual);
+    }
+  }
   const [blurb, markup, a11y] = await Promise.all([
-    scanStepVision(state, step, bounced, shotPath, loc, html),
+    scanStepVision(state, step, bounced, shotPath, loc, html, {
+      measured,
+      ledgerVisualHash,
+    }),
     html && !hashHit
       ? qualityFromHtml(html, loc.href, scanPublicMeta).catch(() => undefined)
       : Promise.resolve(undefined),
@@ -569,39 +628,6 @@ async function finish(
       : Promise.resolve(undefined),
   ]);
   state.stepHtml = undefined;
-  if (runInspect && !state.replay && !bounced && state.configPath) {
-    try {
-      const shotHash = shotPath && existsSync(shotPath) ? hashPngFile(shotPath) : undefined;
-      const skipLayout = shotHash ? prev?.visualHash === shotHash : hashHit;
-      if (!skipLayout) {
-        const layoutIssues = await scanLayout(state.page);
-        if (layoutIssues.length > 0) {
-          persistQualityVisual(
-            state.configPath,
-            {
-              ...qualityKey,
-              foundAt: new Date().toISOString(),
-              visual: layoutIssues,
-              visualHash: shotHash ?? prev?.visualHash ?? "layout",
-            },
-            state.outDir,
-          );
-          if (shotPath) {
-            persistVisualIssueFindings(state.outDir, layoutIssues, {
-              stepIndex: state.log.steps.length,
-              url: loc.href,
-              pageId: state.pageId,
-              screenshotPath: shotPath,
-              tapePath: join(state.outDir, "replay.log"),
-              replayLog: compactTape(state, step, "visual issue"),
-            });
-          }
-        }
-      }
-    } catch {
-      // layout extras must not stall a walk
-    }
-  }
   if (html && runInspect && state.configPath && !state.replay) {
     try {
       const livePath = (() => {
@@ -642,6 +668,7 @@ async function finish(
     intro: state.config.intro,
     skip: state.config.skip,
     inIntro: state.inIntro,
+    ...(state.configPath ? { configPath: state.configPath } : {}),
     last: {
       step: formatStep(step),
       ok: !finding,
@@ -778,6 +805,7 @@ export function createExecutor(state: RunState): {
         intro: state.config.intro,
         skip: state.config.skip,
         inIntro: state.inIntro,
+        ...(state.configPath ? { configPath: state.configPath } : {}),
       });
       await dumpVerboseState(state, "land", landView);
     }

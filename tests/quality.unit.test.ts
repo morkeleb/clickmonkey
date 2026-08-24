@@ -124,6 +124,98 @@ describe("quality ledger", () => {
     assert.equal(scanline.where, "row icons · row action icons");
   });
 
+  it("keeps a DOM sparse message when a higher-confidence VLM sparse arrives", () => {
+    const merged = mergeQualityIssues([
+      {
+        source: "visual",
+        rule: "sparse",
+        severity: "warning",
+        message: "left-locked form uses 29% of the pane",
+        count: 1,
+        confidence: "medium",
+        via: "dom",
+        where: "New vendor",
+      },
+      {
+        source: "visual",
+        rule: "sparse",
+        severity: "warning",
+        message: "huge empty region on the right",
+        count: 1,
+        confidence: "high",
+        via: "vlm",
+        where: "main pane",
+      },
+    ]);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0]?.message, "left-locked form uses 29% of the pane");
+    assert.equal(merged[0]?.confidence, "medium");
+    assert.equal(merged[0]?.via, "dom");
+    assert.equal(merged[0]?.count, 1);
+    assert.equal(merged[0]?.where, "New vendor");
+  });
+
+  it("lets a later DOM scan overwrite a VLM message for the same rule", () => {
+    const merged = mergeQualityIssues([
+      {
+        source: "visual",
+        rule: "clip",
+        severity: "warning",
+        message: "maybe sheared",
+        count: 1,
+        confidence: "medium",
+        via: "vlm",
+      },
+      {
+        source: "visual",
+        rule: "clip",
+        severity: "error",
+        message: "Vendor column shears Expert Witness Servic",
+        count: 1,
+        confidence: "high",
+        via: "dom",
+        where: "Vendor column",
+      },
+    ]);
+    assert.equal(merged[0]?.message, "Vendor column shears Expert Witness Servic");
+    assert.equal(merged[0]?.severity, "error");
+    assert.equal(merged[0]?.confidence, "high");
+    assert.equal(merged[0]?.via, "dom");
+    assert.equal(merged[0]?.where, "Vendor column");
+  });
+
+  it("keeps the worse DOM overflow when 1280 and 375 both hit", () => {
+    const merged = mergeQualityIssues([
+      {
+        source: "visual",
+        rule: "overflow",
+        severity: "warning",
+        message: "Page is 20px wider than the viewport",
+        count: 1,
+        confidence: "medium",
+        via: "dom",
+        where: "hero",
+      },
+      {
+        source: "visual",
+        rule: "overflow",
+        severity: "error",
+        message: "Page is 44px wider than the viewport",
+        count: 1,
+        confidence: "high",
+        via: "dom",
+        where: "hero @ 375px",
+      },
+    ]);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0]?.message, "Page is 44px wider than the viewport");
+    assert.equal(merged[0]?.severity, "error");
+    assert.equal(merged[0]?.confidence, "high");
+    assert.equal(merged[0]?.via, "dom");
+    assert.equal(merged[0]?.where, "hero · hero @ 375px");
+    assert.equal(merged[0]?.count, 2);
+  });
+
   it("truncates messages used as keys", () => {
     const long = "x".repeat(500);
     const n = normalizeQualityMessage(long);
@@ -262,6 +354,96 @@ describe("quality ledger", () => {
       ["overlap", "scanline"],
     );
     assert.equal(page.visualHash, "png-b");
+  });
+
+  it("replaceDom drops prior DOM hits and keeps VLM-only rows", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-visual-replace-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistQualityVisual(configPath, {
+      path: "/",
+      foundAt: "t1",
+      visualHash: "png-a",
+      visual: [
+        {
+          source: "visual",
+          rule: "overflow",
+          severity: "error",
+          message: "Page is 44px wider",
+          count: 1,
+          via: "dom",
+        },
+        {
+          source: "visual",
+          rule: "contrast",
+          severity: "warning",
+          message: "Hint is faint",
+          count: 1,
+          via: "vlm",
+        },
+      ],
+    });
+    persistQualityVisual(
+      configPath,
+      {
+        path: "/",
+        foundAt: "t2",
+        visualHash: "png-b",
+        visual: [
+          {
+            source: "visual",
+            rule: "sparse",
+            severity: "warning",
+            message: "left-locked form uses 29%",
+            count: 1,
+            via: "dom",
+          },
+        ],
+      },
+      undefined,
+      { replaceDom: true },
+    );
+    const page = loadQualityReport(qualityReportPath(configPath)).pages[0]!;
+    assert.deepEqual(page.visual.map((i) => i.rule).sort(), ["contrast", "sparse"]);
+    assert.equal(page.visual.find((i) => i.rule === "overflow"), undefined);
+  });
+
+  it("replaceDom keeps untagged contrast/align/other from old ledgers", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-visual-legacy-vlm-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistQualityVisual(configPath, {
+      path: "/",
+      foundAt: "t1",
+      visualHash: "png-a",
+      visual: [
+        {
+          source: "visual",
+          rule: "overflow",
+          severity: "error",
+          message: "Page is 44px wider",
+          count: 1,
+        },
+        {
+          source: "visual",
+          rule: "contrast",
+          severity: "warning",
+          message: "Hint is faint",
+          count: 1,
+        },
+      ],
+    });
+    persistQualityVisual(
+      configPath,
+      {
+        path: "/",
+        foundAt: "t2",
+        visualHash: "png-b",
+        visual: [],
+      },
+      undefined,
+      { replaceDom: true },
+    );
+    const page = loadQualityReport(qualityReportPath(configPath)).pages[0]!;
+    assert.deepEqual(page.visual.map((i) => i.rule), ["contrast"]);
   });
 
   it("persistQualityVisual does not add a second row when the VLM rephrases the same rule", () => {

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pointer events</title>
+    <style>
+      body { margin: 16px; font: 16px/1.4 sans-serif; }
+      button {
+        box-sizing: border-box;
+        font: inherit;
+        padding: 8px 16px;
+        border: 1px solid #333;
+        background: #eee;
+        color: #111;
+      }
+    </style>
+  </head>
+  <body>
+    <main data-testid="home">
+      <button type="button" data-testid="dead" style="pointer-events:none">Save</button>
+      <button type="button" data-testid="ok">OK</button>
+      <button type="button" data-testid="off" disabled style="pointer-events:none">Off</button>
+      <div style="pointer-events:none">
+        <button type="button" data-testid="child" style="pointer-events:auto">Child</button>
+      </div>
+      <button type="button" data-testid="aria-off" aria-disabled="true" style="pointer-events:none">AriaOff</button>
+      <button type="button" data-testid="aria-hid" aria-hidden="true" style="pointer-events:none">AriaHid</button>
+      <button type="button" data-testid="ghost" hidden style="pointer-events:none">Ghost</button>
+      <div inert>
+        <button type="button" data-testid="inert-btn" style="pointer-events:none">Inert</button>
+      </div>
+      <button type="button" data-testid="skip" style="pointer-events:none;position:absolute;left:-10000px;width:1px;height:1px">Skip</button>
+      <button type="button" data-testid="below" style="pointer-events:none;position:absolute;top:2000px;left:16px">Below</button>
+    </main>
+  </body>
+</html>

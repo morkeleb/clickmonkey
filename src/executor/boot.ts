@@ -2,6 +2,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { persistSharedMap } from "../persist/config.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
+import { loadLands, recordLand, shouldStampLand } from "../persist/lands.js";
+import { landTimes } from "../schema/fog.js";
 import { startPresence, touchPresence } from "../persist/presence.js";
 import { isNotFoundPage } from "../oracles/http.js";
 import type { Config } from "../schema/config.js";
@@ -64,6 +66,7 @@ export function attachInspectAfterStep(state: RunState): void {
       s.config = { ...s.config, map: r.model };
     }
     if (s.outDir) touchPresence(s.outDir, s.pageId);
+    if (shouldStampLand(s, false)) recordLand(s);
   };
 }
 
@@ -130,10 +133,14 @@ export async function bootRun(
     navLogPath,
     verbose: Boolean(opts?.verbose),
     verboseSeq: 0,
+    ...(opts?.brain ? { brain: opts.brain } : {}),
+    ...(opts?.configPath ? { fogAtStart: landTimes(loadLands(opts.configPath)) } : {}),
   };
   attachInspectAfterStep(state);
   if (!opts?.replay) touchPresence(outDir, state.pageId);
-  if (state.configPath && !(await isNotFoundPage(handle.page))) {
+  const bootNotFound = await isNotFoundPage(handle.page);
+  if (state.configPath && !bootNotFound) {
+    if (shouldStampLand(state, bootNotFound)) recordLand(state);
     const saved = persistSharedMap(state.configPath, inspected.model);
     state.config = saved;
     state.model = saved.map;
@@ -159,6 +166,7 @@ export async function bootRun(
       intro: state.config.intro,
       skip: state.config.skip,
       inIntro: Boolean(state.inIntro),
+      ...(state.configPath ? { configPath: state.configPath } : {}),
     });
     await dumpVerboseState(state, "boot", bootView);
   }

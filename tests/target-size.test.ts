@@ -11,19 +11,24 @@ function blob(issues: Array<{ where?: string; message: string }>): string {
 }
 
 describe("scanTargetSize", () => {
-  it("flags a 16×16 icon button, not a 40px button or an inline paragraph link", async () => {
+  it("flags packed 16×16 toolbar icons, not a 40px button, inline link, or isolated icon", async () => {
     await withPage(html, async (page) => {
       const issues = await scanTargetSize(page);
       const hits = issues.filter((i) => i.rule === "targetSize");
       const dump = blob(hits);
 
       const icon = hits.find((i) => /icon-btn/.test(i.where ?? ""));
-      assert.ok(icon, `expected 16×16 icon button, got ${dump}`);
+      assert.ok(icon, `expected packed 16×16 icon button, got ${dump}`);
       assert.equal(icon.source, "visual");
       assert.equal(icon.severity, "warning");
       assert.equal(icon.confidence, "high");
       assert.equal(icon.count, 1);
       assert.match(icon.message, /Button is 16×16px; WCAG 2\.5\.8 minimum is 24×24/);
+
+      assert.ok(
+        hits.some((i) => /icon-link/.test(i.where ?? "")),
+        `expected packed 16×16 icon link, got ${dump}`,
+      );
 
       assert.equal(
         hits.some((i) => /save/.test(`${i.where ?? ""} ${i.message}`)),
@@ -35,10 +40,10 @@ describe("scanTargetSize", () => {
         false,
         `inline paragraph link must not be targetSize, got ${dump}`,
       );
-
-      assert.ok(
-        hits.some((i) => /icon-link/.test(i.where ?? "")),
-        `expected 16×16 icon link, got ${dump}`,
+      assert.equal(
+        hits.some((i) => /lonely-icon/.test(i.where ?? "")),
+        false,
+        `isolated 16×16 with empty space must not be targetSize, got ${dump}`,
       );
       assert.equal(
         hits.some((i) =>

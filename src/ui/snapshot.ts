@@ -4,12 +4,14 @@ import { hopsFromNavLog } from "./graph.js";
 import { loadConfig } from "../persist/config.js";
 import { isPresenceLive, listPresences } from "../persist/presence.js";
 import { loadCombinedQuality } from "../persist/quality.js";
+import { loadLands } from "../persist/lands.js";
+import { landTimes } from "../schema/fog.js";
 import { listReports } from "../persist/reports.js";
 import { collectFindingCases, listRuns } from "../persist/runs.js";
 import { loadCombinedTestability } from "../persist/testability.js";
 import { runsDir } from "../persist/workspace.js";
 import type { Config } from "../schema/config.js";
-import { UiLeash, UiMapFinding, UiRun, UiSnapshot } from "../schema/ui.js";
+import { UiLeash, UiMapFinding, UiRun, UiSnapshot, type UiGraph } from "../schema/ui.js";
 import { buildUiGraph } from "./graph.js";
 import { identityFromRunId } from "./identity.js";
 import { latestPageScreenshotUrls, listShotRunDirs, runFileUrl } from "./run-detail.js";
@@ -74,13 +76,34 @@ function hopsOf(listed: ReturnType<typeof listRuns>) {
 
 export type SnapshotPatch = "runs" | "quality" | "testability" | "findings";
 
+function withLandTimes(graph: UiGraph, pages: Record<string, string>): UiGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const lastLandAt = pages[node.pageId];
+      if (!lastLandAt) {
+        if (!node.lastLandAt) return node;
+        const { lastLandAt: _drop, ...rest } = node;
+        return rest;
+      }
+      return { ...node, lastLandAt };
+    }),
+  };
+}
+
 /** Update one slice of a live snapshot without re-parsing the map. */
 export function refreshUiSnapshot(
   snapshot: UiSnapshot,
   configPath: string,
   part: SnapshotPatch,
 ): UiSnapshot {
-  if (part === "runs") return { ...snapshot, runs: collectUiRuns(configPath) };
+  if (part === "runs") {
+    return {
+      ...snapshot,
+      runs: collectUiRuns(configPath),
+      graph: withLandTimes(snapshot.graph, landTimes(loadLands(configPath))),
+    };
+  }
   const listed = listRuns(configPath);
   const runDirs = listed.map((r) => r.dir);
   if (part === "quality") return { ...snapshot, quality: loadCombinedQuality(runDirs, configPath) };
@@ -100,7 +123,7 @@ export function refreshUiSnapshot(
   });
   return {
     ...snapshot,
-    graph,
+    graph: withLandTimes(graph, landTimes(loadLands(configPath))),
     findings: mapFindingsOf(findings),
     runs: collectUiRuns(configPath),
     reports: listReports(configPath).map((r) => ({
@@ -160,7 +183,10 @@ export function buildUiSnapshot(configPath: string): UiSnapshot {
     appOrigin: originOfHref(config.url),
   });
   const mapFindings = mapFindingsOf(findings);
-  const graph = buildUiGraph(config.map, { findings, hops });
+  const graph = withLandTimes(
+    buildUiGraph(config.map, { findings, hops }),
+    landTimes(loadLands(configPath)),
+  );
   if (shots.size > 0) {
     graph.nodes = graph.nodes.map((node) => {
       if (node.kind !== "page") return node;

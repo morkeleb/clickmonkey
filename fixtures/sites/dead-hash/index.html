@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dead hash</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Dead hash</h1>
+      <p>
+        <a href="#nope" data-testid="dead">Broken jump</a>
+        <a href="#ok" data-testid="ok">Good jump</a>
+        <a href="#" data-testid="empty-hash">Empty hash</a>
+        <a href="#named" data-testid="named">Named jump</a>
+        <a href="#gone" style="display:none" data-testid="hidden-gone">Hidden gone</a>
+        <a href="#top" data-testid="top">Back to top</a>
+        <a href="#/" data-testid="spa-slash">SPA slash</a>
+        <a href="#!" data-testid="bang">Bang</a>
+        <a href="#foo%20bar" data-testid="encoded">Encoded jump</a>
+        <a href="#email" data-testid="email-hash">Jump to email</a>
+        <a href="#/users/123" data-testid="spa-route">SPA route</a>
+        <a href="#tab=billing" data-testid="spa-state">SPA state</a>
+      </p>
+      <div id="ok">Present target</div>
+      <a name="named">Legacy named target</a>
+      <input name="email" data-testid="email-input" />
+      <div id="foo bar">Spaced id</div>
+    </main>
+  </body>
+</html>

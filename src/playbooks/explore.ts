@@ -15,6 +15,9 @@ import { formatLiveLine } from "../executor/nav-log.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { persistSharedMap } from "../persist/config.js";
+import { loadLands } from "../persist/lands.js";
+import { modeLandKey, modeLandTimes } from "../schema/fog.js";
+import { lineMatchesMode } from "../brains/walker-mode.js";
 import { appendEvent } from "../persist/events.js";
 import { exploreOutlineOf, setPresenceOutline, stopPresence } from "../persist/presence.js";
 import { pickSeedPageId } from "./seed.js";
@@ -253,10 +256,12 @@ export async function runExplore(opts: {
 
     let consecutiveRefusals = 0;
     let itemSteps = 0;
+    const modeLands: Record<string, string> = { ...modeLandTimes(loadLands(opts.configPath)) };
     while (session.stepsUsed < steps && Date.now() < deadline) {
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
         : undefined;
+      const onPage = view.page;
       const decision = await brain.decide({
         view,
         stepsUsed: session.stepsUsed,
@@ -266,6 +271,7 @@ export async function runExplore(opts: {
         recent: session.recent,
         pages: state.model.pages,
         sight: state.lastSight,
+        modeLands,
         ...(session.plan ? { plan: session.plan } : {}),
       });
       const line = decision.line.trim();
@@ -286,6 +292,13 @@ export async function runExplore(opts: {
         continue;
       }
       consecutiveRefusals = 0;
+      if (
+        decision.mode &&
+        decision.mode !== "nav" &&
+        lineMatchesMode(line, decision.mode, view, state.model.pages)
+      ) {
+        modeLands[modeLandKey(onPage, decision.mode)] = new Date().toISOString();
+      }
       view = stepped.visit.view;
       itemSteps += 1;
       const itemFinished = Boolean(decision.done) || stepped.newProductFinding || itemSteps >= 10;

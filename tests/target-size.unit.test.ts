@@ -2,13 +2,19 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseVisualReply, VISUAL_PROMPT, VISUAL_RULES } from "../src/surveyor/vision.js";
 import {
+  circle24,
+  circleHitsRect,
+  dropSpacedHits,
   issuesFromTargetHits,
   isUndersizedTarget,
   isUserAgentInputType,
+  spacingExceptionHolds,
   TARGET_SIZE_CAP,
   targetSizeConfidence,
   targetSizeIssue,
+  type TargetRect,
   type TargetSizeHit,
+  type TargetSizeSample,
 } from "../src/surveyor/target-size.js";
 import { whyRule } from "../src/reports/why.js";
 
@@ -20,11 +26,11 @@ describe("targetSize rule", () => {
   it("is a visual rule for undersized controls, not inline text links", () => {
     assert.ok(VISUAL_RULES.includes("targetSize"));
     assert.doesNotMatch(VISUAL_PROMPT, /targetSize:/);
-    assert.match(whyRule("targetSize") ?? "", /WCAG 2\.5\.8/);
+    assert.match(whyRule("targetSize") ?? "", /24px-clear circle|24×24/);
     assert.match(whyRule("targetSize") ?? "", /mis|tap|neighbor/i);
   });
 
-  it("parses targetSize from a vision reply", () => {
+  it("drops targetSize from a vision reply — DOM owns the rule", () => {
     const out = parseVisualReply(
       JSON.stringify({
         issues: [
@@ -35,13 +41,19 @@ describe("targetSize rule", () => {
             where: "toolbar Close",
             message: "Close is 16×16px",
           },
+          {
+            rule: "contrast",
+            severity: "warning",
+            confidence: "high",
+            message: "Hint is unreadable",
+          },
         ],
       }),
     );
     assert.equal(out.ok, true);
     if (!out.ok) return;
-    assert.equal(out.issues[0]?.rule, "targetSize");
-    assert.equal(out.issues[0]?.source, "visual");
+    assert.equal(out.issues.length, 1);
+    assert.equal(out.issues[0]?.rule, "contrast");
   });
 });
 
@@ -102,5 +114,84 @@ describe("targetSizeIssue", () => {
       hit({ width: 16, height: 16 }),
     ]);
     assert.equal(duped.length, 1);
+  });
+});
+
+function box(left: number, top: number, width: number, height: number): TargetRect {
+  return { left, top, right: left + width, bottom: top + height };
+}
+
+function sample(
+  partial: Partial<TargetSizeSample> & Pick<TargetSizeSample, "left" | "top" | "right" | "bottom" | "width" | "height">,
+): TargetSizeSample {
+  return { kind: "Button", where: 'button[data-testid="icon-btn"]', ...partial };
+}
+
+describe("WCAG 2.5.8 spacing exception", () => {
+  it("circle24 is a 24px-diameter disk", () => {
+    assert.deepEqual(circle24(8, 8), { cx: 8, cy: 8, r: 12 });
+  });
+
+  it("circleHitsRect overlaps the box but treats tangent as a miss", () => {
+    assert.equal(circleHitsRect(0, 0, 12, box(-4, -4, 8, 8)), true);
+    assert.equal(circleHitsRect(0, 0, 12, box(12, -4, 8, 8)), false);
+    assert.equal(circleHitsRect(0, 0, 12, box(100, 100, 8, 8)), false);
+  });
+
+  it("holds for two 16×16 targets whose centers are 40px apart", () => {
+    const a = box(0, 0, 16, 16);
+    const b = box(40, 0, 16, 16);
+    assert.equal(spacingExceptionHolds(a, [b]), true);
+    assert.equal(spacingExceptionHolds(b, [a]), true);
+    const issues = issuesFromTargetHits(
+      dropSpacedHits([
+        sample({ width: 16, height: 16, ...a, where: 'button[data-testid="a"]' }),
+        sample({ width: 16, height: 16, ...b, where: 'button[data-testid="b"]' }),
+      ]),
+    );
+    assert.equal(issues.length, 0);
+  });
+
+  it("fails for two 16×16 targets whose centers are 20px apart", () => {
+    const a = box(0, 0, 16, 16);
+    const b = box(20, 0, 16, 16);
+    assert.equal(spacingExceptionHolds(a, [b]), false);
+    assert.equal(spacingExceptionHolds(b, [a]), false);
+    const issues = issuesFromTargetHits(
+      dropSpacedHits([
+        sample({ width: 16, height: 16, ...a, where: 'button[data-testid="a"]' }),
+        sample({ width: 16, height: 16, ...b, where: 'button[data-testid="b"]' }),
+      ]),
+    );
+    assert.equal(issues.length, 2);
+  });
+
+  it("counts an exempt neighbor (checkbox, inline link) toward spacing, not as a hit", () => {
+    const icon = box(0, 0, 16, 16);
+    const check = box(8, 0, 12, 12);
+    const far = box(200, 0, 12, 12);
+    const packed = dropSpacedHits([
+      sample({ width: 16, height: 16, ...icon, where: 'button[data-testid="icon"]' }),
+      sample({
+        width: 12,
+        height: 12,
+        ...check,
+        where: 'input[data-testid="agree"]',
+        exempt: true,
+      }),
+    ]);
+    assert.equal(packed.length, 1);
+    assert.equal(packed[0]?.where, 'button[data-testid="icon"]');
+    const isolated = dropSpacedHits([
+      sample({ width: 16, height: 16, ...icon, where: 'button[data-testid="icon"]' }),
+      sample({
+        width: 12,
+        height: 12,
+        ...far,
+        where: 'input[data-testid="agree"]',
+        exempt: true,
+      }),
+    ]);
+    assert.equal(isolated.length, 0);
   });
 });

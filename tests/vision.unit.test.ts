@@ -9,9 +9,12 @@ import {
   examineScreenshot,
   hashPngFile,
   parseVisualReply,
+  shouldSkipVision,
+  visionPass,
   VISUAL_BLURB_PROMPT,
   VISUAL_PROMPT,
 } from "../src/surveyor/vision.js";
+import { FOG_FRESH_MS, FOG_OLD_MS } from "../src/schema/fog.js";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -29,7 +32,7 @@ describe("parseVisualReply", () => {
   it("reads issues and sight from JSON", () => {
     const out = parseVisualReply(
       JSON.stringify({
-        issues: [{ rule: "overlap", severity: "error", message: "Two cards overlap" }],
+        issues: [{ rule: "contrast", severity: "error", message: "Hint text is unreadable" }],
         sight: "A login form with email and password",
       }),
     );
@@ -39,11 +42,12 @@ describe("parseVisualReply", () => {
     assert.deepEqual(out.issues, [
       {
         source: "visual",
-        rule: "overlap",
+        rule: "contrast",
         severity: "error",
-        message: "Two cards overlap",
+        message: "Hint text is unreadable",
         count: 1,
         confidence: "medium",
+        via: "vlm",
       },
     ]);
     assert.equal(out.sight, "A login form with email and password");
@@ -59,22 +63,29 @@ describe("parseVisualReply", () => {
     assert.match(VISUAL_BLURB_PROMPT, /mapped widgets lists fields or actions/i);
   });
 
-  it("defines clip, scanline, and leftover nasty fills in the prompt, not as reply filters", () => {
+  it("asks for empty-vs-broken and DOM-measured grounding, not a geometry hunt", () => {
     assert.match(VISUAL_PROMPT, /Ignore leftover --nasty walker fills/);
     assert.match(VISUAL_PROMPT, /<script>alert\(1\)<\/script>/);
     assert.match(VISUAL_PROMPT, /OR '1'='1/);
-    assert.match(VISUAL_PROMPT, /Do not file broken, clip, overflow/);
-    assert.match(VISUAL_PROMPT, /product string is sheared/);
-    assert.match(VISUAL_PROMPT, /column wall shears a word/);
-    assert.match(VISUAL_PROMPT, /If you can read every letter of a field value, it is not clip/);
-    assert.match(VISUAL_PROMPT, /unit in its own chrome beside a number/);
-    assert.match(VISUAL_PROMPT, /Not font-family or brand preference/);
-    assert.match(VISUAL_PROMPT, /Not scanline: a label above its field/);
-    assert.match(VISUAL_PROMPT, /sparse:/);
-    assert.match(VISUAL_PROMPT, /Centered cards\/login/);
-    assert.match(VISUAL_PROMPT, /items inside an open menu/);
-    assert.match(VISUAL_PROMPT, /expected stacking/);
-    assert.match(VISUAL_PROMPT, /open dropdown/);
+    assert.match(VISUAL_PROMPT, /empty-vs-broken/);
+    assert.match(VISUAL_PROMPT, /Do not re-file those rules/);
+    assert.match(VISUAL_PROMPT, /DOM already measured overflow, clip, scanline, sparse, overlap/);
+    assert.match(VISUAL_PROMPT, /focus-obscured, missing focus rings, text occlusion/);
+    assert.match(VISUAL_PROMPT, /dead in-page hashes/);
+    assert.match(VISUAL_PROMPT, /pointer-events:none/);
+    assert.match(VISUAL_PROMPT, /visible error\/toast chrome/);
+    assert.match(VISUAL_PROMPT, /mapped widgets listed below that are missing from the pixels/);
+    assert.match(VISUAL_PROMPT, /trailing calendar\/search icon/);
+    assert.match(VISUAL_PROMPT, /canvas or icon-font holes/);
+    assert.match(VISUAL_PROMPT, /ellipsis/);
+    assert.match(VISUAL_PROMPT, /mojibake|tofu/);
+    assert.match(VISUAL_PROMPT, /chart/);
+    assert.match(VISUAL_PROMPT, /lorem/);
+    assert.match(VISUAL_PROMPT, /unreadable in this screenshot/);
+    assert.match(VISUAL_PROMPT, /Not font-family/);
+    assert.doesNotMatch(VISUAL_PROMPT, /Must-check/);
+    assert.doesNotMatch(VISUAL_PROMPT, /column wall shears a word/);
+    assert.doesNotMatch(VISUAL_PROMPT, /targetSize:/);
     assert.doesNotMatch(VISUAL_PROMPT, /brand or typography taste/);
   });
 
@@ -93,13 +104,14 @@ describe("parseVisualReply", () => {
 
   it("accepts fenced JSON with extra text", () => {
     const out = parseVisualReply(`\`\`\`json
-{ "issues": [{ "rule": "clip", "severity": "warning", "message": "Text clipped" }], "sight": "header bar" }
+{ "issues": [{ "rule": "contrast", "severity": "warning", "message": "Hint text is unreadable" }], "sight": "header bar" }
 \`\`\``);
     assert.equal(out.ok, true);
     if (!out.ok) return;
     assert.equal(out.issues.length, 1);
-    assert.equal(out.issues[0]?.rule, "clip");
-    assert.equal(out.issues[0]?.message, "Text clipped");
+    assert.equal(out.issues[0]?.rule, "contrast");
+    assert.equal(out.issues[0]?.message, "Hint text is unreadable");
+    assert.equal(out.issues[0]?.via, "vlm");
     assert.equal(out.sight, "header bar");
   });
 
@@ -128,7 +140,7 @@ describe("parseVisualReply", () => {
       JSON.stringify({
         issues: [
           { rule: "funky", severity: "error", message: "odd stacking" },
-          { rule: "overlap", severity: "error" },
+          { rule: "align", severity: "error" },
         ],
       }),
     );
@@ -147,11 +159,11 @@ describe("parseVisualReply", () => {
       JSON.stringify({
         issues: [
           {
-            rule: "overlap",
+            rule: "align",
             severity: "error",
             confidence: "high",
             where: "filter chip on table header",
-            message: "Chip border crosses the header",
+            message: "Chip is stepped vs its siblings",
           },
           {
             rule: "align",
@@ -169,23 +181,141 @@ describe("parseVisualReply", () => {
     assert.equal(out.issues[0]?.where, "filter chip on table header");
   });
 
-  it("accepts scanline as a rule", () => {
+  it("drops a clip issue from the model and keeps contrast", () => {
     const out = parseVisualReply(
       JSON.stringify({
         issues: [
           {
-            rule: "scanline",
+            rule: "clip",
             severity: "warning",
             confidence: "high",
-            where: "invoice list titles",
-            message: "Row titles do not share a left edge",
+            where: "Vendor column",
+            message: "Vendor column shears a word",
+          },
+          {
+            rule: "contrast",
+            severity: "warning",
+            confidence: "high",
+            message: "Hint text is unreadable",
           },
         ],
       }),
     );
     assert.equal(out.ok, true);
     if (!out.ok) return;
-    assert.equal(out.issues[0]?.rule, "scanline");
+    assert.equal(out.issues.length, 1);
+    assert.equal(out.issues[0]?.rule, "contrast");
+    assert.equal(out.issues[0]?.via, "vlm");
+  });
+
+  it("drops capitalized DOM-owned rules and other that restates clip", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          { rule: "CLIP", severity: "error", confidence: "high", message: "Text clipped" },
+          { rule: "other", severity: "warning", confidence: "high", message: "Label is truncated by overflow" },
+          { rule: "contrast", severity: "warning", confidence: "high", message: "Hint is faint" },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.issues.length, 1);
+    assert.equal(out.issues[0]?.rule, "contrast");
+  });
+
+  it("keeps pixel-only other: abnormal ellipsis, leftover lorem, and chart labels", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Title uses an ellipsis even though the column still has empty space",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Main pane still shows lorem ipsum placeholder copy",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Chart axis labels are cut off on the canvas",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Label is truncated by overflow",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.deepEqual(
+      out.issues.map((i) => i.message),
+      [
+        "Title uses an ellipsis even though the column still has empty space",
+        "Main pane still shows lorem ipsum placeholder copy",
+        "Chart axis labels are cut off on the canvas",
+      ],
+    );
+  });
+
+  it("keeps pixel-only other: icon collision and toast chrome", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            where: "date field",
+            message: "Date value colliding with the calendar icon",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            where: "top-right",
+            message: "Toast covering the save button",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.issues.length, 2);
+    assert.deepEqual(
+      out.issues.map((i) => i.message),
+      ["Date value colliding with the calendar icon", "Toast covering the save button"],
+    );
+  });
+
+  it("drops focusObscured, textOcclusion, and fontSize from the model — DOM owns those", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          { rule: "focusObscured", severity: "error", confidence: "high", message: "Focus ring is under a modal" },
+          { rule: "focusVisible", severity: "warning", confidence: "high", message: "Save has no focus ring" },
+          { rule: "textOcclusion", severity: "warning", confidence: "high", message: "Value runs under a search icon" },
+          { rule: "fontSize", severity: "warning", confidence: "medium", message: "Helper text is too small to read" },
+          { rule: "textSpacing", severity: "warning", confidence: "high", message: "Chip clips after letter-spacing" },
+          { rule: "contrast", severity: "warning", confidence: "high", message: "Hint text is unreadable" },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.deepEqual(
+      out.issues.map((i) => i.rule),
+      ["contrast"],
+    );
   });
 
   it("drops a report only when it quotes a --nasty catalog string, not a paraphrase", () => {
@@ -253,16 +383,16 @@ describe("parseVisualReply", () => {
             message: "Table rows show XSS payload text like <script>alert(1)</script>",
           },
           {
-            rule: "broken",
+            rule: "other",
             severity: "warning",
             confidence: "high",
             message: "Listing looks malicious and broken",
           },
           {
-            rule: "overflow",
+            rule: "other",
             severity: "error",
             confidence: "high",
-            message: "Overlong name overflows the table cell",
+            message: "Save toast never appears after submit",
           },
         ],
       }),
@@ -272,21 +402,14 @@ describe("parseVisualReply", () => {
     assert.equal(out.issues.length, 2);
     assert.deepEqual(
       out.issues.map((i) => i.rule),
-      ["broken", "overflow"],
+      ["other", "other"],
     );
   });
 
-  it("does not censor clip, scanline, or overlay phrasing in parse — the prompt owns those", () => {
+  it("drops DOM-owned geometry rules even when the phrasing is a real pixel defect", () => {
     const out = parseVisualReply(
       JSON.stringify({
         issues: [
-          {
-            rule: "clip",
-            severity: "warning",
-            confidence: "high",
-            message: "Text 'Mafalda Boyle' is clipped at the end, with the 'e' and 'y' partially cut off",
-            where: "Legal Name* field",
-          },
           {
             rule: "clip",
             severity: "warning",
@@ -298,23 +421,108 @@ describe("parseVisualReply", () => {
             rule: "scanline",
             severity: "warning",
             confidence: "high",
-            message:
-              "Menu items 'AI Training & Learning' and 'Fee entries' are misaligned to the left edge",
-            where: "Active tabs dropdown menu",
+            message: "Row titles do not share a left edge",
+            where: "invoice list titles",
           },
           {
             rule: "overlap",
             severity: "warning",
             confidence: "medium",
-            message: "Dropdown menu overlaps with the 'No matching records' message",
-            where: "Readiness dropdown menu",
+            message: "Badge covers the title",
+          },
+          {
+            rule: "align",
+            severity: "warning",
+            confidence: "high",
+            message: "Primary buttons in the toolbar are stepped",
           },
         ],
       }),
     );
     assert.equal(out.ok, true);
     if (!out.ok) return;
-    assert.equal(out.issues.length, 4);
+    assert.equal(out.issues.length, 1);
+    assert.equal(out.issues[0]?.rule, "align");
+  });
+});
+
+describe("shouldSkipVision", () => {
+  it("skips when the page is fog-fresh and unchanged", () => {
+    assert.equal(shouldSkipVision({ staleMs: 0, unchanged: true }), true);
+    assert.equal(shouldSkipVision({ staleMs: FOG_FRESH_MS, unchanged: true }), true);
+  });
+
+  it("still asks when fog is stale or the page changed", () => {
+    assert.equal(shouldSkipVision({ staleMs: FOG_FRESH_MS + 1, unchanged: true }), false);
+    assert.equal(shouldSkipVision({ staleMs: FOG_OLD_MS, unchanged: true }), false);
+    assert.equal(shouldSkipVision({ staleMs: 0, unchanged: false }), false);
+  });
+});
+
+describe("visionPass", () => {
+  it("always asks when a caption is still needed", () => {
+    assert.equal(
+      visionPass({
+        needBlurb: true,
+        needSight: false,
+        pngUnchanged: true,
+        staleMs: 0,
+        triedThisRun: true,
+      }),
+      "call",
+    );
+  });
+
+  it("asks for Sight on the first land even when extras would skip", () => {
+    assert.equal(
+      visionPass({
+        needBlurb: false,
+        needSight: true,
+        pngUnchanged: true,
+        staleMs: 0,
+        triedThisRun: false,
+      }),
+      "call",
+    );
+  });
+
+  it("skips extras when fog is fresh, Sight exists, and the PNG matches", () => {
+    assert.equal(
+      visionPass({
+        needBlurb: false,
+        needSight: false,
+        pngUnchanged: true,
+        staleMs: 0,
+        triedThisRun: false,
+      }),
+      "skip",
+    );
+  });
+
+  it("asks on a stale tile even when the PNG matches", () => {
+    assert.equal(
+      visionPass({
+        needBlurb: false,
+        needSight: false,
+        pngUnchanged: true,
+        staleMs: FOG_OLD_MS,
+        triedThisRun: false,
+      }),
+      "call",
+    );
+  });
+
+  it("does not re-ask the same PNG this run", () => {
+    assert.equal(
+      visionPass({
+        needBlurb: false,
+        needSight: false,
+        pngUnchanged: true,
+        staleMs: FOG_OLD_MS,
+        triedThisRun: true,
+      }),
+      "skip",
+    );
   });
 });
 
@@ -391,6 +599,37 @@ describe("examineScreenshot", () => {
       assert.equal(scan.hash, hashPngFile(pngPath));
       assert.equal(scan.sight, "settings form");
       assert.equal(scan.issues[0]?.rule, "align");
+      assert.equal(scan.issues[0]?.via, "vlm");
+    });
+  });
+
+  it("appends already-measured hits so the model does not re-file them", async () => {
+    await withTempPng(async (pngPath) => {
+      let text = "";
+      const chat: ChatClient = async (req) => {
+        const user = req.messages.find((m) => m.role === "user");
+        if (user && Array.isArray(user.content)) {
+          const part = user.content.find((p) => p.type === "text");
+          if (part && part.type === "text") text = part.text;
+        }
+        return JSON.stringify({
+          issues: [{ rule: "clip", severity: "warning", message: "Vendor column shears a word" }],
+          sight: "table",
+          blurb: "Vouchers table with a clip in the vendor column.",
+        });
+      };
+      const scan = await examineScreenshot({
+        chat,
+        baseUrl: "http://example.test/v1",
+        model: "vlm",
+        pngPath,
+        measured: [{ rule: "clip", message: "Vendor column shears a word", where: "Vendor column" }],
+      });
+      assert.match(text, /Already measured \(do not repeat\):/);
+      assert.match(text, /- clip: Vendor column/);
+      assert.equal(scan.status, "ok");
+      if (scan.status !== "ok") return;
+      assert.equal(scan.issues.length, 0);
     });
   });
 

@@ -14,6 +14,7 @@ import {
   rememberClick,
   viewWidgetSig,
 } from "../src/brains/unleash.js";
+import { fogHunger, FOG_FRESH_MS, FOG_OLD_MS, npcHunger } from "../src/brains/npc.js";
 import { detectWalkerMode } from "../src/brains/walker-mode.js";
 import type { View } from "../src/schema/view.js";
 
@@ -353,5 +354,16 @@ describe("sort stay", () => {
     );
     assert.match(afterOne.line, /^open /);
     assert.equal(afterOne.mode, "nav");
+  });
+});
+
+describe("fog hunger", () => {
+  it("is low when just seen and 1 when last land is 40 days old", () => {
+    assert.ok(fogHunger(0) < fogHunger(FOG_FRESH_MS));
+    assert.ok(fogHunger(FOG_FRESH_MS) < fogHunger(FOG_OLD_MS));
+    assert.equal(fogHunger(FOG_OLD_MS), 1);
+    assert.equal(fogHunger(FOG_OLD_MS * 2), 1);
+    assert.equal(npcHunger(0, FOG_OLD_MS), 1);
+    assert.ok(npcHunger(0, 0) < npcHunger(0, FOG_OLD_MS));
   });
 });

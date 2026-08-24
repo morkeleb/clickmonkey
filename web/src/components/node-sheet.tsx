@@ -14,6 +14,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { landAgeLabel } from "@/lib/fog";
 import { runHue, sameLedgerPage } from "@/lib/utils";
 
 function InfoStat({
@@ -208,6 +209,9 @@ export function NodeSheet({
                   <span className="font-mono text-xs break-all">{node.origin ?? "—"}</span>
                 </InfoStat>
                 <InfoStat label="Entry">{node.entry ? "yes" : "no"}</InfoStat>
+                {node.kind === "page" ? (
+                  <InfoStat label="Last land">{landAgeLabel(node.lastLandAt)}</InfoStat>
+                ) : null}
                 <InfoStat label="Surfaces">{counts.surfaces}</InfoStat>
                 <InfoStat label="Widgets">
                   <div>{counts.widgets}</div>

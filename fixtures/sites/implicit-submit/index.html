@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Implicit submit</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Implicit submit</h1>
+      <form>
+        <button data-testid="cancel">Cancel</button>
+        <button type="btn" data-testid="garbage-type">Nope</button>
+        <button type="submit" data-testid="save">Save</button>
+      </form>
+      <button data-testid="outside">Outside</button>
+      <form>
+        <button type="button" data-testid="ok">OK</button>
+      </form>
+      <form>
+        <button type="submit" data-testid="explicit">Go</button>
+      </form>
+      <form>
+        <button type="reset" data-testid="reset">Reset</button>
+        <button type="" data-testid="empty-type">Wipe</button>
+        <button data-testid="hidden-cancel" hidden>Hidden</button>
+        <button data-testid="aria-hidden-cancel" aria-hidden="true">Aria hidden</button>
+        <button data-testid="disabled-cancel" disabled>Disabled</button>
+        <button data-testid="aria-disabled-cancel" aria-disabled="true">Aria disabled</button>
+        <input type="button" data-testid="input-button" value="Input" />
+      </form>
+      <form>
+        <div role="toolbar">
+          <button data-testid="tool-bold">B</button>
+        </div>
+        <button type="submit" data-testid="tool-save">Save</button>
+      </form>
+      <form id="edit-form">
+        <input name="title" />
+        <button type="submit" data-testid="save-edit">Save</button>
+      </form>
+      <button data-testid="clear-edit" form="edit-form">Clear</button>
+      <button data-testid="dangling" form="missing">Nope</button>
+    </main>
+  </body>
+</html>

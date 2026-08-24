@@ -1,7 +1,7 @@
 import type { Page } from "../schema/page-model.js";
 import type { UiExplorePlan } from "../schema/ui.js";
 import type { View } from "../schema/view.js";
-import type { WalkerModeName } from "./walker-mode.js";
+import type { WalkerJobName, WalkerModeName } from "../schema/fog.js";
 
 export interface BrainDecision {
   line: string;
@@ -42,6 +42,12 @@ export interface BrainContext {
   lootSteps?: number;
   /** Times this run stood on `page/surface`. Map scout lifts unseen rooms first. */
   pageVisits?: Readonly<Record<string, number>>;
+  /** Last land ISO times by page id for this job (`clickmonkey/lands.json`). */
+  pageLands?: Readonly<Record<string, string>>;
+  /** Last mode ISO times keyed `page/mode`. */
+  modeLands?: Readonly<Record<string, string>>;
+  /** Scout / NPC / rogue. Hunger uses this job's clock. */
+  job?: WalkerJobName;
   plan?: UiExplorePlan;
   pages?: readonly Page[];
   /** Last vision assist note. Context only — never a command or widget id. */

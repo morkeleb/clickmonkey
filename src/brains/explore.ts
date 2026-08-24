@@ -11,7 +11,29 @@ import type { View } from "../schema/view.js";
 import type { ChatMessage } from "./chat.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
 import { isLeaveAction, matchesSkip, stayActions } from "./unleash.js";
-import { detectWalkerMode } from "./walker-mode.js";
+import { detectWalkerMode, type WalkerModeName } from "./walker-mode.js";
+
+function modeLockHint(mode: WalkerModeName): string {
+  if (mode === "wizard") {
+    return "Fill shown fields, then click Next/Continue. Do not hop to sidebar or hunt another form until Finish/Save or the stepper is gone.";
+  }
+  if (mode === "form") {
+    return "Prefer shown fields and in-page controls (buttons or links styled as buttons) over [nav] landmarks and sidebar. Finish the form before leaving. A header New/Add link is a page action, not chrome.";
+  }
+  if (mode === "list") {
+    return "Sample each filter, sort, and page control once, then open a row. Do not flip sort or re-open the same combobox. This is not a commit form.";
+  }
+  if (mode === "tab") {
+    return "Click a tab. Do not hop away until you have sampled the tab strip.";
+  }
+  if (mode === "dialog") {
+    return "Open a mapped dialog this run has not stood in. Then treat the sheet as form or wizard. Do not hop to sidebar first.";
+  }
+  if (mode === "empty") {
+    return "Click the empty-state CTA when search is idle.";
+  }
+  return "Prefer mapped actions that serve the [>] aim. This is not a commit form.";
+}
 
 export const DEFAULT_EXPLORE_CHARTER =
   "Explore the mapped product with empty/invalid input, claims vs behavior, and interruption to discover runtime errors, data loss, and silent failures.";
@@ -65,8 +87,9 @@ Fence hits and unknown ids are harness, not product bugs.
 Prefer the action that would disprove the \`[>]\` risk or a claim on this surface.
 Use page blurbs and Context for risks, never to invent ids.
 Empty then invalid then a plausible value on required fields.
-Walk mode is form vs list vs nav (see \`Mode:\` on each decide). In form, fill the empties (and submit when the policy is allow) before clicking chrome or hopping. Do not fill one field and leave. Prefer in-page controls (buttons or links styled as buttons, including a header "New …") over [nav] landmarks and sidebar. A link is a normal action.
+Walk mode is wizard vs form vs list vs tab vs dialog vs empty vs nav (see \`Mode:\` on each decide). Wizard locks: fill then Next/Continue; do not hop to chrome until Finish/Save or the stepper is gone. Other modes that apply: prefer the one this page has not used recently. In form, fill the empties (and submit when the policy is allow) before clicking chrome or hopping. Do not fill one field and leave. Prefer in-page controls (buttons or links styled as buttons, including a header "New …") over [nav] landmarks and sidebar. A link is a normal action.
 In list, sample each filter, sort, and page control once, then open a row. Do not flip sort or re-click the same combobox.
+In tab, click a tab. In dialog, open a mapped dialog that this run has not stood in; then form/wizard owns the sheet. In empty, click the empty-state CTA when search is idle.
 In nav, follow the \`[>]\` aim; do not treat the surface as a commit form to finish.
 If last result was ok and taught nothing, change tactic — different field, page, or oracle.
 Stay on the \`[>]\` aim until you can report found, not found, or blocked. Do not start the next item because a hop is interesting.
@@ -847,11 +870,7 @@ export function createExploreBrain(opts: {
             "open <id> only if that exact id is listed under Legal open ids (direct hops). Nested pages: follow via. Never invent a page id from the charter or skills.",
             "If pages: is empty, do not emit open — click a mapped action.",
             "Do not click Close-tab chrome (button_close_*). Do not re-open a page you just left.",
-            walkerMode === "form"
-              ? "Prefer shown fields and in-page controls (buttons or links styled as buttons) over [nav] landmarks and sidebar. Finish the form before leaving. A header New/Add link is a page action, not chrome."
-              : walkerMode === "list"
-                ? "Sample each filter, sort, and page control once, then open a row. Do not flip sort or re-open the same combobox. This is not a commit form."
-                : "Prefer mapped actions that serve the [>] aim. This is not a commit form.",
+            modeLockHint(walkerMode),
             "Use only mapped ids from shown and actions. Never emit HTML.",
             visual
               ? "screenshot is legal when you choose it."

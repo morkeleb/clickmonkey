@@ -1,5 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { bootRun } from "../executor/boot.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
@@ -8,19 +9,87 @@ import { stopPresence } from "../persist/presence.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
 import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
 import { specsDir } from "../persist/workspace.js";
-import { extractClickmonkeyFences } from "../reports/fences.js";
+import { extractClickmonkeyFences, wrapClickmonkeyFence } from "../reports/fences.js";
 import type { Config } from "../schema/config.js";
+import type { Log, Step } from "../schema/log.js";
 import { Finding, FindingKind, type FindingKind as FindingKindName } from "../schema/finding.js";
 import type { PageModel } from "../schema/page-model.js";
 import { qualityPageCounts, type QualityReport } from "../schema/quality.js";
 import type { TestabilityReport } from "../schema/testability.js";
 import { offlineIdsExist } from "../surveyor/merge.js";
-import { replayableSteps } from "./compact.js";
+import { compactLog, compactOptsForLog, replayableSteps } from "./compact.js";
+import { readLog } from "../persist/log.js";
+import { ensureWorkspace } from "../persist/workspace.js";
 import { keysFromSteps } from "./replay.js";
 import { pickSeedPageId, resetToSeed } from "./seed.js";
 
 export type SpecCheckCase = { title: string; missing: string[] };
 export type SpecCheckFileResult = { file: string; cases: SpecCheckCase[] };
+
+/** Dist fallback when `src/brains/skills/spec.md` is not next to the compiled file. */
+export const SPEC_SKILL_FALLBACK = `# Spec pack
+
+A spec is a frozen contract, not a walk diary. One job per file. You walk it with mapped ids, then \`spec_save\` writes the fence. Do not invent widget ids. Do not write the fence by hand.
+
+## When
+
+Freeze a path you will not debate again: login lands, empty create is invalid, save stays on \`/customers\`, the dialog closes.
+Do not freeze exploratory wander, \`--nasty\` junk, \`screenshot ui\` findings, or a soak. Those are explore / unleash / report.
+
+## Walk
+
+Name the contract before the first click. That string is the \`spec_save\` title.
+Use only ids from the map (\`clickmonkey://map\`). \`open\` a page or click to it, fill, click, then \`expect\`.
+Every spec needs at least one \`expect\` — that is the contract. A tape of clicks with no expect is still a wander.
+Stay on this job. Do not hop "to see". Do not file findings unless they block the contract.
+Login belongs in \`clickmonkey.json\` intro (\`$CLICKMONKEY_*\`), not in the fence. \`spec_save\` drops intro and wander before the last \`open\` / hopped nav click.
+Fills must be deterministic: \`""\`, a fixed token, or \`$ENV\`. No nasty catalog, no one-off random names.
+
+Legal lines:
+
+- \`open <page>\`
+- \`click surface.id\` (\`nav\` only when it is a landmark hop)
+- \`fill surface.id <value>\`
+- \`expect surface.id invalid\`
+- \`expect surface.id text|value "…"\`
+- \`expect surface visible|hidden\`
+- \`expect path /…\`
+- \`expect text "…"\`
+
+\`screenshot\` / \`screenshot ui\` are explore, not a spec oracle.
+
+## Fence
+
+\`spec_save\` writes \`clickmonkey/specs/<slug>.md\`. The playable part is a \`clickmonkey\` fence only.
+Title (heading) *is* the contract: "Add customer requires a name", not "Click save".
+Prose, mermaid, and photos stay outside the fence (why it matters, who cares).
+One fence per file unless two contracts share a setup you cannot put in intro.
+
+\`\`\`clickmonkey
+open home
+click page.open_create
+fill createDialog.name ""
+click createDialog.submit
+expect createDialog.name invalid
+\`\`\`
+
+## Prove
+
+\`spec_check\` — ids exist on the map (offline).
+\`spec_run\` — live browser replay (same as CLI \`clickmonkey spec\`). That freeze+replay is why MCP exists besides \`clickmonkey explore\`.
+PASS with layout/visual extras is still PASS. A failed expect, bounce off the leash, unknown id, or empty/intro-only fence is FAIL.
+If \`spec_run\` fails, the walk was not a contract yet: fix the steps or the expect, walk again, \`spec_save\` with \`file\` to overwrite.
+Commit \`clickmonkey/specs/*.md\` with the leash and the map.
+`;
+
+export function defaultSpecSkills(): string {
+  const path = fileURLToPath(new URL("../brains/skills/spec.md", import.meta.url));
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return SPEC_SKILL_FALLBACK;
+  }
+}
 
 function isDir(path: string): boolean {
   try {
@@ -112,6 +181,73 @@ export function formatCheckReport(results: readonly SpecCheckFileResult[]): stri
   return lines.length > 0 ? `${lines.join("\n")}\n` : "";
 }
 
+export function specSlug(title: string): string {
+  const s = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return s || "spec";
+}
+
+function specWritePath(configPath: string, fileName: string, overwrite: boolean): string {
+  const dir = specsDir(configPath);
+  mkdirSync(dir, { recursive: true });
+  const base = `${fileName.replace(/\.md$/i, "")}.md`;
+  if (base.includes("..") || base.includes("/") || base.includes("\\") || base.startsWith(".")) {
+    throw new Error(`spec file must be a name under clickmonkey/specs/, got ${fileName}`);
+  }
+  const path = join(dir, base);
+  if (overwrite || !existsSync(path)) return path;
+  const stem = base.slice(0, -3);
+  for (let i = 2; i < 100; i++) {
+    const next = join(dir, `${stem}-${i}.md`);
+    if (!existsSync(next)) return next;
+  }
+  throw new Error(`too many specs named ${stem}`);
+}
+
+export function writeSpecMarkdown(opts: {
+  configPath: string;
+  title: string;
+  log: Log;
+  intro?: readonly string[];
+  fileName?: string;
+  logPath?: string;
+}): { path: string; relative: string; steps: number } {
+  const title = opts.title.trim();
+  if (!title) throw new Error("spec title is required");
+  ensureWorkspace(opts.configPath);
+  const compacted = compactLog(opts.log, opts.logPath ? compactOptsForLog(opts.logPath) : undefined);
+  const steps = replayableSteps(compacted.steps, opts.intro ?? []);
+  const idle = specFenceIdleError(compacted.steps.length, steps.length);
+  if (idle) throw new Error(idle);
+  if (!specFenceHasExpect(steps)) throw new Error("fence has no expect");
+  const overwrite = Boolean(opts.fileName);
+  const path = specWritePath(opts.configPath, opts.fileName ?? specSlug(title), overwrite);
+  const md = [`# ${title}`, "", wrapClickmonkeyFence({ ...compacted, steps }), ""].join("\n");
+  writeFileSync(path, md, "utf8");
+  const rel = relative(dirname(opts.configPath), path).split("\\").join("/");
+  return { path, relative: rel, steps: steps.length };
+}
+
+export function writeSpecFromLogFile(opts: {
+  configPath: string;
+  title: string;
+  logPath: string;
+  intro?: readonly string[];
+  fileName?: string;
+}): { path: string; relative: string; steps: number } {
+  return writeSpecMarkdown({
+    configPath: opts.configPath,
+    title: opts.title,
+    log: readLog(opts.logPath),
+    logPath: opts.logPath,
+    ...(opts.intro ? { intro: opts.intro } : {}),
+    ...(opts.fileName ? { fileName: opts.fileName } : {}),
+  });
+}
+
 /** visualIssue / uiIssue persist but do not fail the fence. Any other kind does. */
 export const SPEC_SOFT_KINDS: ReadonlySet<FindingKindName> = new Set(["uiIssue", "visualIssue"]);
 
@@ -184,6 +320,20 @@ export function shouldFailOnFindings(ok: boolean, findingErrors: number, failOnF
 export function specFenceIdleError(fenceStepCount: number, replayableCount: number): string | undefined {
   if (replayableCount > 0) return undefined;
   return fenceStepCount > 0 ? "fence is only intro" : "empty fence";
+}
+
+const EXPECT_KINDS = new Set<Step["kind"]>([
+  "expectInvalid",
+  "expectVisible",
+  "expectHidden",
+  "expectText",
+  "expectValue",
+  "expectPageText",
+  "expectPath",
+]);
+
+export function specFenceHasExpect(steps: readonly Step[]): boolean {
+  return steps.some((s) => EXPECT_KINDS.has(s.kind));
 }
 
 export function formatSpecResults(opts: {
@@ -293,6 +443,9 @@ export async function runSpecs(opts: {
         if (idle) {
           ok = false;
           error = idle;
+        } else if (!specFenceHasExpect(steps)) {
+          ok = false;
+          error = "fence has no expect";
         } else {
           for (const step of steps) {
             try {

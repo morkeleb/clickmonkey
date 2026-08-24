@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Focus obscured</title>
+    <style>
+      body { margin: 0; font: 16px/1.4 sans-serif; }
+      header.sticky {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 80px;
+        background: #111;
+        color: #fff;
+        z-index: 20;
+        padding: 0 16px;
+        line-height: 80px;
+      }
+      main { min-height: 1400px; }
+      button {
+        box-sizing: border-box;
+        font: inherit;
+      }
+      /* Entirely under the 80px header when focused (no scroll-padding). */
+      #save {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        z-index: 1;
+        width: 120px;
+        height: 40px;
+      }
+      #aria-hidden-save {
+        position: absolute;
+        top: 16px;
+        left: 160px;
+        z-index: 1;
+        width: 80px;
+        height: 40px;
+      }
+      #disabled-save {
+        position: absolute;
+        top: 16px;
+        left: 260px;
+        z-index: 1;
+        width: 80px;
+        height: 40px;
+      }
+      /* Top 20px under the header, bottom 20px clear — AA partial cover is a pass. */
+      #partial {
+        position: absolute;
+        top: 60px;
+        left: 400px;
+        z-index: 1;
+        width: 160px;
+        height: 40px;
+      }
+      #continue {
+        position: absolute;
+        top: 200px;
+        left: 16px;
+        width: 140px;
+        height: 40px;
+      }
+      footer.sticky {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 80px;
+        background: #111;
+        color: #fff;
+        z-index: 20;
+        padding: 0 16px;
+        line-height: 80px;
+      }
+      /* Below the fold so focus() can scroll it; Chromium centers, so it stays visible. */
+      #below-fold {
+        position: absolute;
+        top: 900px;
+        left: 16px;
+        width: 140px;
+        height: 40px;
+      }
+      #modal {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(0, 0, 0, 0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      #modal.open { display: flex; }
+      .dialog-card {
+        background: #fff;
+        padding: 24px;
+        width: 420px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="sticky">App header</header>
+    <main data-testid="home">
+      <button type="button" id="save" data-testid="save">Save</button>
+      <button type="button" id="aria-hidden-save" data-testid="aria-hidden-save" aria-hidden="true">Ghost</button>
+      <button type="button" id="disabled-save" data-testid="disabled-save" disabled>Off</button>
+      <button type="button" id="partial" data-testid="partial">Partial</button>
+      <button type="button" id="continue" data-testid="continue">Continue</button>
+      <a href="#continue" id="skip" style="position:absolute;left:-10000px;width:1px;height:1px">Skip to continue</a>
+      <button type="button" id="below-fold" data-testid="below-fold">BelowFold</button>
+      <div id="modal" role="dialog" aria-modal="true" aria-label="Confirm" data-testid="modal">
+        <div class="dialog-card">
+          <p>Centered dialog</p>
+          <button type="button" data-testid="dialog-ok">OK</button>
+        </div>
+      </div>
+    </main>
+    <footer class="sticky">App footer</footer>
+  </body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Text occlusion</title>
+    <style>
+      body { margin: 0; font: 16px/1.4 sans-serif; }
+      main { padding: 24px; }
+      .hero {
+        position: relative;
+        width: 420px;
+        height: 48px;
+      }
+      .hero h1 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 48px;
+        white-space: nowrap;
+      }
+      .hero .badge {
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        background: #c0392b;
+        color: #fff;
+        z-index: 2;
+      }
+      .long-wrap {
+        position: relative;
+        margin-top: 48px;
+        width: 720px;
+      }
+      .long-wrap h1 {
+        margin: 0;
+        font-size: 24px;
+        line-height: 32px;
+        white-space: nowrap;
+      }
+      .long-wrap .corner-badge {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 36px;
+        height: 16px;
+        background: #2980b9;
+        color: #fff;
+        font-size: 10px;
+        line-height: 16px;
+        text-align: center;
+        z-index: 2;
+      }
+      .clip-box {
+        margin-top: 48px;
+        width: 80px;
+        height: 24px;
+        overflow: hidden;
+      }
+      .clip-box h2 {
+        margin: 0;
+        font-size: 18px;
+        white-space: nowrap;
+      }
+      button.save {
+        margin-top: 48px;
+        padding: 12px 20px;
+      }
+      #behind {
+        margin-top: 24px;
+      }
+      #modal {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(0, 0, 0, 0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      #modal.open { display: flex; }
+      .dialog-card {
+        background: #fff;
+        padding: 24px;
+        width: 420px;
+      }
+    </style>
+  </head>
+  <body>
+    <main data-testid="home">
+      <div class="hero">
+        <h1 data-testid="covered-heading">Quarterly revenue</h1>
+        <div class="badge" aria-label="badge">NEW</div>
+      </div>
+
+      <div class="long-wrap">
+        <h1 data-testid="corner-heading">A very long heading about quarterly revenue forecasts</h1>
+        <div class="corner-badge" aria-label="corner badge">NEW</div>
+      </div>
+
+      <div class="clip-box" data-testid="clip-box">
+        <h2 data-testid="clipped-heading">Clipped overflow heading that is very long</h2>
+      </div>
+
+      <button type="button" class="save" data-testid="save">
+        <span role="heading" aria-level="3">Save</span>
+      </button>
+
+      <p id="behind" data-testid="behind">Body copy behind the dialog</p>
+      <div id="modal" role="dialog" aria-modal="true" aria-label="Confirm" data-testid="modal">
+        <div class="dialog-card">
+          <p>Centered dialog</p>
+          <button type="button" data-testid="dialog-ok">OK</button>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
