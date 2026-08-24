@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { monkeyOfBrain } from "@schema/fog";
 import { explorePlanItemMark, formatExplorePlanItemCoverage, type UiRun, type UiRunDetail, type UiRunFinding, type UiRunStep } from "@schema/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -329,7 +330,7 @@ export function RunPanel({ run }: { run: UiRun | undefined }) {
                 page <span className="truncate font-mono text-foreground">{shown.pageId ?? "—"}</span>
               </span>
               <span className="inline-flex shrink-0 items-baseline gap-1">
-                brain <span className="text-foreground">{run.brain ?? "—"}</span>
+                brain <span className="text-foreground">{monkeyOfBrain(run.brain) ?? run.brain ?? "—"}</span>
               </span>
               <span className="inline-flex shrink-0 items-baseline gap-1">
                 steps <span className="text-foreground">{shown.steps.length}</span>

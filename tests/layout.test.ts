@@ -32,6 +32,11 @@ describe("scanLayout", () => {
         issues.some((i) => i.rule === "overflow"),
         `expected overflow, got ${JSON.stringify(issues.map((i) => i.rule))}`,
       );
+      assert.equal(
+        issues.some((i) => i.rule === "textSpacing"),
+        false,
+        `1400px leak must not also be textSpacing, got ${JSON.stringify(issues.filter((i) => i.rule === "textSpacing"))}`,
+      );
       assert.ok(issues.every((i) => i.via === "dom"));
       assert.equal(page.viewportSize()?.width, 1280);
       const after = await page.evaluate(() => ({ y: window.scrollY, w: window.innerWidth }));

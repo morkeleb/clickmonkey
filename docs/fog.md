@@ -1,10 +1,11 @@
 # Fog of war
 
-Fog is how ClickMonkey remembers **where a job last stood** and **which
-mode last ran on that tile**. It is the scheduler: send the scout to rooms
-it has not seen, send the NPC to forms it has not filled, and once they
-land pick the mode that is hungriest. It is not a fourth army per UI
-pattern (no list-monkey, no tab-monkey). Jobs and modes: [walkers.md](walkers.md).
+Fog is how ClickMonkey remembers **where a monkey last stood** and **which
+mode last ran on that tile**. It is the scheduler: send **map** to rooms it
+has not seen, send **unleash** to forms it has not filled, and once they
+land pick the mode that is hungriest. Five monkeys (working names): map,
+unleash, nasty, explore, mcp. Not a sixth monkey per UI pattern (no list-monkey).
+Monkeys and modes: [walkers.md](walkers.md).
 
 Inspect (HTML, axe, layout, testability) still runs on whoever lands. Quality
 `foundAt` is first seen; fog uses **last land**.
@@ -41,21 +42,23 @@ want hunger to carry over.
 
 ## Clocks do not share
 
-A scout landing does not lift unleash fog. An NPC fill does not lift nasty
+A map landing does not lift unleash fog. An unleash fill does not lift nasty
 fog. After a form burst on a page that is also a list, the **list** clock is
 still old, so the next decide on that tile is list.
 
 | Who | Job clock | Mode clock |
 |---|---|---|
-| Scout (`clickmonkey map`) | `jobs.map` on land | — |
-| NPC (`unleash`) | `jobs.unleash` on land | stamp when the note is that mode’s work |
-| Rogue (`unleash --nasty`) | `jobs.nasty` on land | same as NPC |
-| Paladin (`explore` / MCP) | **none** | stamp when the DSL line did that mode’s work (`lineMatchesMode`) |
+| **map** | `jobs.map` on land | — |
+| **unleash** | `jobs.unleash` on land | stamp when the note is that mode’s work |
+| **nasty** (`clickmonkey nasty`) | `jobs.nasty` on land | same as unleash |
+| **explore** | **none** | stamp when the DSL line did that mode’s work (`lineMatchesMode`) |
+| **mcp** | **none** | same as explore |
 | Spec / replay | none | none |
 
 Land is stamped **once per page stay** (`recordLand`, skipped on replay and
 404). Mode is stamped **every exercise** (`recordMode`). Brain names that
-stamp a job: `map`, `unleash`, `unleash-nasty`. `explore` and `mcp` do not.
+stamp a job: `map`, `unleash`, `unleash-nasty`. `explore` and `mcp` do not
+(they are different live units on the map: **e** vs **c**).
 
 Code: `src/schema/fog.ts`, `src/persist/lands.ts`.
 
@@ -78,7 +81,7 @@ The planner (`planNpc`) weights that by path length:
 time. Hits this run keep a walker from grinding one form; last-land fog
 pulls it back days later.
 
-Mode pick (NPC/paladin, on the tile they already stand on): **wizard
+Mode pick (unleash / nasty / explore / mcp, on the tile they already stand on): **wizard
 locks** while the stepper is up. Other applicable modes compete by
 `fogHunger` of `page/mode`. Equal hunger keeps table order: form, list,
 tab, dialog, empty. Nav is the fallback. Wizard Next is repeatable (same
@@ -86,13 +89,13 @@ id every step); it is not pagination.
 
 ## How it guides testing
 
-**Unexplored** — no map node, or a door with no `opens` yet. The scout
+**Unexplored** — no map node, or a door with no `opens` yet. **map**
 clicks that door here (`fogClicks`) before pathfinding. Grow the map first.
 
-**Stale job** — mapped, but *this* job has not landed recently. Scout
-pathfinds to rooms by `jobs.map`. NPC/rogue pathfind to mapped forms
-(fields + submit) by `jobs.unleash` / `jobs.nasty`. Distance matters, but
-a far stale form beats a near form you already filled this run.
+**Stale job** — mapped, but *this* monkey has not landed recently. **map**
+pathfinds to rooms by `jobs.map`. **unleash** / **nasty** pathfind to mapped
+forms (fields + submit) by `jobs.unleash` / `jobs.nasty`. Distance matters,
+but a far stale form beats a near form you already filled this run.
 
 **Stale mode** — the walker is already on the tile. Least-recent
 applicable mode runs. That is how lists, tabs, dialogs, and empty states
@@ -102,13 +105,18 @@ get coverage without extra commands.
 
 Typical schedule:
 
-1. Several scouts until map fog is thin (unseen doors gone, rooms recently stood on).
-2. Several NPCs on **unleash-stale** forms.
-3. A rogue pass on **nasty-stale** forms (site you own). Pages the NPC already walked still look hungry to the rogue.
-4. One paladin only when a ticket names the job. Charter, not soak. Mode stamps still help the next NPC.
+1. Several **map** runs until map fog is thin (unseen doors gone, rooms recently stood on).
+2. Several **unleash** runs on unleash-stale forms.
+3. A **nasty** pass on nasty-stale forms (site you own). Pages unleash already walked still look hungry to nasty.
+4. One **explore** only when a ticket names the job. Charter, not soak. Mode stamps still help the next unleash.
 
-Dashboard haze uses `at` (latest land of any job), opacity when
-`fogHunger ≥ 0.4`. Dialogs stay clear. Tooltip is “visited Nd ago”.
+Dashboard haze uses `at` (last land, including explore/mcp), opacity when
+`fogHunger ≥ 0.4`. Dialogs stay clear. Three heat pips on each page:
+**m** map, **u** unleash, **n** nasty — green when that monkey stood here
+recently, red when it is hungry. **explore** and **mcp** have no job clock,
+so no heat pip. Live units on a page are a **colored letter**
+(instance hue): m / u / n / **e** explore / **c** mcp. Tooltip is
+`mcp · amber-otter` so two of the same kind still tell apart.
 
 ## Vision
 
@@ -127,7 +135,7 @@ the previous DOM row.
 | Path | Role |
 |---|---|
 | `clickmonkey/lands.json` | clocks (gitignored) |
-| `clickmonkey/map.json` | rooms and doors the scout grows |
+| `clickmonkey/map.json` | rooms and doors the map monkey grows |
 | `src/schema/fog.ts` | breakpoints, hunger, job/mode names |
 | `src/persist/lands.ts` | read/migrate/stamp |
 | `src/brains/npc.ts` | `npcHunger`, pathfind |

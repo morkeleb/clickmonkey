@@ -3,6 +3,7 @@ import { type ReactNode } from "react";
 import type { Page } from "@schema/page-model";
 import type { QualityIssue, QualityPage, QualityRuntimeEvent } from "@schema/quality";
 import type { TestabilityIssue, TestabilityPage } from "@schema/testability";
+import { monkeyOfBrain } from "@schema/fog";
 import type { UiGraphNode, UiMapFinding, UiRun, UiSnapshot } from "@schema/ui";
 import { Shot } from "@/components/shot";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { landAgeLabel } from "@/lib/fog";
+import { FOG_JOBS, fogHeatColor, landAgeLabel } from "@/lib/fog";
 import { runHue, sameLedgerPage } from "@/lib/utils";
 
 function InfoStat({
@@ -210,7 +211,22 @@ export function NodeSheet({
                 </InfoStat>
                 <InfoStat label="Entry">{node.entry ? "yes" : "no"}</InfoStat>
                 {node.kind === "page" ? (
-                  <InfoStat label="Last land">{landAgeLabel(node.lastLandAt)}</InfoStat>
+                  <InfoStat label="Last land" wide>
+                    <div>{landAgeLabel(node.lastLandAt)}</div>
+                    <div className="mt-1.5 flex flex-col gap-1">
+                      {FOG_JOBS.map((job) => (
+                        <div key={job} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: fogHeatColor(node.jobLands?.[job]) }}
+                            aria-hidden
+                          />
+                          <span className="font-medium text-foreground">{job}</span>
+                          <span>{landAgeLabel(node.jobLands?.[job])}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </InfoStat>
                 ) : null}
                 <InfoStat label="Surfaces">{counts.surfaces}</InfoStat>
                 <InfoStat label="Widgets">
@@ -289,7 +305,9 @@ export function NodeSheet({
                       <li key={run.id} className="flex min-w-0 items-center gap-2 text-sm">
                         <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: runHue(run.hue) }} />
                         <span className="min-w-0 truncate font-medium">{run.name}</span>
-                        <span className="min-w-0 truncate text-xs text-muted-foreground">{run.brain ?? run.id}</span>
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                          {monkeyOfBrain(run.brain) ?? run.brain ?? run.id}
+                        </span>
                       </li>
                     ))}
                   </ul>

@@ -102,6 +102,8 @@ try {
         return cmdMap(flags);
       case "unleash":
         return cmdUnleash(flags);
+      case "nasty":
+        return cmdUnleash({ ...flags, nasty: true });
       case "explore":
         return cmdExplore(flags);
       case "mcp":

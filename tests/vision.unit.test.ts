@@ -214,6 +214,10 @@ describe("parseVisualReply", () => {
         issues: [
           { rule: "CLIP", severity: "error", confidence: "high", message: "Text clipped" },
           { rule: "other", severity: "warning", confidence: "high", message: "Label is truncated by overflow" },
+          { rule: "other", severity: "warning", confidence: "high", message: "Text is cut off in the Vendor column" },
+          { rule: "other", severity: "warning", confidence: "high", message: "label is truncated" },
+          { rule: "other", severity: "warning", confidence: "high", message: "content is leaking" },
+          { rule: "other", severity: "warning", confidence: "high", message: "covered by the header" },
           { rule: "contrast", severity: "warning", confidence: "high", message: "Hint is faint" },
         ],
       }),
@@ -250,6 +254,12 @@ describe("parseVisualReply", () => {
             rule: "other",
             severity: "warning",
             confidence: "high",
+            message: "Canvas labels are cut off",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
             message: "Label is truncated by overflow",
           },
         ],
@@ -263,6 +273,7 @@ describe("parseVisualReply", () => {
         "Title uses an ellipsis even though the column still has empty space",
         "Main pane still shows lorem ipsum placeholder copy",
         "Chart axis labels are cut off on the canvas",
+        "Canvas labels are cut off",
       ],
     );
   });
@@ -295,6 +306,99 @@ describe("parseVisualReply", () => {
       out.issues.map((i) => i.message),
       ["Date value colliding with the calendar icon", "Toast covering the save button"],
     );
+  });
+
+  it("keeps search-icon and icons-colliding hunts that LAYOUT_DEFECT would otherwise drop", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Date value colliding with the search icon",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "icons colliding in the toolbar",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "value colliding with the trailing icon",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.deepEqual(
+      out.issues.map((i) => i.message),
+      [
+        "Date value colliding with the search icon",
+        "icons colliding in the toolbar",
+        "value colliding with the trailing icon",
+      ],
+    );
+  });
+
+  it("keeps a clipboard other that is not clip geometry", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Clipboard button is missing from the mapped toolbar",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.issues.length, 1);
+    assert.equal(out.issues[0]?.rule, "other");
+  });
+
+  it("does not keep geometry other just because icon/empty/missing appears", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "table overflow is cutting the filter icon",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "missing widget in the overflowing sidebar",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "empty pane in the clipped column",
+          },
+          {
+            rule: "contrast",
+            severity: "warning",
+            confidence: "high",
+            message: "Hint is faint",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.issues.length, 1);
+    assert.equal(out.issues[0]?.rule, "contrast");
   });
 
   it("drops focusObscured, textOcclusion, and fontSize from the model — DOM owns those", () => {

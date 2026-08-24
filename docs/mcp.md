@@ -1,15 +1,13 @@
 # MCP: host-LLM walk, then freeze a spec
 
-`clickmonkey explore` is exploratory testing **without** the MCP server (needs
-`brain` in the leash). Use it in CI and for an unattended paladin.
-
-The MCP server is the same paladin with **you** (Grok, Claude, Cursor, …) as
-the brain, then **freeze that walk as a replayable spec** and **prove the
-replay**. ClickMonkey still owns the browser, fence, map, and tape. Visits are
+Five monkeys (working names): **map**, **unleash**, **nasty**, **explore**, **mcp**.
+`clickmonkey explore` is unattended exploratory testing (needs `brain`). **mcp**
+is a different monkey: you (Grok, Claude, Cursor, …) walk, then freeze/replay
+a spec. ClickMonkey still owns the browser, fence, map, and tape. Visits are
 compact (pagemap, mode, look) — no page HTML. `config.brain` is not required.
 
 That freeze+replay is why you would use MCP instead of explore-only. Map,
-unleash, and replay stay CLI. Jobs and modes: [walkers.md](walkers.md). Fog:
+unleash, and nasty stay CLI. Monkeys and modes: [walkers.md](walkers.md). Fog:
 [fog.md](fog.md). What to harvest vs leave to QA: [issue-classes.md](issue-classes.md).
 
 ## Before you connect
@@ -185,9 +183,10 @@ Commit `clickmonkey.json`, `clickmonkey/map.json`, `clickmonkey/specs/`, and
 
 Do not expect MCP to drive these. Shell them, or ask the human:
 
-- `clickmonkey map` — scout, grow the sitemap
-- `clickmonkey unleash` / `--nasty` — NPC / rogue soak
-- `clickmonkey explore` — unattended paladin (needs `brain`)
+- `clickmonkey map` — grow the sitemap
+- `clickmonkey unleash` — hunt mapped forms
+- `clickmonkey nasty` — junk hunt on the nasty clock (or `unleash --nasty`)
+- `clickmonkey explore` — unattended explore (needs `brain`)
 - `clickmonkey spec` — CI replay of frozen fences
 - `clickmonkey replay` — STILL / FIXED / LOOK vs a report
 - `clickmonkey report` / `prune` / `bundle` / `ui`

@@ -1,15 +1,37 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { fogOf, landAgeLabel } from "@/lib/fog";
+import { FOG_JOBS, FOG_JOB_MARK, MONKEY_MARK, fogHeatColor, fogOf, landAgeLabel } from "@/lib/fog";
 import type { GraphNodeData } from "@/lib/layout";
 import { cn, runHue } from "@/lib/utils";
 
 type GraphNode = Node<GraphNodeData, "graph">;
+
+function JobHeat({ data }: { data: GraphNodeData }) {
+  const tip = FOG_JOBS.map((job) => `${job}: ${landAgeLabel(data.jobLands?.[job])}`).join(" · ");
+  return (
+    <div className="flex gap-0.5" title={tip} aria-label={tip}>
+      {FOG_JOBS.map((job) => (
+        <span
+          key={job}
+          className="flex size-3 items-center justify-center rounded-full text-[7px] leading-none font-bold text-white uppercase"
+          style={{ backgroundColor: fogHeatColor(data.jobLands?.[job]) }}
+        >
+          {FOG_JOB_MARK[job]}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export function MapNode({ data, selected }: NodeProps<GraphNode>) {
   const dialog = data.kind === "dialog";
   const sized = data.cardWidth != null && data.cardHeight != null;
   const fog = dialog ? 0 : fogOf(data.lastLandAt);
   const haze = fog >= 0.4 ? fog * 0.55 : 0;
+  const heatTip = !dialog
+    ? [landAgeLabel(data.lastLandAt), ...FOG_JOBS.map((job) => `${job}: ${landAgeLabel(data.jobLands?.[job])}`)].join(
+        " · ",
+      )
+    : undefined;
   return (
     <div className="relative h-full w-full overflow-visible">
       <Handle type="target" position={Position.Left} className="!size-1.5 !border-zinc-600 !bg-zinc-500" />
@@ -36,7 +58,7 @@ export function MapNode({ data, selected }: NodeProps<GraphNode>) {
               : "border-zinc-700 bg-zinc-800 text-zinc-100",
             selected && "border-zinc-200",
           )}
-          title={!dialog ? landAgeLabel(data.lastLandAt) : undefined}
+          title={heatTip}
         >
           {haze > 0 ? (
             <span
@@ -65,8 +87,9 @@ export function MapNode({ data, selected }: NodeProps<GraphNode>) {
             {data.entry ? <div className="text-[10px] tracking-wide text-zinc-500 uppercase">entry</div> : null}
             {dialog ? <div className="text-[10px] leading-4 text-zinc-500">dialog</div> : null}
           </div>
-          {(data.red > 0 || data.yellow > 0 || data.rings.length > 0) && (
+          {(data.red > 0 || data.yellow > 0 || data.rings.length > 0 || !dialog) && (
             <div className="relative z-10 flex shrink-0 flex-col items-end gap-1">
+              {!dialog ? <JobHeat data={data} /> : null}
               <div className="flex gap-0.5">
                 {data.red > 0 ? (
                   <span className="min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] leading-4 font-semibold text-white">
@@ -81,14 +104,20 @@ export function MapNode({ data, selected }: NodeProps<GraphNode>) {
               </div>
               {data.rings.length > 0 ? (
                 <div className="flex gap-0.5">
-                  {data.rings.map((ring) => (
-                    <span
-                      key={ring.name}
-                      title={ring.name}
-                      className="size-2.5 rounded-full border border-zinc-950"
-                      style={{ backgroundColor: runHue(ring.hue) }}
-                    />
-                  ))}
+                  {data.rings.map((ring) => {
+                    const mark = ring.monkey ? MONKEY_MARK[ring.monkey] : undefined;
+                    const tip = ring.monkey ? `${ring.monkey} · ${ring.name}` : ring.name;
+                    return (
+                      <span
+                        key={ring.name}
+                        title={tip}
+                        className="flex size-3 items-center justify-center rounded-full border border-zinc-950 text-[7px] leading-none font-bold text-white uppercase"
+                        style={{ backgroundColor: runHue(ring.hue) }}
+                      >
+                        {mark ?? ""}
+                      </span>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>

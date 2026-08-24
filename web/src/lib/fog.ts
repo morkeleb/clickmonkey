@@ -1,10 +1,33 @@
-import { fogHunger } from "@schema/fog";
+import { fogHunger, type WalkerJobName } from "@schema/fog";
+
+export const FOG_JOBS: readonly WalkerJobName[] = ["map", "unleash", "nasty"];
+
+export const FOG_JOB_MARK: Record<WalkerJobName, string> = {
+  map: "m",
+  unleash: "u",
+  nasty: "n",
+};
+
+/** Live unit letter. mcp is c so it is not explore (e). */
+export const MONKEY_MARK: Record<string, string> = {
+  map: "m",
+  unleash: "u",
+  nasty: "n",
+  explore: "e",
+  mcp: "c",
+};
 
 export function fogOf(lastLandAt: string | undefined, now = Date.now()): number {
   if (!lastLandAt) return 1;
   const t = Date.parse(lastLandAt);
   if (!Number.isFinite(t)) return 1;
   return fogHunger(Math.max(0, now - t));
+}
+
+/** Green (fresh) → red (hungry). Stretches fogHunger 0.35…1 across the hue. */
+export function fogHeatColor(lastLandAt: string | undefined, now = Date.now()): string {
+  const t = Math.min(1, Math.max(0, (fogOf(lastLandAt, now) - 0.35) / 0.65));
+  return `hsl(${Math.round(125 * (1 - t))} 72% 42%)`;
 }
 
 export function landAgeLabel(lastLandAt: string | undefined, now = Date.now()): string {

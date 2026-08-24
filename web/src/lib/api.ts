@@ -16,30 +16,43 @@ function readRuns(raw: unknown): UiRun[] | undefined {
   return Array.isArray(runs) ? runs : undefined;
 }
 
-function readLastLands(raw: unknown): Record<string, string> | undefined {
+type LandPatch = NonNullable<UiEvent["lastLands"]>[string];
+
+function readLastLands(raw: unknown): Record<string, LandPatch> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const lands = (raw as UiEvent).lastLands;
   if (!lands || typeof lands !== "object" || Array.isArray(lands)) return undefined;
   return lands;
 }
 
+function jobLandsFromPatch(patch: LandPatch): UiSnapshot["graph"]["nodes"][number]["jobLands"] {
+  const jobs = {
+    ...(patch.map ? { map: patch.map } : {}),
+    ...(patch.unleash ? { unleash: patch.unleash } : {}),
+    ...(patch.nasty ? { nasty: patch.nasty } : {}),
+  };
+  return Object.keys(jobs).length > 0 ? jobs : undefined;
+}
+
 /** Full last-land map: stamp present pages, drop times the server no longer has. */
 export function applyLastLands(
   snapshot: UiSnapshot,
-  lastLands: Record<string, string>,
+  lastLands: Record<string, LandPatch>,
 ): UiSnapshot {
   return {
     ...snapshot,
     graph: {
       ...snapshot.graph,
       nodes: snapshot.graph.nodes.map((node) => {
-        const lastLandAt = lastLands[node.pageId];
-        if (!lastLandAt) {
-          if (!node.lastLandAt) return node;
-          const { lastLandAt: _drop, ...rest } = node;
-          return rest;
-        }
-        return { ...node, lastLandAt };
+        const patch = lastLands[node.pageId];
+        const { lastLandAt: _at, jobLands: _jobs, ...rest } = node;
+        if (!patch) return rest;
+        const jobLands = jobLandsFromPatch(patch);
+        return {
+          ...rest,
+          ...(patch.at ? { lastLandAt: patch.at } : {}),
+          ...(jobLands ? { jobLands } : {}),
+        };
       }),
     },
   };

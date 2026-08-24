@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { FOG_OLD_MS, npcHunger, staleMsForPage } from "../src/brains/npc.js";
 import { saveConfig } from "../src/persist/config.js";
 import { landsPath, loadLands, recordLand, recordMode, shouldStampLand, touchLand } from "../src/persist/lands.js";
-import { jobLandTimes, jobOfBrain, landTimes, modeLandTimes } from "../src/schema/fog.js";
+import { jobLandTimes, jobLandsOf, jobOfBrain, landTimes, modeLandTimes, monkeyOfBrain } from "../src/schema/fog.js";
 import { emptyConfig } from "../src/schema/config.js";
 import { decideMapScout } from "../src/brains/map-scout.js";
 import type { Page } from "../src/schema/page-model.js";
@@ -80,10 +80,19 @@ describe("lands ledger", () => {
     const next = loadLands(cfg);
     assert.equal(jobLandTimes(next, "map").home, "2026-03-01T00:00:00.000Z");
     assert.equal(jobLandTimes(next, "unleash").home, "2026-04-01T00:00:00.000Z");
+    assert.deepEqual(jobLandsOf(next.pages.home), {
+      map: "2026-03-01T00:00:00.000Z",
+      unleash: "2026-04-01T00:00:00.000Z",
+    });
+    assert.equal(jobLandsOf(undefined), undefined);
     assert.ok(modeLandTimes(next)["home/list"]);
     assert.equal(jobOfBrain("unleash-nasty"), "nasty");
     assert.equal(jobOfBrain("map"), "map");
     assert.equal(jobOfBrain("explore"), undefined);
+    assert.equal(monkeyOfBrain("unleash-nasty"), "nasty");
+    assert.equal(monkeyOfBrain("explore"), "explore");
+    assert.equal(monkeyOfBrain("mcp"), "mcp");
+    assert.equal(monkeyOfBrain("spec"), undefined);
   });
 });
 

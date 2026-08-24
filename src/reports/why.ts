@@ -138,7 +138,8 @@ const RULE_WHY: Record<string, string> = {
     "Sticky/fixed header is taller than scroll-padding-top, so keyboard focus and in-page jumps tuck under the chrome (WCAG 2.4.11 companion).",
   pointerEvents:
     "The control is shown and enabled but pointer-events is none, so a mouse click never hits it. Keyboard may still focus it.",
-  other: "A user-visible rendering defect that does not fit overlap, clip, or overflow.",
+  other:
+    "A pixel-only rendering defect: empty-vs-broken, toast covering chrome, icon collision, abnormal ellipsis, mojibake/tofu, leftover lorem/TODO, or chart labels cut on a canvas. Overflow, clip, and overlap are measured from the DOM.",
 };
 
 const FINDING_WHY: Record<FindingKind, string> = {

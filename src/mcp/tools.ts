@@ -114,15 +114,21 @@ const PROMPT_NAMES = "prompts: clickmonkey, explore_tester, explore_plan, explor
 export const CLICKMONKEY_GUIDE = [
   "# ClickMonkey",
   "",
+  "Five monkeys (working names): map, unleash, nasty, explore, mcp.",
   "The host LLM walks via MCP, then freezes the tape as a spec and proves replay.",
-  "`clickmonkey explore` is exploratory testing without MCP. Map, unleash, and replay stay CLI.",
+  "`clickmonkey explore` is unattended (needs brain). mcp is the host walk. Map, unleash, and nasty stay CLI.",
   "Read clickmonkey://map for the sitemap. This text is also prompt `clickmonkey`.",
   "",
-  "## Jobs",
+  "## Monkeys",
   "",
-  "- **Map** (scout) — CLI `clickmonkey map`. Lifts fog: unseen doors, then unvisited (and later stale) pages. Never fills or submits.",
-  "- **Unleash** (NPC) — CLI `clickmonkey unleash`. Pathfinds to mapped forms, fills, submits. On the tile: wizard (Next, no hop), or the least-recent of form / list / tab / dialog / empty, else nav. `--nasty` is the rogue pass (junk + missed validation) on its own fog clock, on a site you own.",
-  "- **Explore** (paladin) — charter-driven exploratory testing. CLI `clickmonkey explore` (needs brain). MCP `explore_start` … `explore_finish` when the host is the brain. Same Mode: as unleash. Skills: prompts explore_tester, explore_plan, explore_report.",
+  "- **map** — CLI `clickmonkey map`. Unseen doors, then unvisited (and later stale) pages. Never fills or submits.",
+  "- **unleash** — CLI `clickmonkey unleash`. Pathfinds to mapped forms, fills, submits. On the tile: wizard (Next, no hop), or the least-recent of form / list / tab / dialog / empty, else nav.",
+  "- **nasty** — CLI `clickmonkey nasty` (same as `unleash --nasty`). Same hunt on the nasty fog clock: junk + missed validation, on a site you own.",
+  "- **explore** — CLI `clickmonkey explore` (needs brain). Charter-driven, unattended. Same Mode: as unleash. Skills: prompts explore_tester, explore_plan, explore_report.",
+  "- **mcp** — host LLM walks (`explore_start` … `explore_finish`), then spec_save / spec_run. Same Mode. Not `clickmonkey explore`.",
+  "",
+  "## Spec and replay (not monkeys)",
+  "",
   "- **Spec** — MCP `spec_save` writes the compacted walk to `clickmonkey/specs/*.md`. Skill: prompt spec_writer (clickmonkey://spec). `spec_check` is ids-only. `spec_run` (and CLI `clickmonkey spec`) live-replays. That freeze+replay is why MCP exists besides explore.",
   "- **Replay** — CLI `clickmonkey replay`. Comparison vs a findings report, not a spec.",
   "",
@@ -136,7 +142,7 @@ export const CLICKMONKEY_GUIDE = [
   "## MCP loop",
   "",
   "explore_start (charter) → explore_set_plan from sitemap cards → explore_step / nasty_fill → explore_note / explore_good / explore_finding → explore_finish with summary.",
-  "Read prompt spec_writer before freezing. Then spec_save (title) → spec_check → spec_run. Do not invent widget ids. Map, unleash, and replay stay CLI.",
+  "Read prompt spec_writer before freezing. Then spec_save (title) → spec_check → spec_run. Do not invent widget ids. Map, unleash, and nasty stay CLI.",
 ].join("\n");
 
 const NASTY_WARNING =
@@ -1008,7 +1014,7 @@ function promptResult(text: string) {
 export function registerMcpPrompts(server: McpServer): void {
   server.registerPrompt(
     "clickmonkey",
-    { description: "What ClickMonkey is for: map, unleash, explore, spec, replay." },
+    { description: "What ClickMonkey is for: map, unleash, nasty, explore, spec, replay." },
     () => promptResult(CLICKMONKEY_GUIDE),
   );
   server.registerPrompt(
@@ -1077,7 +1083,7 @@ export function registerMcpResources(server: McpServer, host: McpHost): void {
   server.registerResource(
     "guide",
     "clickmonkey://guide",
-    { title: "ClickMonkey jobs (map, unleash, explore, spec freeze/replay)", mimeType: "text/markdown" },
+    { title: "ClickMonkey monkeys (map, unleash, nasty, explore, mcp)", mimeType: "text/markdown" },
     async (uri) => ({ contents: [{ uri: uri.href, text: `${CLICKMONKEY_GUIDE}\n` }] }),
   );
   server.registerResource(

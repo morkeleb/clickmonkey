@@ -189,15 +189,12 @@ function extractJsonObject(raw: string): unknown {
   }
 }
 
-/** Geometry restated as `other` — still drop. Not icon-collision / toast wording. */
-const LAYOUT_GEOMETRY =
-  /\b(overflow|clip|overlap|z-?index|scanline|shear(?:ed|s)?|ragged|gutter)\b/i;
-/** Pixel-only `other` the prompt asked for — keep even if a geometry word appears. */
+/** Geometry words next to these hunts are still pixel-only (toast, chart labels, icon collision). */
 const PIXEL_OTHER_KEEP =
-  /\b(toast|snackbar|icon|calendar|empty|failed.?load|glyph|canvas|missing|ellipsis|mojibake|tofu|replacement.?glyph|lorem|todo|chart)\b/i;
-/** Product-chrome clip of junk still counts (dropPayloadContentVisual). */
+  /\b(?:toast|snackbar|ellipsis|mojibake|tofu|replacement.?glyph|lorem|todo|(?:chart|canvas)(?:\s+axis)?\s+labels?|failed.?load|icons?\s+collision)\b|(?:icons?.{0,40}collid|collid.{0,40}icons?)/i;
+/** Geometry restated as `other`, and product-chrome clip of junk (dropPayloadContentVisual). */
 const LAYOUT_DEFECT =
-  /\b(overflow|clip|overlap|z-?index|scanline|unreadable|covered|leaking|cut off|collide|misalign|shear(?:ed|s)?|ragged|gutter|truncated|too small to read)/i;
+  /\b(?:overflow(?:ing|s)?|clip(?:ped|s)?|overlap(?:ping|s)?|z-?index|scanline|unreadable|cover(?:ed|ing)|leaking|cut off|collid(?:e|es|ed|ing)|misalign|shear(?:ed|s)?|ragged|gutter|truncated|too small to read)\b/i;
 
 /** Product chrome the walker did not type — keep clip of these even if junk is also on screen. */
 const PRODUCT_CHROME = /\b(column|tab titles?|tab labels?|void reason|column header)\b/i;
@@ -275,7 +272,7 @@ export function parseVisualReply(raw: string): ParsedVisualReply {
       const ruleRaw = typeof rec.rule === "string" ? rec.rule.trim() : "";
       const rule = VISUAL_RULE_BY_LOWER.get(ruleRaw.toLowerCase()) ?? "other";
       if (DOM_OWNED_VISUAL_RULE_SET.has(rule)) continue;
-      if (rule === "other" && LAYOUT_GEOMETRY.test(message) && !PIXEL_OTHER_KEEP.test(message)) continue;
+      if (rule === "other" && LAYOUT_DEFECT.test(message) && !PIXEL_OTHER_KEEP.test(message)) continue;
       const severity = rec.severity === "error" ? "error" : "warning";
       const where = typeof rec.where === "string" ? rec.where.replace(/\s+/g, " ").trim() : "";
       const dropOpts = { rule, message, ...(where ? { where } : {}) };

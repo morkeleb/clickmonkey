@@ -101,6 +101,16 @@ describe("overflowLayoutIssue", () => {
     assert.equal(issue.severity, "warning");
   });
 
+  it("treats a 20px document leak as high at 320 reflow width", () => {
+    const issue = overflowLayoutIssue(
+      { where: "hero-grid", px: 20, kind: "document" },
+      320,
+    );
+    assert.ok(issue);
+    assert.equal(issue.confidence, "high");
+    assert.equal(issue.severity, "error");
+  });
+
   it("names document overflow as a high-confidence page width leak", () => {
     const issue = overflowLayoutIssue({
       where: "hero-grid",
@@ -176,10 +186,11 @@ describe("scanOverflowMobile restore", () => {
         sizes.push({ ...size });
       },
       evaluate() {
-        throw new Error("collect failed");
+        return Promise.reject(new Error("collect failed"));
       },
     };
-    await assert.rejects(() => scanOverflowMobile(page as unknown as Page), /collect failed/);
+    const issues = await scanOverflowMobile(page as unknown as Page);
+    assert.deepEqual(issues, []);
     assert.deepEqual(sizes.at(-1), prev);
     assert.equal(sizes.some((s) => s.width === 375), true);
   });
@@ -209,10 +220,11 @@ describe("scanOverflowReflow restore", () => {
         sizes.push({ ...size });
       },
       evaluate() {
-        throw new Error("collect failed");
+        return Promise.reject(new Error("collect failed"));
       },
     };
-    await assert.rejects(() => scanOverflowReflow(page as unknown as Page), /collect failed/);
+    const issues = await scanOverflowReflow(page as unknown as Page);
+    assert.deepEqual(issues, []);
     assert.deepEqual(sizes.at(-1), prev);
     assert.equal(sizes.some((s) => s.width === 320), true);
   });

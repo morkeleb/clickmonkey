@@ -191,7 +191,13 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
             type,
             runs: lastSnapshot.runs,
             lastLands: Object.fromEntries(
-              lastSnapshot.graph.nodes.flatMap((n) => (n.lastLandAt ? [[n.pageId, n.lastLandAt] as const] : [])),
+              lastSnapshot.graph.nodes.flatMap((n) => {
+                const patch = {
+                  ...(n.lastLandAt ? { at: n.lastLandAt } : {}),
+                  ...n.jobLands,
+                };
+                return Object.keys(patch).length > 0 ? ([[n.pageId, patch]] as const) : [];
+              }),
             ),
           };
           for (const client of clients) writeSse(client, event);

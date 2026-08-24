@@ -138,6 +138,14 @@ function MapCanvasInner({
           className="h-8 w-56 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-400"
         />
       </Panel>
+      <Panel position="top-right" className="m-3">
+        <div className="rounded-md border border-zinc-700 bg-zinc-900/90 px-2.5 py-1.5 text-[10px] leading-4 text-zinc-400">
+          <div className="font-medium text-zinc-300">fog (green recent · red hungry)</div>
+          <div>m map · u unleash · n nasty</div>
+          <div className="mt-1 font-medium text-zinc-300">live (colored letter)</div>
+          <div>m map · u unleash · n nasty · e explore · c mcp</div>
+        </div>
+      </Panel>
     </ReactFlow>
   );
 }

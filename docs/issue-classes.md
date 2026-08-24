@@ -6,8 +6,8 @@ A report counts **sites** (pages that show the class), not “10 unique bugs.”
 
 ## How to use the split
 
-1. **Map** (scout) then **unleash** (NPC) on staging — soak chrome, crashes, locatability, HTML/axe, empty-required. Fog sends them to rooms and forms they have not stood on recently ([fog.md](fog.md)). On a tile the NPC is in wizard / form / list / tab / dialog / empty / nav mode ([walkers.md](walkers.md)). `--nasty` is the rogue pass for junk and missed validation. Engineers fix classes.
-2. **Explore** (paladin) with a charter from the ticket (`git log`, “can Test Mode start a Salesforce → Filevine flow”). CLI `clickmonkey explore` is exploratory testing without MCP. MCP is the same walk plus freeze/replay of a spec ([mcp.md](mcp.md)). A person still aims the monkey.
+1. **map** then **unleash** on staging — soak chrome, crashes, locatability, HTML/axe, empty-required. Fog sends them to rooms and forms they have not stood on recently ([fog.md](fog.md)). On a tile unleash is in wizard / form / list / tab / dialog / empty / nav mode ([walkers.md](walkers.md)). **nasty** (`clickmonkey nasty`) is the junk + missed-validation pass. Engineers fix classes.
+2. **explore** with a charter from the ticket (`git log`, “can Test Mode start a Salesforce → Filevine flow”). CLI `clickmonkey explore` is exploratory testing without MCP. MCP is the same walk plus freeze/replay of a spec ([mcp.md](mcp.md)). A person still aims the monkey.
 3. **Specs** for paths you will not debate again (login lands, empty create is invalid) — MCP `spec_save` / `spec_run`, or CLI `clickmonkey spec`.
 4. **Humans** on money, permissions, “does this customer’s data look right,” and anything that needs a second user or an inbox.
 
@@ -141,10 +141,12 @@ ClickMonkey has no domain brain unless you put it in a **charter**, **skills** (
 
 | Command | Harvests |
 |---|---|
-| `map` | Scout: pages/surfaces, testability, quality + DOM layout on navigate-only |
-| `unleash` | NPC: hunt mapped forms; wizard/form/list/nav on the tile; `--nasty` rogue; same layout pass |
+| `map` | Pages/surfaces, testability, quality + DOM layout on navigate-only |
+| `unleash` | Hunt mapped forms; wizard/form/list/nav on the tile; same layout pass |
+| `nasty` | Same hunt on the nasty clock; junk fills; site you own (`unleash --nasty` is the same) |
 | `playbook empty-required` | Blank required + submit → invalid |
-| `explore` / `mcp` | Paladin: charter-driven walk + host oracles; `explore_finding` / `screenshot ui` |
+| `explore` | Unattended charter walk (needs `brain`) |
+| `mcp` | Host LLM walk, then spec freeze/replay |
 | `spec` | Fences as a real walk; findings still harvest unless you only care about PASS |
 | `replay` | Comparison vs a report, not a new survey |
 | `report` | Shareable markdown: findings first (each with Why it matters), then quality digest (Start here, Chrome, clusters, every page with leftover issues) |

@@ -40,13 +40,13 @@ export interface BrainContext {
   huntTarget?: string;
   /** Remaining local steps after a submit that changed page. Hunt waits. */
   lootSteps?: number;
-  /** Times this run stood on `page/surface`. Map scout lifts unseen rooms first. */
+  /** Times this run stood on `page/surface`. map lifts unseen rooms first. */
   pageVisits?: Readonly<Record<string, number>>;
   /** Last land ISO times by page id for this job (`clickmonkey/lands.json`). */
   pageLands?: Readonly<Record<string, string>>;
   /** Last mode ISO times keyed `page/mode`. */
   modeLands?: Readonly<Record<string, string>>;
-  /** Scout / NPC / rogue. Hunger uses this job's clock. */
+  /** map / unleash / nasty. Hunger uses this monkey's clock. */
   job?: WalkerJobName;
   plan?: UiExplorePlan;
   pages?: readonly Page[];

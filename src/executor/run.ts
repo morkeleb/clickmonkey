@@ -308,7 +308,7 @@ function measuredHits(issues: QualityIssue[] | undefined): MeasuredVisualHit[] |
   }));
 }
 
-/** PNG + HTTP only. Do not touch `page` — finish() overlaps this with inspect/axe. */
+/** PNG + HTTP only. Do not touch `page` — finish() runs this with axe after layout restored the viewport. */
 async function scanStepVision(
   state: RunState,
   step: Step,
@@ -595,7 +595,7 @@ async function finish(
             replayLog: compactTape(state, step, "visual issue"),
           });
         }
-        measured = measuredHits(layoutIssues);
+        measured = measuredHits(layout.issues);
       } else {
         measured = measuredHits(prev?.visual);
       }

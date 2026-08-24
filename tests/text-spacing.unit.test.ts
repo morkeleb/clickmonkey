@@ -6,6 +6,7 @@ import {
   STYLE_ID,
   TEXT_SPACING_CAP,
   TEXT_SPACING_CSS,
+  onlyNewTextSpacingHits,
   scanTextSpacing,
   tagTextSpacingIssue,
   takeTextSpacingHits,
@@ -68,6 +69,40 @@ describe("tagTextSpacingIssue", () => {
     const tagged = tagTextSpacingIssue(issue({ via: "dom" }));
     assert.equal(tagged.via, undefined);
     assert.equal("via" in tagged, false);
+  });
+});
+
+describe("onlyNewTextSpacingHits", () => {
+  it("drops clip/overflow already seen unspaced", () => {
+    const baseline = [
+      issue({ rule: "overflow", where: "hero-grid", message: "Page is 140px wider than the viewport" }),
+      issue({ rule: "clip", where: "Vendor column", message: "Vendor column shears a word" }),
+    ];
+    const spaced = [
+      issue({ rule: "overflow", where: "hero-grid", message: "Page is 148px wider than the viewport" }),
+      issue({ rule: "clip", where: "tight-chip", message: "Chip label is cut mid-word" }),
+    ];
+    const fresh = onlyNewTextSpacingHits(spaced, baseline);
+    assert.equal(fresh.length, 1);
+    assert.equal(fresh[0]?.where, "tight-chip");
+  });
+
+  it("drops a page-width leak when spacing changes which node is rightmost", () => {
+    const baseline = [
+      issue({
+        rule: "overflow",
+        where: "hero-grid",
+        message: "Page is 140px wider than the viewport",
+      }),
+    ];
+    const spaced = [
+      issue({
+        rule: "overflow",
+        where: "h1",
+        message: "Page is 148px wider than the viewport",
+      }),
+    ];
+    assert.deepEqual(onlyNewTextSpacingHits(spaced, baseline), []);
   });
 });
 

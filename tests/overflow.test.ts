@@ -105,6 +105,8 @@ describe("scanOverflowReflow", () => {
       const hit = reflow.find((i) => i.rule === "overflow");
       assert.ok(hit, `expected overflow at 320px, got ${JSON.stringify(reflow)}`);
       assert.match(hit.where ?? hit.message, /@ 320px/);
+      assert.equal(hit.confidence, "high");
+      assert.equal(hit.severity, "error");
       assert.equal(page.viewportSize()?.width, 1280);
     });
   });

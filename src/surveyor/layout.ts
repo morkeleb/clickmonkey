@@ -71,7 +71,8 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
   const sy = Number.isFinite(scroll.y) ? scroll.y : 0;
   await take(scanFocusObscured);
   await take(scanFocusVisible);
-  await take(scanTextSpacing);
+  const unspaced = issues.filter((i) => i.rule === "clip" || i.rule === "overflow");
+  await take((p) => scanTextSpacing(p, unspaced));
   await take(scanOverflowMobile);
   await take(scanOverflowReflow);
   if (prevView) await page.setViewportSize(prevView).catch(() => undefined);

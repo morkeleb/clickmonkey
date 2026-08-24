@@ -121,6 +121,11 @@ export function qualityIssuesEqual(
 const CONFIDENCE_RANK: Record<QualityConfidence, number> = { low: 0, medium: 1, high: 2 };
 const SEVERITY_RANK: Record<QualitySeverity, number> = { warning: 0, error: 1 };
 
+/** Pixel-only visual rules. Geometry is DOM-owned; these survive replaceDom. */
+export function isPixelVisualRule(rule: string): boolean {
+  return rule === "contrast" || rule === "align" || rule === "other";
+}
+
 export function mergeQualityIssues(issues: QualityIssue[]): QualityIssue[] {
   const byKey = new Map<string, QualityIssue>();
   for (const i of issues) {
@@ -128,8 +133,11 @@ export function mergeQualityIssues(issues: QualityIssue[]): QualityIssue[] {
     const key = qualityIssueKey({ ...i, message });
     const prev = byKey.get(key);
     if (prev) {
-      const prevDom = prev.via !== "vlm";
-      if (prevDom && i.via === "vlm") {
+      if (prev.via === "dom" && i.via === "vlm") {
+        continue;
+      }
+      // Untagged is unknown, not DOM. VLM may refresh contrast/align/other only.
+      if (!prev.via && i.via === "vlm" && !isPixelVisualRule(i.rule)) {
         continue;
       }
       prev.count += i.count;

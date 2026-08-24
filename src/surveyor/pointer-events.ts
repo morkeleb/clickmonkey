@@ -181,7 +181,7 @@ const COLLECT_SRC = `(() => {
   for (n = 0; n < nodes.length; n++) {
     var el = nodes[n];
     if (!shown(el) || isDisabled(el) || isAriaHidden(el)) continue;
-    // Not inherited; parent none + child auto is still clickable.
+    // Computed on the control: parent none + child auto stays clickable.
     var pe = window.getComputedStyle(el).pointerEvents;
     if (String(pe || "").toLowerCase() !== "none") continue;
     var name = widgetName(el) || "Control";

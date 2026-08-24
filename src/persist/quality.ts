@@ -4,6 +4,7 @@ import {
   combineQualityReports,
   emptyQualityReport,
   foldQualityReport,
+  isPixelVisualRule,
   mergeQualityIssues,
   mergeRuntimeEvents,
   mergeTitleInstances,
@@ -165,7 +166,7 @@ export function persistQualityVisual(
     visualHash: string;
   },
   outDir?: string,
-  opts?: { /** Drop prior DOM hits; keep VLM-only rows (layout snapshot). */ replaceDom?: boolean },
+  opts?: { /** Drop prior geometry; keep contrast/align/other (layout snapshot). */ replaceDom?: boolean },
 ): QualityReport {
   const path = resolveQualityWritePath(configPath, outDir);
   return withFileLock(path, () => {
@@ -173,9 +174,7 @@ export function persistQualityVisual(
     const key = { path: ledgerPath(page.path), ...(page.origin ? { origin: page.origin } : {}) };
     const prev = findPage(disk, key);
     const prior = opts?.replaceDom
-      ? (prev?.visual ?? []).filter(
-          (i) => i.via === "vlm" || (i.via !== "dom" && (i.rule === "contrast" || i.rule === "align" || i.rule === "other")),
-        )
+      ? (prev?.visual ?? []).filter((i) => isPixelVisualRule(i.rule))
       : (prev?.visual ?? []);
     const nextPage: QualityPage = {
       path: key.path,

@@ -855,14 +855,14 @@ describe("mcp tools", () => {
     }
   });
 
-  it("guide names map, unleash, spec, and replay and MCP spec_save/spec_run", () => {
+  it("guide names the five monkeys and MCP spec_save/spec_run", () => {
+    assert.match(CLICKMONKEY_GUIDE, /Five monkeys/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey map/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey unleash/);
+    assert.match(CLICKMONKEY_GUIDE, /clickmonkey nasty/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey explore/);
-    assert.match(CLICKMONKEY_GUIDE, /\(scout\)/);
-    assert.match(CLICKMONKEY_GUIDE, /\(NPC\)/);
-    assert.match(CLICKMONKEY_GUIDE, /\(paladin\)/);
-    assert.match(CLICKMONKEY_GUIDE, /rogue pass/);
+    assert.match(CLICKMONKEY_GUIDE, /\*\*mcp\*\*/);
+    assert.match(CLICKMONKEY_GUIDE, /Not `clickmonkey explore`/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey spec/);
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey replay/);
     assert.match(CLICKMONKEY_GUIDE, /explore_start/);
@@ -870,7 +870,7 @@ describe("mcp tools", () => {
     assert.match(CLICKMONKEY_GUIDE, /clickmonkey:\/\/spec/);
     assert.match(CLICKMONKEY_GUIDE, /spec_save/);
     assert.match(CLICKMONKEY_GUIDE, /spec_run/);
-    assert.match(CLICKMONKEY_GUIDE, /without MCP/);
+    assert.match(CLICKMONKEY_GUIDE, /## Spec and replay \(not monkeys\)/);
     assert.ok(CLICKMONKEY_GUIDE.split("\n").length <= 40, "guide should stay short");
   });
 

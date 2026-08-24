@@ -8,6 +8,8 @@ export const OVERFLOW_PX = 8;
  * ~15px is a classic vertical-scrollbar / `100vw` false positive.
  */
 export const DOCUMENT_X_SLACK = 16;
+/** WCAG 1.4.10: 1280 CSS px at 400% zoom. */
+export const REFLOW_OVERFLOW_VW = 320;
 export const MAX_OVERFLOW_HITS = 8;
 /** Open dialogs below this share of the viewport width are overlays, not pages. */
 export const DIALOG_PAGE_SHARE = 0.7;
@@ -110,10 +112,15 @@ export function isSmallOpenDialog(box: OverflowBox, vw: number): boolean {
   return box.right - box.left < vw * DIALOG_PAGE_SHARE;
 }
 
-export function overflowConfidence(sample: OverflowSample): "high" | "medium" | undefined {
+export function overflowConfidence(
+  sample: OverflowSample,
+  viewportWidth?: number,
+): "high" | "medium" | undefined {
   if (!Number.isFinite(sample.px)) return undefined;
   if (sample.kind === "document") {
     if (sample.px <= DOCUMENT_X_SLACK) return undefined;
+    // WCAG 1.4.10: any horizontal scroll above gutter slack at 320 is a fail.
+    if (viewportWidth !== undefined && viewportWidth <= REFLOW_OVERFLOW_VW) return "high";
     return sample.px >= 40 ? "high" : "medium";
   }
   if (sample.px < OVERFLOW_PX) return undefined;
@@ -134,9 +141,10 @@ export function overflowMessage(sample: OverflowSample): string {
 
 export function overflowLayoutIssue(
   sample: OverflowSample | null | undefined,
+  viewportWidth?: number,
 ): QualityIssue | undefined {
   if (!sample || !sample.where?.trim()) return undefined;
-  const confidence = overflowConfidence(sample);
+  const confidence = overflowConfidence(sample, viewportWidth);
   if (!confidence) return undefined;
   return {
     source: "visual",
@@ -460,8 +468,9 @@ export async function scanOverflow(page: Page): Promise<QualityIssue[]> {
   const hits = (await page.evaluate(COLLECT_SRC).catch(() => [])) as OverflowSample[];
   const issues: QualityIssue[] = [];
   if (!Array.isArray(hits)) return issues;
+  const viewportWidth = page.viewportSize?.()?.width;
   for (const hit of takeOverflowHits(hits)) {
-    const issue = overflowLayoutIssue(hit);
+    const issue = overflowLayoutIssue(hit, viewportWidth);
     if (issue) issues.push(issue);
   }
   return issues;
@@ -473,8 +482,6 @@ const MOBILE_OVERFLOW_SKIP_AT = 420;
 const MOBILE_OVERFLOW_MIN_VH = 667;
 const MOBILE_OVERFLOW_TAG = " @ 375px";
 
-/** WCAG 1.4.10: 1280 CSS px at 400% zoom. */
-export const REFLOW_OVERFLOW_VW = 320;
 /** Already reflow-narrow — skip so a 320 walk is not counted twice. */
 const REFLOW_OVERFLOW_SKIP_AT = 360;
 /** WCAG 1.4.10 horizontal-scroll height; never shrink below this. */

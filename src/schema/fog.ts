@@ -58,6 +58,16 @@ export function jobOfBrain(brain?: string): WalkerJobName | undefined {
   return undefined;
 }
 
+/** Five monkeys. explore and mcp are different; only map/unleash/nasty stamp a job clock. */
+export const MonkeyName = z.enum(["map", "unleash", "nasty", "explore", "mcp"]);
+export type MonkeyName = z.infer<typeof MonkeyName>;
+
+export function monkeyOfBrain(brain?: string): MonkeyName | undefined {
+  if (brain === "unleash-nasty") return "nasty";
+  const parsed = MonkeyName.safeParse(brain);
+  return parsed.success ? parsed.data : undefined;
+}
+
 export function landTimes(ledger: LandsLedger): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [id, page] of Object.entries(ledger.pages)) out[id] = page.at;
@@ -71,6 +81,17 @@ export function jobLandTimes(ledger: LandsLedger, job: WalkerJobName): Record<st
     if (at) out[id] = at;
   }
   return out;
+}
+
+/** Per-page job clocks for the sitemap heat pips. Missing job = full fog. */
+export function jobLandsOf(page: PageLand | undefined): Partial<Record<WalkerJobName, string>> | undefined {
+  if (!page) return undefined;
+  const out: Partial<Record<WalkerJobName, string>> = {};
+  for (const job of WalkerJobName.options) {
+    const at = page.jobs[job];
+    if (at) out[job] = at;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export function modeLandKey(pageId: string, mode: WalkerModeName): string {

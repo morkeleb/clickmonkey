@@ -25,5 +25,6 @@ describe("why copy", () => {
     assert.match(whyFinding("expectFailed", "page.button_employees was not found"), /duplicate name|flake/);
     assert.match(whyFinding("expectFailed", "page.button_save is disabled"), /stayed disabled/);
     assert.match(whyFindingBlock("notFound", "HTTP 404"), /^> A link, hop, or redirect/);
+    assert.match(whyRule("other") ?? "", /pixel-only/);
   });
 });

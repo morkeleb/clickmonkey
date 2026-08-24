@@ -244,8 +244,8 @@ export {
   shouldStampMode,
   lineMatchesMode,
 } from "./brains/walker-mode.js";
-export { jobOfBrain, landTimes, jobLandTimes, modeLandTimes } from "./schema/fog.js";
-export type { WalkerJobName, WalkerModeName } from "./schema/fog.js";
+export { jobOfBrain, monkeyOfBrain, landTimes, jobLandTimes, jobLandsOf, modeLandTimes } from "./schema/fog.js";
+export type { WalkerJobName, WalkerModeName, MonkeyName } from "./schema/fog.js";
 export {
   floodNpc,
   formatNpcStep,

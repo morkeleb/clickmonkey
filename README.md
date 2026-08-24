@@ -65,31 +65,35 @@ The map is fog of war. Walkers have **jobs**; on a tile they pick a **mode**.
 Jobs, modes, and fog hunger: [docs/walkers.md](docs/walkers.md), [docs/fog.md](docs/fog.md).
 
 ```bash
-clickmonkey map --steps 80               # scout — grow pages/surfaces, never fill
-clickmonkey unleash --steps 200          # NPC — hunt mapped forms, fill, submit
-clickmonkey unleash --nasty --steps 200  # rogue — junk in those forms (site you own)
-clickmonkey explore --charter "…"        # paladin — exploratory testing, no MCP (needs brain)
-clickmonkey mcp                          # host-LLM paladin, then freeze/replay specs
+clickmonkey map --steps 80               # grow pages/surfaces, never fill
+clickmonkey unleash --steps 200          # hunt mapped forms, fill, submit
+clickmonkey nasty --steps 200            # junk in those forms (site you own)
+clickmonkey explore --charter "…"        # exploratory testing, no MCP (needs brain)
+clickmonkey mcp                          # host-LLM walk, then freeze/replay specs
 ```
 
-**Map** is the scout. It clicks unseen doors (unvisited pages and unopened
-dialogs) and pathfinds toward rooms it has not stood on, instead of grinding
-the same sidebar. It never fills and never clicks submit/save/delete. After
-it, the others have legal ids. Stale rooms (last visit days/weeks ago) should
-pull the same scout — fog drives hunger, not a fourth army.
+Five monkeys (working names): **map**, **unleash**, **nasty**, **explore**, **mcp**.
 
-**Unleash** is an NPC on that map. It pathfinds toward forms (fields + submit)
-this job has not walked recently, fills them, and watches what happens.
-Forms already filled this run drop in priority but stay in the pool. On the
-tile it picks **wizard** (lock), or the least-recent of **form** / **list** /
-**tab** / **dialog** / **empty**, else **nav**. Wizard fills then Next — it does not hop
-to the sidebar mid-stepper. `--nasty` is the rogue version of the same hunt
-on its own fog clock: XSS/SQLi/overlong junk and missed validation, only on
-a site you own.
+**map** clicks unseen doors (unvisited pages and unopened dialogs) and
+pathfinds toward rooms it has not stood on, instead of grinding the same
+sidebar. It never fills and never clicks submit/save/delete. After it, the
+others have legal ids. Stale rooms (last visit days/weeks ago) pull the same
+map run — fog drives hunger, not a fifth monkey.
 
-**Explore** is the paladin. A charter (ticket, `git log`) says what “doing the
-job” means; the model walks legal ids toward that, not toward random forms.
-It sees the same `Mode:` as unleash. `clickmonkey explore` is exploratory
+**unleash** pathfinds toward forms (fields + submit) this job has not walked
+recently, fills them, and watches what happens. Forms already filled this
+run drop in priority but stay in the pool. On the tile it picks **wizard**
+(lock), or the least-recent of **form** / **list** / **tab** / **dialog** /
+**empty**, else **nav**. Wizard fills then Next — it does not hop to the
+sidebar mid-stepper.
+
+**nasty** is the same hunt on its own fog clock (`clickmonkey nasty`, same as
+`unleash --nasty`): XSS/SQLi/overlong junk and missed validation, only on a
+site you own.
+
+**explore** takes a charter (ticket, `git log`) for what “doing the job”
+means; the model walks legal ids toward that, not toward random forms. It
+sees the same `Mode:` as unleash. `clickmonkey explore` is exploratory
 testing without MCP (needs `brain`). MCP is the same walk with the host LLM
 as the brain, then `spec_save` / `spec_run` to freeze a replayable spec and
 prove it — that is why you would use the MCP server instead of explore-only.
@@ -216,6 +220,7 @@ clickmonkey step '<line>' [--config] [--url] [--out]
 clickmonkey playbook empty-required [--config] [--url] [--out]
 clickmonkey map [--config] [--url] [--out] [--steps] [--verbose]
 clickmonkey unleash [--config] [--url] [--out] [--steps] [--nasty]
+clickmonkey nasty [--config] [--url] [--out] [--steps]
 clickmonkey explore [--config] [--url] [--out] [--steps] [--minutes] [--charter] [--skills]
 clickmonkey mcp [--config]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
@@ -233,7 +238,7 @@ clickmonkey ui --stop
 
 ## Exploratory testing via MCP
 
-`clickmonkey explore` is exploratory testing without the MCP server (needs `brain` in the leash). Use it in CI and when you want an unattended paladin.
+`clickmonkey explore` is exploratory testing without the MCP server (needs `brain` in the leash). Use it in CI and when you want an unattended explore.
 
 The MCP server is the host LLM walking, then **freezing that walk as a replayable spec** and **proving the replay**. How to wire Grok / Claude / Cursor, which prompts to read (`explore_tester`, `spec_writer`), and the explore → `spec_save` → `spec_run` loop: [docs/mcp.md](docs/mcp.md).
 
@@ -262,7 +267,7 @@ Each run writes `nav.jsonl` (and echoes timestamped lines on stderr): every DSL 
 
 `--verbose` writes `verbose/NNN.html` (live DOM) and `verbose/NNN.view.txt` (what the walker extracted) plus `verbose/index.jsonl`. Compare those two to see naming/locator drift. Delete the folder anytime: `rm -rf clickmonkey/runs/*/verbose`.
 
-A **run** is a walk (`map` / `unleash` / `explore` / playbook). A **report** (`clickmonkey report`) is the shareable markdown of those findings. A **replay of a report** is not a third walk — it is a **comparison** against that report: same tapes, new shots, `comparison.md` with before/after.
+A **run** is a walk (`map` / `unleash` / `nasty` / `explore` / playbook). A **report** (`clickmonkey report`) is the shareable markdown of those findings. A **replay of a report** is not a third walk — it is a **comparison** against that report: same tapes, new shots, `comparison.md` with before/after.
 
 `clickmonkey replay clickmonkey/reports/<id>/findings.md` writes `clickmonkey/replays/<id>/comparison.md`. Use the path that `report` printed. **STILL** = the bug came back. **FIXED** = it did not. **LOOK** = a human has to compare the pictures (UI / `screenshot ui`). Exit 1 only on STILL or ERROR.
 

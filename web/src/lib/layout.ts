@@ -1,5 +1,6 @@
 import dagre from "@dagrejs/dagre";
 import type { Edge, Node } from "@xyflow/react";
+import { monkeyOfBrain } from "@schema/fog";
 import type { UiGraph, UiGraphNode, UiRun } from "@schema/ui";
 import { prettyPageLabel, sectionKey, titleCaseSegment } from "@ui/graph-labels";
 import {
@@ -39,7 +40,7 @@ export type GraphNodeData = {
   entry?: boolean;
   red: number;
   yellow: number;
-  rings: { hue: number; name: string }[];
+  rings: { hue: number; name: string; monkey?: string }[];
   blurb?: string;
   describedBy?: "inspect" | "explore" | "vision";
   count?: number;
@@ -49,6 +50,7 @@ export type GraphNodeData = {
   cardWidth?: number;
   cardHeight?: number;
   lastLandAt?: string;
+  jobLands?: { map?: string; unleash?: string; nasty?: string };
 };
 
 export type GraphFlowNode = Node<GraphNodeData, "graph" | "section">;
@@ -82,7 +84,10 @@ export function ringsFor(node: Pick<UiGraphNode, "id" | "kind">, runs: UiRun[]) 
       if (!run.live || !run.pageId) return false;
       return run.pageId === node.id;
     })
-    .map((run) => ({ hue: run.hue, name: run.name }));
+    .map((run) => {
+      const monkey = monkeyOfBrain(run.brain);
+      return { hue: run.hue, name: run.name, ...(monkey ? { monkey } : {}) };
+    });
 }
 
 export function clustersOf(graph: UiGraph): Map<string, UiGraphNode[]> {
@@ -256,6 +261,7 @@ export function layoutGraph(
         ...(node.blurb ? { blurb: node.blurb } : {}),
         ...(node.describedBy ? { describedBy: node.describedBy } : {}),
         ...(node.lastLandAt ? { lastLandAt: node.lastLandAt } : {}),
+        ...(node.jobLands ? { jobLands: node.jobLands } : {}),
       },
       style: { width: box.width, height: box.height, opacity: hidden ? 0.18 : 1 },
       zIndex: 2,
@@ -335,6 +341,7 @@ export function layoutGraph(
           ...(page.blurb ? { blurb: page.blurb } : {}),
           ...(page.describedBy ? { describedBy: page.describedBy } : {}),
           ...(page.lastLandAt ? { lastLandAt: page.lastLandAt } : {}),
+          ...(page.jobLands ? { jobLands: page.jobLands } : {}),
         },
         style: { width: box.width, height: box.height, opacity: childHidden ? 0.18 : 1 },
         zIndex: 2,

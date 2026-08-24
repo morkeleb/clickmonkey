@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import type { MainView } from "@/lib/view";
+import { monkeyOfBrain } from "@schema/fog";
 import { cn, runHue } from "@/lib/utils";
 
 function navActive(view: MainView, target: MainView): boolean {
@@ -62,7 +63,7 @@ function RunRow({ run, active, onClick }: { run: UiRun; active: boolean; onClick
           {run.brain ? (
             <>
               <span aria-hidden>·</span>
-              <span className="truncate">{run.brain}</span>
+              <span className="truncate">{monkeyOfBrain(run.brain) ?? run.brain}</span>
             </>
           ) : null}
           <span aria-hidden>·</span>

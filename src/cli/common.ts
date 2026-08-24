@@ -22,9 +22,10 @@ Commands:
   view        Print the compact view of the current surface
   step        Run one DSL line and append it to the log
   playbook    Run a named playbook (empty-required)
-  map         Scout: navigate-only walk — grow the sitemap, no fill/submit
-  unleash     NPC: hunt mapped forms, fill and submit [--nasty rogue payloads]
-  explore     Paladin: charter-driven LLM walk of legal map ids
+  map         Grow the sitemap: unseen doors, then stale pages. Never fill/submit
+  unleash     Hunt mapped forms, fill and submit
+  nasty       Same hunt with junk payloads on the nasty fog clock (site you own)
+  explore     Charter-driven LLM walk of legal map ids (needs brain)
   mcp         Host-LLM walk + spec freeze/replay (stdio)
   report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
   prune       Drop false positives from a report (inquirer; --ids for scripts)

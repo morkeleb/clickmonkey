@@ -23,6 +23,15 @@ export const UiGraphNode = z
     screenshotUrl: z.string().min(1).optional(),
     /** Last land on this page (any job). Missing = full fog. */
     lastLandAt: z.string().min(1).optional(),
+    /** Last land per job clock. Missing job = that job has never stood here. */
+    jobLands: z
+      .object({
+        map: z.string().min(1).optional(),
+        unleash: z.string().min(1).optional(),
+        nasty: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type UiGraphNode = z.infer<typeof UiGraphNode>;
@@ -286,8 +295,20 @@ export const UiEvent = z
     snapshot: UiSnapshot.optional(),
     /** Cheap live patch: walker pageId / presence without rebuilding the map. */
     runs: z.array(UiRun).optional(),
-    /** Cheap live patch: last land ISO times by page id. */
-    lastLands: z.record(z.string().min(1), z.string().min(1)).optional(),
+    /** Cheap live patch: last land (`at`) and job clocks by page id. */
+    lastLands: z
+      .record(
+        z.string().min(1),
+        z
+          .object({
+            at: z.string().min(1).optional(),
+            map: z.string().min(1).optional(),
+            unleash: z.string().min(1).optional(),
+            nasty: z.string().min(1).optional(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 export type UiEvent = z.infer<typeof UiEvent>;

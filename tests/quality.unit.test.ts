@@ -155,6 +155,54 @@ describe("quality ledger", () => {
     assert.equal(merged[0]?.where, "New vendor");
   });
 
+  it("lets VLM refresh untagged contrast but not untagged overflow", () => {
+    const merged = mergeQualityIssues([
+      {
+        source: "visual",
+        rule: "contrast",
+        severity: "warning",
+        message: "Hint is faint",
+        count: 1,
+        confidence: "medium",
+      },
+      {
+        source: "visual",
+        rule: "contrast",
+        severity: "warning",
+        message: "Hint text fails contrast on the gray bar",
+        count: 1,
+        confidence: "high",
+        via: "vlm",
+        where: "hint",
+      },
+      {
+        source: "visual",
+        rule: "overflow",
+        severity: "warning",
+        message: "Page is 20px wider",
+        count: 1,
+        confidence: "medium",
+      },
+      {
+        source: "visual",
+        rule: "overflow",
+        severity: "error",
+        message: "Page is 80px wider",
+        count: 1,
+        confidence: "high",
+        via: "vlm",
+      },
+    ]);
+    const contrast = merged.find((i) => i.rule === "contrast")!;
+    assert.equal(contrast.message, "Hint text fails contrast on the gray bar");
+    assert.equal(contrast.confidence, "high");
+    assert.equal(contrast.where, "hint");
+    const overflow = merged.find((i) => i.rule === "overflow")!;
+    assert.equal(overflow.message, "Page is 20px wider");
+    assert.equal(overflow.confidence, "medium");
+    assert.equal(overflow.via, undefined);
+  });
+
   it("lets a later DOM scan overwrite a VLM message for the same rule", () => {
     const merged = mergeQualityIssues([
       {
@@ -404,6 +452,57 @@ describe("quality ledger", () => {
     );
     const page = loadQualityReport(qualityReportPath(configPath)).pages[0]!;
     assert.deepEqual(page.visual.map((i) => i.rule).sort(), ["contrast", "sparse"]);
+    assert.equal(page.visual.find((i) => i.rule === "overflow"), undefined);
+  });
+
+  it("replaceDom drops leftover via:vlm geometry", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-quality-visual-replace-vlm-geo-"));
+    const configPath = join(dir, "clickmonkey.json");
+    persistQualityVisual(configPath, {
+      path: "/",
+      foundAt: "t1",
+      visualHash: "png-a",
+      visual: [
+        {
+          source: "visual",
+          rule: "overflow",
+          severity: "error",
+          message: "Page is 44px wider",
+          count: 1,
+          via: "vlm",
+        },
+        {
+          source: "visual",
+          rule: "other",
+          severity: "warning",
+          message: "Toast covering the save button",
+          count: 1,
+          via: "vlm",
+        },
+      ],
+    });
+    persistQualityVisual(
+      configPath,
+      {
+        path: "/",
+        foundAt: "t2",
+        visualHash: "png-b",
+        visual: [
+          {
+            source: "visual",
+            rule: "sparse",
+            severity: "warning",
+            message: "left-locked form uses 29%",
+            count: 1,
+            via: "dom",
+          },
+        ],
+      },
+      undefined,
+      { replaceDom: true },
+    );
+    const page = loadQualityReport(qualityReportPath(configPath)).pages[0]!;
+    assert.deepEqual(page.visual.map((i) => i.rule).sort(), ["other", "sparse"]);
     assert.equal(page.visual.find((i) => i.rule === "overflow"), undefined);
   });
 
