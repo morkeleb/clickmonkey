@@ -52,6 +52,14 @@ function typeaheadConfig(url: string): Config {
                   value: "city",
                   status: "ok",
                 },
+                {
+                  id: "industry",
+                  required: false,
+                  type: "text",
+                  by: "testId",
+                  value: "industry",
+                  status: "ok",
+                },
               ],
               actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
             },
@@ -111,6 +119,26 @@ describe("typeahead fill", () => {
         const send = await exec.runLine("click page.submit");
         assert.equal(send.ok, true, send.finding?.message);
         assert.match(handle.page.url(), /ok\.html/);
+      });
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+      await close();
+    }
+  });
+
+  it("clicks a listed industry row when the planned fill is faker junk", async () => {
+    const { baseUrl, close } = await serveSite("typeahead-form");
+    const outDir = mkdtempSync(join(tmpdir(), "cm-typeahead-ind-"));
+    try {
+      await withRun({ timeout: 20_000 }, async (handle) => {
+        const state = await bootRun(handle, typeaheadConfig(baseUrl), outDir);
+        const exec = createExecutor(state);
+        const miss = await exec.runLine('fill page.industry "beatus bos"');
+        assert.equal(miss.ok, true, miss.finding?.message);
+        const typed = await handle.page.locator('[data-testid="industry"]').inputValue();
+        assert.notEqual(typed, "beatus bos");
+        const industry = await handle.page.locator("#industryId").inputValue();
+        assert.match(industry, /Soybean Farming|Oilseed|Corn Farming/, industry);
       });
     } finally {
       rmSync(outDir, { recursive: true, force: true });

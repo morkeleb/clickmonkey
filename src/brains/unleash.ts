@@ -1,6 +1,7 @@
 import { formatStep } from "../schema/dsl.js";
 import type { Page } from "../schema/page-model.js";
 import type { ShownAction, ShownField, View } from "../schema/view.js";
+import { planControlFill } from "../executor/field-control.js";
 import { fakerFill } from "./faker-fill.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
 import { detectWalkerMode } from "./walker-mode.js";
@@ -309,18 +310,7 @@ export function hopPage(view: View, rng: () => number): BrainDecision {
   return { line: formatStep({ kind: "screenshot" }), note: "no hoppable pages" };
 }
 
-/** Pick a real `<option>` value (or label if value is empty). Skips the placeholder `value=""`. */
-export function pickSelectOption(
-  options: readonly { value: string; label: string }[] | undefined,
-  rng: () => number,
-): string | undefined {
-  if (!options || options.length === 0) return undefined;
-  const real = options.filter((o) => o.value.trim() !== "");
-  const pool = real.length > 0 ? real : options.filter((o) => o.label.trim() !== "");
-  if (pool.length === 0) return undefined;
-  const chosen = pool[Math.floor(rng() * pool.length)]!;
-  return chosen.value.trim() !== "" ? chosen.value : chosen.label;
-}
+export { pickSelectOption } from "../executor/select-options.js";
 
 export type FillFn = (field: ShownField) => string;
 
@@ -330,16 +320,8 @@ export function plausibleFill(
   rng: () => number = Math.random,
   emptyOk = true,
 ): string {
-  if (field.type === "select") {
-    const hasEmpty = field.options?.some((o) => o.value === "") ?? false;
-    if (emptyOk && hasEmpty && rng() < 0.5) return "";
-    return pickSelectOption(field.options, rng) ?? "";
-  }
-  if (field.type === "checkbox") return rng() < 0.5 ? "true" : "false";
-  if (field.options && field.options.length > 0) {
-    if (emptyOk && rng() < 0.5) return "";
-    return pickSelectOption(field.options, rng) ?? fakerFill(field, rng);
-  }
+  const planned = planControlFill(field, rng, emptyOk);
+  if (planned !== undefined) return planned;
   if (emptyOk && rng() < 0.5) return "";
   return fakerFill(field, rng);
 }

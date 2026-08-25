@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import type { ShownField } from "../schema/view.js";
 import type { BrainContext, BrainDecision } from "./types.js";
 import { fakerFill } from "./faker-fill.js";
-import { decideUnleashWork, pickSelectOption } from "./unleash.js";
+import { isListedControl } from "../executor/field-control.js";
+import { pickSelectOption } from "../executor/select-options.js";
+import { decideUnleashWork } from "./unleash.js";
 
 const defaultDir = join(dirname(fileURLToPath(import.meta.url)), "../../payloads");
 
@@ -187,7 +189,7 @@ function numericCatalogPool(fieldType: string | undefined): string[] {
 
 /** Native `<select>` / harvested typeahead lists reject catalog junk; type-in fields still get it. */
 export function pickNastyFill(field: ShownField, rng: () => number = Math.random): string {
-  if (field.type === "select" || (field.options && field.options.length > 0)) {
+  if (isListedControl(field)) {
     return pickSelectOption(field.options, rng) ?? "";
   }
   const html = (field.constraints?.htmlType ?? field.type ?? "").toLowerCase();

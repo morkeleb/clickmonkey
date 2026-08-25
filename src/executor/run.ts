@@ -81,7 +81,7 @@ export interface RunState {
   lastScreenshotPath?: string;
   /** `page.content()` for this step; quality checks read this, not the live page. */
   stepHtml?: string;
-  lastLandPageId?: string;
+  lastFogPageId?: string;
   /** Brain name (`map`, `unleash`, `unleash-nasty`, …) for per-job land stamps. */
   brain?: string;
   lastSight?: string;

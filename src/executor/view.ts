@@ -9,15 +9,15 @@ import {
 import type { Fence } from "../schema/config.js";
 import { auditVisible } from "../surveyor/audit.js";
 import { detectWalkerMode } from "../brains/walker-mode.js";
-import { loadLands } from "../persist/lands.js";
-import { modeLandTimes } from "../schema/fog.js";
+import { loadMapPages } from "../persist/fog.js";
+import { modeFogTimes } from "../schema/fog.js";
 import { isLeaveAction, isRecordRowAction, looksLikeNavWidget, matchesSkip } from "../brains/unleash.js";
 import { pageNotesFromModel } from "../surveyor/describe.js";
 import { hoppablePages } from "./hop.js";
 import { formatFont, lookIsEmpty, readLook } from "./look.js";
 import { readFieldConstraints } from "./field-constraints.js";
-import { formatSelectOptionList, readSelectOptions } from "./select-options.js";
-import { looksLikeTypeahead, readTypeaheadOptions } from "./typeahead.js";
+import { formatSelectOptionList, type LiveSelectOption } from "./select-options.js";
+import { resolveFieldControl } from "./field-control.js";
 import {
   toPlaywrightLocator,
   widgetLocator,
@@ -167,22 +167,17 @@ async function liveContent(page: Page, surface: Surface | undefined): Promise<st
   return firstVisibleSnapshot(page.locator("body"));
 }
 
-async function liveFieldValue(
+async function liveFieldSnapshot(
   page: Page,
-  surface: Surface | undefined,
+  loc: PwLocator,
   field: Field,
-): Promise<string> {
-  const loc = await pickActable(widgetLocator(page, surface, locatorOf(field)), page);
-  if (!loc) return "";
-  if (field.type === "password") {
-    const raw = await loc.inputValue({ timeout: 0 }).catch(() => "");
-    return raw ? "••••" : "";
-  }
-  if (field.type === "checkbox") {
-    const checked = await loc.isChecked({ timeout: 0 }).catch(() => false);
-    return checked ? "true" : "false";
-  }
-  return loc.inputValue({ timeout: 0 }).catch(() => "");
+): Promise<{ value: string; options: LiveSelectOption[] }> {
+  const pw = await pickActable(loc, page);
+  const target = pw ?? loc;
+  const control = await resolveFieldControl(target, page, field);
+  const value = pw ? await control.read(pw, field) : "";
+  const options = await control.peekOptions(target, page);
+  return { value, options };
 }
 
 export async function buildView(state: {
@@ -217,14 +212,8 @@ export async function buildView(state: {
       const loc = widgetLocator(state.page, surface, locatorOf(field));
       const ctx = await widgetWalkContext(loc, state.page);
       if (!includeWalkAction({ inNav: ctx.inNav, inMain: ctx.inMain, ...walkOpts })) continue;
-      const value = await liveFieldValue(state.page, surface, field);
+      const { value, options } = await liveFieldSnapshot(state.page, loc, field);
       const label = await liveLabel(state.page, surface, field);
-      const options =
-        field.type === "select"
-          ? await readSelectOptions(loc)
-          : (await looksLikeTypeahead(loc))
-            ? await readTypeaheadOptions(loc, state.page)
-            : [];
       const constraints = await readFieldConstraints(loc);
       shown.push({
         id: field.id,
@@ -316,12 +305,12 @@ export async function buildView(state: {
       : {}),
     ...(state.last ? { last: state.last } : {}),
   };
-  const modeLands = state.configPath ? modeLandTimes(loadLands(state.configPath)) : undefined;
+  const modeFog = state.configPath ? modeFogTimes(loadMapPages(state.configPath)) : undefined;
   const mode = detectWalkerMode({
     view: draft,
     pages: state.model.pages,
     stepsUsed: 0,
-    ...(modeLands ? { modeLands } : {}),
+    ...(modeFog ? { modeFog } : {}),
   }).name;
   return { ...draft, mode };
 }

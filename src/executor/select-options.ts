@@ -68,6 +68,19 @@ export function pickListedOption(
   return options.find((o) => (o.label || o.value).trim() !== "") ?? options[0];
 }
 
+/** Pick a real `<option>` value (or label if value is empty). Skips the placeholder `value=""`. */
+export function pickSelectOption(
+  options: readonly LiveSelectOption[] | undefined,
+  rng: () => number,
+): string | undefined {
+  if (!options || options.length === 0) return undefined;
+  const real = options.filter((o) => o.value.trim() !== "");
+  const pool = real.length > 0 ? real : options.filter((o) => o.label.trim() !== "");
+  if (pool.length === 0) return undefined;
+  const chosen = pool[Math.floor(rng() * pool.length)]!;
+  return chosen.value.trim() !== "" ? chosen.value : chosen.label;
+}
+
 /** Playwright `selectOption` query. Empty `value` is ambiguous — use the label. */
 export function selectOptionQuery(
   match: LiveSelectOption,

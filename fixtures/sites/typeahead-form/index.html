@@ -51,6 +51,24 @@
           <option value="Tromsø"></option>
         </datalist>
 
+        <label for="industry">Industry</label>
+        <input
+          id="industry"
+          name="industry"
+          data-testid="industry"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="industry-list"
+          autocomplete="off"
+        />
+        <ul id="industry-list" role="listbox" hidden>
+          <li role="option">111110 — Soybean Farming</li>
+          <li role="option">111120 — Oilseed (except Soybean) Farming</li>
+          <li role="option">111150 — Corn Farming</li>
+        </ul>
+        <input type="hidden" name="industryId" id="industryId" />
+
         <button type="submit" data-testid="submit">Create</button>
       </form>
     </main>
@@ -104,6 +122,29 @@
         wrap: document.getElementById("people-wrap"),
         debounceMs: 300,
       });
+
+      (function bindIndustry() {
+        const input = document.getElementById("industry");
+        const list = document.getElementById("industry-list");
+        const hid = document.getElementById("industryId");
+        const all = [...list.querySelectorAll("[role=option]")];
+        function open() {
+          for (const o of all) o.hidden = false;
+          list.hidden = false;
+          input.setAttribute("aria-expanded", "true");
+        }
+        input.addEventListener("focus", open);
+        input.addEventListener("input", open);
+        list.addEventListener("mousedown", (e) => {
+          const o = e.target.closest("[role=option]");
+          if (!o) return;
+          e.preventDefault();
+          input.value = o.textContent.trim();
+          hid.value = o.textContent.trim();
+          list.hidden = true;
+          input.setAttribute("aria-expanded", "false");
+        });
+      })();
 
       document.getElementById("create").addEventListener("submit", (e) => {
         e.preventDefault();

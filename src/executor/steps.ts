@@ -40,13 +40,7 @@ import {
   type TrackedFill,
   type WatchedRequest,
 } from "./field-validity.js";
-import {
-  formatSelectOptionList,
-  matchSelectOption,
-  readSelectOptions,
-  selectOptionQuery,
-} from "./select-options.js";
-import { fillTypeahead } from "./typeahead.js";
+import { applyFieldFill, resolveFieldControl } from "./field-control.js";
 
 export type StepFailure = {
   kind: FindingKind;
@@ -172,11 +166,8 @@ async function domInputType(pw: ReturnType<typeof widgetLocator>): Promise<strin
 }
 
 async function fieldEmpty(pw: ReturnType<typeof widgetLocator>, field: Field): Promise<boolean> {
-  if (field.type === "checkbox") {
-    return !(await pw.isChecked().catch(() => false));
-  }
-  const value = await pw.inputValue().catch(() => "");
-  return value.trim() === "";
+  const control = await resolveFieldControl(pw, undefined, field);
+  return control.empty(pw, field);
 }
 
 async function writePolicyBlocked(
@@ -408,67 +399,14 @@ async function performFill(
   if (!pw) return actableMissFailure(state, actable.key, raw);
   recordLocator(state, actable.key, actable.locator);
   const field = isField(actable.widget) ? actable.widget : undefined;
-  if (field?.type === "checkbox") {
-    if (resolved === "" || resolved === "false") await pw.uncheck();
-    else await pw.check();
-    return undefined;
+  const applied = await applyFieldFill(pw, state.page, field, resolved, actable.key);
+  if (!applied.ok) {
+    return { kind: "expectFailed", message: applied.message, widgetRef: actable.key };
   }
-  if (field?.type === "select") {
-    const options = await readSelectOptions(pw);
-    const match = matchSelectOption(options, resolved);
-    if (!match) {
-      return {
-        kind: "expectFailed",
-        message: `select ${actable.key} has no option ${JSON.stringify(resolved)} (options: ${formatSelectOptionList(options)})`,
-        widgetRef: actable.key,
-      };
-    }
-    await pw.selectOption(selectOptionQuery(match), { timeout: 2_000 });
-    return undefined;
-  }
-  const typeahead = await fillTypeahead(pw, state.page, resolved, actable.key);
-  if (typeahead.handled) {
-    if (typeahead.failure) {
-      return { kind: "expectFailed", message: typeahead.failure.message, widgetRef: actable.key };
-    }
-    const constraints = await readFieldConstraints(pw);
-    const validity = await readFieldValidity(pw, state.page, id);
-    const liveValue = await pw.inputValue().catch(() => typeahead.value);
-    const shouldInvalid = fillShouldLookInvalid(
-      {
-        id,
-        type: field?.type,
-        required: field?.required,
-        label: field?.name ?? field?.previousLabel,
-        constraints,
-      },
-      liveValue,
-    );
-    rememberTrackedFill(state, { surface: surfaceId, id, value: liveValue, shouldInvalid, validity });
-    return undefined;
-  }
-  try {
-    await pw.fill("");
-    if (resolved !== "") await pw.fill(resolved);
-  } catch (err) {
-    const raw = err instanceof Error ? err.message : `${actable.key} fill failed`;
-    if (/Cannot type text into input\[type=number\]/i.test(raw)) {
-      // Native <input type=number> refuses non-numeric catalog junk. Not a product bug.
-      return undefined;
-    }
-    return {
-      kind: "expectFailed",
-      message: oneLineBug(raw) || `${actable.key} fill failed`,
-      widgetRef: actable.key,
-    };
-  }
-  await pw.evaluate((el) => {
-    const node = el as { blur?: () => void };
-    node.blur?.();
-  }).catch(() => undefined);
+  if (!applied.track) return undefined;
   const constraints = await readFieldConstraints(pw);
   const validity = await readFieldValidity(pw, state.page, id);
-  const liveValue = await pw.inputValue().catch(() => resolved);
+  const liveValue = applied.value;
   const shouldInvalid = fillShouldLookInvalid(
     {
       id,
@@ -649,14 +587,8 @@ async function performExpectValue(
     };
   }
   const field = isField(actable.widget) ? actable.widget : undefined;
-  if (field?.type === "checkbox") {
-    const checked = await pw.isChecked().catch(() => false);
-    const wantChecked = value !== "" && value !== "false";
-    if (checked === wantChecked) return undefined;
-  } else {
-    const actual = await pw.inputValue().catch(() => "");
-    if (actual === value) return undefined;
-  }
+  const control = await resolveFieldControl(pw, state.page, field);
+  if (await control.expect(pw, field, value)) return undefined;
   return {
     kind: "expectFailed",
     message: `expected ${ref} value ${JSON.stringify(value)}`,

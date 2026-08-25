@@ -2,6 +2,7 @@ import type { Locator as PwLocator, Page } from "playwright";
 import {
   formatSelectOptionList,
   matchListedOption,
+  pickListedOption,
   type LiveSelectOption,
 } from "./select-options.js";
 
@@ -70,115 +71,138 @@ function idSelector(id: string): string {
   return `[id=${JSON.stringify(id)}]`;
 }
 
-/** Options currently attached to this control (listbox, owns, datalist). */
-export async function readTypeaheadOptions(loc: PwLocator, page: Page): Promise<LiveSelectOption[]> {
+async function boundRoot(loc: PwLocator, page: Page): Promise<PwLocator> {
   const ids = await boundListIds(loc.first());
-  for (const id of ids) {
-    const root = page.locator(idSelector(id));
-    const native = await root
-      .locator("option")
-      .evaluateAll((els) =>
-        els.flatMap((el) => {
-          const o = el as { disabled: boolean; value: string; label: string; textContent: string | null };
-          if (o.disabled) return [];
-          const value = (o.value || "").trim();
-          const label = (o.label || o.textContent || value).trim();
-          if (!value && !label) return [];
-          return [{ value, label: label || value }];
-        }),
-      )
-      .catch(() => [] as LiveSelectOption[]);
-    if (native.length > 0) return native;
-    const roles = await root
-      .locator('[role="option"]')
-      .evaluateAll((els) =>
-        els.flatMap((el) => {
-          const o = el as {
-            getAttribute(name: string): string | null;
-            textContent: string | null;
-            innerText?: string;
-          };
-          if (o.getAttribute("aria-disabled") === "true") return [];
-          const text = (o.getAttribute("aria-label") || o.innerText || o.textContent || "")
-            .replace(/\s+/g, " ")
-            .trim();
-          if (!text) return [];
-          return [{ value: o.getAttribute("data-value") || o.getAttribute("value") || text, label: text }];
-        }),
-      )
-      .catch(() => [] as LiveSelectOption[]);
-    if (roles.length > 0) return roles;
-  }
-  if (ids.length > 0) return [];
-  const visible = page.locator('[role="listbox"]:visible [role="option"]:visible');
-  return visible
-    .evaluateAll((els) =>
-      els.flatMap((el) => {
-        const o = el as { innerText: string; getAttribute(name: string): string | null };
-        const text = (o.getAttribute("aria-label") || o.innerText || "").replace(/\s+/g, " ").trim();
-        if (!text) return [];
-        return [{ value: o.getAttribute("data-value") || o.getAttribute("value") || text, label: text }];
-      }),
-    )
-    .catch(() => []);
+  if (ids.length === 0) return page.locator('[role="listbox"]');
+  return page.locator(ids.map(idSelector).join(", "));
 }
 
-async function readOpenTypeaheadOptions(loc: PwLocator, page: Page): Promise<LiveSelectOption[]> {
-  const vis = await page
-    .locator('[role="listbox"]:visible [role="option"]:visible')
+async function readNativeListOptions(root: PwLocator): Promise<LiveSelectOption[]> {
+  return root
+    .locator("option")
     .evaluateAll((els) =>
       els.flatMap((el) => {
-        const o = el as { innerText: string; getAttribute(name: string): string | null };
+        const o = el as { disabled: boolean; value: string; label: string; textContent: string | null };
+        if (o.disabled) return [];
+        const value = (o.value || "").trim();
+        const label = (o.label || o.textContent || value).trim();
+        if (!value && !label) return [];
+        return [{ value, label: label || value }];
+      }),
+    )
+    .catch(() => [] as LiveSelectOption[]);
+}
+
+async function readRoleListOptions(root: PwLocator, visible: boolean): Promise<LiveSelectOption[]> {
+  const loc = visible ? root.locator('[role="option"]:visible') : root.locator('[role="option"]');
+  return loc
+    .evaluateAll((els) =>
+      els.flatMap((el) => {
+        const o = el as {
+          getAttribute(name: string): string | null;
+          textContent: string | null;
+          innerText?: string;
+        };
         if (o.getAttribute("aria-disabled") === "true") return [];
-        const text = (o.getAttribute("aria-label") || o.innerText || "").replace(/\s+/g, " ").trim();
+        const text = (o.getAttribute("aria-label") || o.innerText || o.textContent || "").replace(/\s+/g, " ").trim();
         if (!text) return [];
         return [{ value: o.getAttribute("data-value") || o.getAttribute("value") || text, label: text }];
       }),
     )
     .catch(() => [] as LiveSelectOption[]);
-  if (vis.length > 0) return vis;
-  return readTypeaheadOptions(loc, page);
 }
 
-async function waitForOptions(page: Page, timeoutMs = TYPEAHEAD_OPEN_WAIT_MS): Promise<void> {
-  await page
+/** Options currently attached to this control (listbox, owns, datalist). */
+export async function readTypeaheadOptions(loc: PwLocator, page: Page): Promise<LiveSelectOption[]> {
+  const ids = await boundListIds(loc.first());
+  for (const id of ids) {
+    const root = page.locator(idSelector(id));
+    const native = await readNativeListOptions(root);
+    if (native.length > 0) return native;
+    const roles = await readRoleListOptions(root, false);
+    if (roles.length > 0) return roles;
+  }
+  if (ids.length > 0) return [];
+  return readRoleListOptions(page.locator('[role="listbox"]:visible'), true);
+}
+
+async function readOpenTypeaheadOptions(loc: PwLocator, page: Page): Promise<LiveSelectOption[]> {
+  return readRoleListOptions(await boundRoot(loc, page), true);
+}
+
+/** Leading NAICS-style code, else the first word a search can use. */
+export function optionSearchQuery(opt: LiveSelectOption): string {
+  const raw = (opt.label || opt.value).replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const code = raw.match(/^[0-9]{3,}/);
+  if (code) return code[0];
+  const token = raw.split(/[\s/—,–()]+/).find((t) => t.length >= 3);
+  return token || raw;
+}
+
+/** Open list: click a match, else a listed row. Empty list means type or probe next. */
+export function pickOpenTypeahead(
+  options: readonly LiveSelectOption[],
+  wanted: string,
+): { pick: LiveSelectOption; matched: boolean } | undefined {
+  if (options.length === 0) return undefined;
+  const matched = matchListedOption(options, wanted);
+  if (matched) return { pick: matched, matched: true };
+  const pick = pickListedOption(options, wanted);
+  return pick ? { pick, matched: false } : undefined;
+}
+
+async function waitForOptions(loc: PwLocator, page: Page, timeoutMs = TYPEAHEAD_OPEN_WAIT_MS): Promise<void> {
+  const root = await boundRoot(loc, page);
+  await root
     .locator('[role="option"]:visible')
     .first()
     .waitFor({ state: "visible", timeout: timeoutMs })
     .catch(() => undefined);
 }
 
-async function probeSearch(loc: PwLocator, page: Page): Promise<LiveSelectOption[]> {
+async function closeTypeahead(loc: PwLocator, page: Page): Promise<void> {
+  await loc.press("Escape").catch(() => undefined);
+  await (await boundRoot(loc, page)).waitFor({ state: "hidden", timeout: 400 }).catch(() => undefined);
+}
+
+/** Click, clear, ArrowDown — harvest and fill use this, not a second open path. */
+async function openTypeaheadList(loc: PwLocator, page: Page): Promise<LiveSelectOption[]> {
+  await loc.click({ timeout: 2_000 }).catch(() => undefined);
+  await loc.fill("").catch(() => undefined);
+  await loc.press("ArrowDown").catch(() => undefined);
+  await waitForOptions(loc, page, TYPEAHEAD_OPEN_WAIT_MS);
+  return readOpenTypeaheadOptions(loc, page);
+}
+
+async function searchTypeahead(loc: PwLocator, page: Page, query: string): Promise<LiveSelectOption[]> {
+  await loc.fill("").catch(() => undefined);
+  await loc.fill(query).catch(() => undefined);
+  await waitForOptions(loc, page, TYPEAHEAD_SEARCH_WAIT_MS);
+  return readOpenTypeaheadOptions(loc, page);
+}
+
+async function probeTypeahead(loc: PwLocator, page: Page, keepQuery: boolean): Promise<LiveSelectOption[]> {
   for (const probe of SEARCH_PROBES) {
-    await loc.fill("").catch(() => undefined);
-    await loc.fill(probe).catch(() => undefined);
-    await waitForOptions(page, TYPEAHEAD_SEARCH_WAIT_MS);
-    const opts = await readTypeaheadOptions(loc, page);
-    if (opts.length > 0) {
-      await loc.fill("").catch(() => undefined);
-      return opts;
+    const found = await searchTypeahead(loc, page, probe);
+    if (found.length > 0) {
+      if (!keepQuery) await loc.fill("").catch(() => undefined);
+      return found;
     }
   }
-  await loc.fill("").catch(() => undefined);
+  if (!keepQuery) await loc.fill("").catch(() => undefined);
   return [];
 }
 
+/** Snapshot listed rows, then close. Fill uses the same open/probe helpers. */
 export async function harvestTypeaheadOptions(loc: PwLocator, page: Page): Promise<LiveSelectOption[]> {
   const kind = await typeaheadKindOf(loc);
   if (kind === "none") return [];
   const staticOpts = await readTypeaheadOptions(loc, page);
   if (kind === "datalist" || staticOpts.length > 0) return staticOpts;
-  await loc.click({ timeout: 800 }).catch(() => undefined);
-  await waitForOptions(page);
-  let opts = await readTypeaheadOptions(loc, page);
-  if (opts.length === 0) {
-    await loc.press("ArrowDown").catch(() => undefined);
-    await waitForOptions(page);
-    opts = await readTypeaheadOptions(loc, page);
-  }
-  if (opts.length === 0) opts = await probeSearch(loc, page);
-  await loc.press("Escape").catch(() => undefined);
-  await page.locator('[role="listbox"]:visible').first().waitFor({ state: "hidden", timeout: 400 }).catch(() => undefined);
+  let opts = await openTypeaheadList(loc, page);
+  if (opts.length === 0) opts = await probeTypeahead(loc, page, false);
+  await closeTypeahead(loc, page);
   return opts;
 }
 
@@ -186,42 +210,71 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function clickNamedOption(page: Page, name: string): Promise<boolean> {
+async function clickNamedOption(root: PwLocator, name: string): Promise<boolean> {
   if (!name) return false;
-  const exact = page.getByRole("option", { name, exact: true });
-  if ((await exact.count()) > 0) {
-    await exact.first().click();
-    return true;
-  }
-  const prefix = page.getByRole("option", { name: new RegExp(`^${escapeRe(name)}`, "i") });
-  if ((await prefix.count()) > 0) {
-    await prefix.first().click();
-    return true;
-  }
-  const token = page.getByRole("option", {
-    name: new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(name)}(?:[^A-Za-z0-9]|$)`, "i"),
-  });
-  if ((await token.count()) > 0) {
-    await token.first().click();
-    return true;
+  const tries = [
+    root.getByRole("option", { name, exact: true }),
+    root.getByRole("option", { name: new RegExp(`^${escapeRe(name)}`, "i") }),
+    root.getByRole("option", {
+      name: new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(name)}(?:[^A-Za-z0-9]|$)`, "i"),
+    }),
+  ];
+  for (const hit of tries) {
+    if ((await hit.count().catch(() => 0)) === 0) continue;
+    const ok = await hit
+      .first()
+      .click({ timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (ok) return true;
   }
   return false;
 }
 
 async function clickTypeaheadOption(
+  loc: PwLocator,
   page: Page,
   match: LiveSelectOption,
   wanted?: string,
 ): Promise<boolean> {
+  const root = await boundRoot(loc, page);
   const names = [match.label, match.value, wanted].filter((s): s is string => Boolean(s?.trim()));
   const seen = new Set<string>();
   for (const name of names) {
     const key = name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    if (await clickNamedOption(page, name)) return true;
+    if (await clickNamedOption(root, name)) return true;
   }
   return false;
+}
+
+async function chooseListedOption(
+  loc: PwLocator,
+  page: Page,
+  shown: LiveSelectOption[],
+  wanted: string,
+): Promise<string | undefined> {
+  const hit = pickOpenTypeahead(shown, wanted);
+  if (!hit) return undefined;
+  if (await clickTypeaheadOption(loc, page, hit.pick, hit.matched ? wanted : undefined)) {
+    const live = (await loc.inputValue().catch(() => "")).trim();
+    if (live) {
+      await loc.press("Escape").catch(() => undefined);
+      return live;
+    }
+  }
+  const query = optionSearchQuery(hit.pick);
+  if (!query) return undefined;
+  await searchTypeahead(loc, page, query);
+  if (await clickTypeaheadOption(loc, page, hit.pick)) {
+    const live = (await loc.inputValue().catch(() => "")).trim();
+    if (live) {
+      await loc.press("Escape").catch(() => undefined);
+      return live;
+    }
+  }
+  return undefined;
 }
 
 export type TypeaheadFill = { handled: true; failure?: { message: string }; value: string } | { handled: false };
@@ -242,7 +295,7 @@ export async function fillTypeahead(
       await loc.fill("");
       return { handled: true, value: "" };
     }
-    const match = matchListedOption(options, wanted);
+    const match = pickListedOption(options, wanted);
     if (!match) {
       return { handled: false };
     }
@@ -252,50 +305,35 @@ export async function fillTypeahead(
     return { handled: true, value };
   }
 
-  await loc.click({ timeout: 2_000 }).catch(() => undefined);
   if (wanted === "") {
+    await loc.click({ timeout: 2_000 }).catch(() => undefined);
     await loc.fill("");
     await loc.press("Escape").catch(() => undefined);
     return { handled: true, value: "" };
   }
-  await loc.fill("");
-  await loc.fill(wanted);
-  await waitForOptions(page, TYPEAHEAD_SEARCH_WAIT_MS);
-  let options = await readOpenTypeaheadOptions(loc, page);
+
+  let options = await openTypeaheadList(loc, page);
+  const fromOpen = await chooseListedOption(loc, page, options, wanted);
+  if (fromOpen !== undefined) return { handled: true, value: fromOpen };
+
   if (options.length === 0) {
-    await loc.press("ArrowDown").catch(() => undefined);
-    await waitForOptions(page, TYPEAHEAD_SEARCH_WAIT_MS);
-    options = await readOpenTypeaheadOptions(loc, page);
+    options = await searchTypeahead(loc, page, wanted);
+    const fromWanted = await chooseListedOption(loc, page, options, wanted);
+    if (fromWanted !== undefined) return { handled: true, value: fromWanted };
   }
-  const listedMatch = matchListedOption(options, wanted);
-  if (listedMatch && (await clickTypeaheadOption(page, listedMatch, wanted))) {
-    const live = await loc.inputValue().catch(() => listedMatch.label || listedMatch.value);
-    return { handled: true, value: live };
-  }
-  let probed: LiveSelectOption[] = [];
+
   if (options.length === 0) {
-    for (const probe of SEARCH_PROBES) {
-      await loc.fill("");
-      await loc.fill(probe);
-      await waitForOptions(page, TYPEAHEAD_SEARCH_WAIT_MS);
-      probed = await readOpenTypeaheadOptions(loc, page);
-      if (probed.length > 0) break;
-    }
+    options = await probeTypeahead(loc, page, true);
+    const fromProbe = await chooseListedOption(loc, page, options, wanted);
+    if (fromProbe !== undefined) return { handled: true, value: fromProbe };
   }
-  const probeMatch = matchListedOption(probed, wanted);
-  if (probeMatch && (await clickTypeaheadOption(page, probeMatch, wanted))) {
-    const live = await loc.inputValue().catch(() => probeMatch.label || probeMatch.value);
-    return { handled: true, value: live };
-  }
-  if (options.length > 0 || probed.length > 0) {
-    await loc.fill("");
-    await loc.fill(wanted);
-    const shown = options.length > 0 ? options : probed;
+
+  if (options.length > 0) {
     return {
       handled: true,
       value: wanted,
       failure: {
-        message: `typeahead ${widgetKey} could not click a listed option for ${JSON.stringify(wanted)} (options: ${formatSelectOptionList(shown)})`,
+        message: `typeahead ${widgetKey} could not click a listed option (options: ${formatSelectOptionList(options)})`,
       },
     };
   }
