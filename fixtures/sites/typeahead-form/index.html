@@ -69,6 +69,38 @@
         </ul>
         <input type="hidden" name="industryId" id="industryId" />
 
+        <label for="vendor">Vendor</label>
+        <input
+          id="vendor"
+          name="vendor"
+          data-testid="vendor"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="vendor-list"
+          autocomplete="off"
+        />
+        <div id="vendor-list" role="menu" hidden>
+          <button type="button">Acme Supplies</button>
+          <button type="button">Seed Office</button>
+          <button type="button">FV Admin — 1</button>
+        </div>
+        <input type="hidden" name="vendorId" id="vendorId" />
+
+        <label for="matter">Matter</label>
+        <input
+          id="matter"
+          name="matter"
+          data-testid="matter"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="matter-list"
+          autocomplete="off"
+        />
+        <div id="matter-list" role="listbox" hidden></div>
+        <input type="hidden" name="matterId" id="matterId" />
+
         <button type="submit" data-testid="submit">Create</button>
       </form>
     </main>
@@ -122,6 +154,51 @@
         wrap: document.getElementById("people-wrap"),
         debounceMs: 300,
       });
+
+      (function bindMatter() {
+        const input = document.getElementById("matter");
+        const list = document.getElementById("matter-list");
+        const hid = document.getElementById("matterId");
+        const names = ["Alpha Matter", "Beta Matter", "Gamma Matter"];
+        names.forEach((name) => {
+          const row = document.createElement("div");
+          row.textContent = name;
+          row.addEventListener("click", () => {
+            input.value = name;
+            hid.value = name;
+            list.hidden = true;
+            input.setAttribute("aria-expanded", "false");
+          });
+          list.appendChild(row);
+        });
+        function open() {
+          list.hidden = false;
+          input.setAttribute("aria-expanded", "true");
+        }
+        input.addEventListener("focus", open);
+        input.addEventListener("input", open);
+      })();
+
+      (function bindVendor() {
+        const input = document.getElementById("vendor");
+        const list = document.getElementById("vendor-list");
+        const hid = document.getElementById("vendorId");
+        function open() {
+          list.hidden = false;
+          input.setAttribute("aria-expanded", "true");
+        }
+        input.addEventListener("focus", open);
+        input.addEventListener("input", open);
+        list.addEventListener("mousedown", (e) => {
+          const o = e.target.closest("button");
+          if (!o) return;
+          e.preventDefault();
+          input.value = o.textContent.trim();
+          hid.value = o.textContent.trim();
+          list.hidden = true;
+          input.setAttribute("aria-expanded", "false");
+        });
+      })();
 
       (function bindIndustry() {
         const input = document.getElementById("industry");

@@ -8,7 +8,7 @@ const RULE_WHY: Record<string, string> = {
   missingStableId:
     "There is no stable id. The next walk, spec, or retry may not find this control even when it is still on screen.",
   clickableNonWidget:
-    "A non-interactive tag has a click handler. Keyboard and screen-reader users cannot reach it, and the walker cannot harvest it as a button or link.",
+    "A click lives on a div/span/svg, not a button or link — HTML onclick, React onClick, or addEventListener('click'). Mouse users can still activate it. Keyboard and screen-reader users never land on it, and inspect cannot map it as a control, so walks skip it. Put the handler on a <button> or role=\"button\" with a name. Do not scrape list rows or the page root into the map: those are not page actions.",
   opaqueControl:
     "The control has no accessible name. Assistive tech announces a blank widget, and the map cannot give it a stable id.",
   unlabeledField:

@@ -73,7 +73,7 @@ function idSelector(id: string): string {
 
 async function boundRoot(loc: PwLocator, page: Page): Promise<PwLocator> {
   const ids = await boundListIds(loc.first());
-  if (ids.length === 0) return page.locator('[role="listbox"]');
+  if (ids.length === 0) return page.locator('[role="listbox"], [role="menu"]');
   return page.locator(ids.map(idSelector).join(", "));
 }
 
@@ -95,7 +95,7 @@ async function readNativeListOptions(root: PwLocator): Promise<LiveSelectOption[
 
 async function readRoleListOptions(root: PwLocator, visible: boolean): Promise<LiveSelectOption[]> {
   const loc = visible ? root.locator('[role="option"]:visible') : root.locator('[role="option"]');
-  return loc
+  const roles = await loc
     .evaluateAll((els) =>
       els.flatMap((el) => {
         const o = el as {
@@ -104,6 +104,27 @@ async function readRoleListOptions(root: PwLocator, visible: boolean): Promise<L
           innerText?: string;
         };
         if (o.getAttribute("aria-disabled") === "true") return [];
+        const text = (o.getAttribute("aria-label") || o.innerText || o.textContent || "").replace(/\s+/g, " ").trim();
+        if (!text) return [];
+        return [{ value: o.getAttribute("data-value") || o.getAttribute("value") || text, label: text }];
+      }),
+    )
+    .catch(() => [] as LiveSelectOption[]);
+  if (roles.length > 0) return roles;
+  const extra = visible
+    ? root.locator('[role="menuitem"]:visible, button:visible')
+    : root.locator('[role="menuitem"], button');
+  return extra
+    .evaluateAll((els) =>
+      els.flatMap((el) => {
+        const o = el as {
+          getAttribute(name: string): string | null;
+          textContent: string | null;
+          innerText?: string;
+        };
+        if (o.getAttribute("aria-disabled") === "true") return [];
+        const type = (o.getAttribute("type") || "").toLowerCase();
+        if (type === "submit" || type === "reset") return [];
         const text = (o.getAttribute("aria-label") || o.innerText || o.textContent || "").replace(/\s+/g, " ").trim();
         if (!text) return [];
         return [{ value: o.getAttribute("data-value") || o.getAttribute("value") || text, label: text }];
@@ -126,8 +147,132 @@ export async function readTypeaheadOptions(loc: PwLocator, page: Page): Promise<
   return readRoleListOptions(page.locator('[role="listbox"]:visible'), true);
 }
 
+function dropCompositeRows(rows: LiveSelectOption[]): LiveSelectOption[] {
+  return rows.filter(
+    (row) =>
+      !rows.some(
+        (other) => other !== row && row.label.includes(other.label) && row.label.length > other.label.length + 2,
+      ),
+  );
+}
+
+/** onclick / React onClick / onMouseDown on a node (not delegated addEventListener). */
+async function readOwnPointerRows(root: PwLocator): Promise<LiveSelectOption[]> {
+  return root
+    .evaluate((el) => {
+      function own(node: {
+        onclick?: unknown;
+        onmousedown?: unknown;
+        onpointerdown?: unknown;
+        getAttribute?(name: string): string | null;
+      }): boolean {
+        if (node.onclick || node.onmousedown || node.onpointerdown) return true;
+        if (node.getAttribute?.("onclick") || node.getAttribute?.("onmousedown")) return true;
+        for (const k of Object.keys(node)) {
+          if (!k.startsWith("__reactProps") && !k.startsWith("__reactEventHandlers")) continue;
+          const p = (node as Record<string, { onClick?: unknown; onMouseDown?: unknown; onPointerDown?: unknown }>)[k];
+          if (p && (p.onClick || p.onMouseDown || p.onPointerDown)) return true;
+        }
+        return false;
+      }
+      const rootEl = el as {
+        querySelectorAll(sel: string): Iterable<{
+          getAttribute(name: string): string | null;
+          innerText?: string;
+          onclick?: unknown;
+          onmousedown?: unknown;
+          onpointerdown?: unknown;
+        }>;
+      };
+      const out: { value: string; label: string }[] = [];
+      const seen: Record<string, boolean> = {};
+      for (const node of rootEl.querySelectorAll("*")) {
+        if (!own(node)) continue;
+        if (node.getAttribute("aria-disabled") === "true") continue;
+        const type = (node.getAttribute("type") || "").toLowerCase();
+        if (type === "submit" || type === "reset") continue;
+        const text = (node.getAttribute("aria-label") || node.innerText || "").replace(/\s+/g, " ").trim();
+        if (!text || text.length > 80 || seen[text]) continue;
+        seen[text] = true;
+        out.push({
+          value: node.getAttribute("data-value") || node.getAttribute("value") || text,
+          label: text,
+        });
+      }
+      return out;
+    })
+    .catch(() => [] as LiveSelectOption[]);
+}
+
+/** addEventListener('click'|'mousedown'|…) via Chrome Command Line API. */
+async function readCdpListenerRows(page: Page, root: PwLocator): Promise<LiveSelectOption[]> {
+  let marked = false;
+  try {
+    const id = await root.evaluate((el) => {
+      const n = el as { id?: string; setAttribute(name: string, value: string): void };
+      if (n.id) return n.id;
+      n.setAttribute("data-cm-list", "1");
+      return "";
+    });
+    marked = !id;
+    const sel = id ? `[id=${JSON.stringify(id)}]` : '[data-cm-list="1"]';
+    const session = await page.context().newCDPSession(page);
+    const { result } = await session.send("Runtime.evaluate", {
+      includeCommandLineAPI: true,
+      returnByValue: true,
+      expression: `(() => {
+        var root = document.querySelector(${JSON.stringify(sel)});
+        if (!root) return [];
+        var want = { click: 1, mousedown: 1, mouseup: 1, pointerdown: 1, pointerup: 1 };
+        var out = [];
+        var seen = {};
+        var nodes = root.querySelectorAll("*");
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          var listeners = {};
+          try { listeners = getEventListeners(node) || {}; } catch (e) {}
+          var types = Object.keys(listeners);
+          if (!types.some(function (t) { return want[t]; })) continue;
+          if (node.getAttribute("aria-disabled") === "true") continue;
+          var type = (node.getAttribute("type") || "").toLowerCase();
+          if (type === "submit" || type === "reset") continue;
+          var text = (node.getAttribute("aria-label") || node.innerText || "").replace(/\\s+/g, " ").trim();
+          if (!text || text.length > 80 || seen[text]) continue;
+          seen[text] = true;
+          out.push({
+            value: node.getAttribute("data-value") || node.getAttribute("value") || text,
+            label: text,
+          });
+        }
+        return out;
+      })()`,
+    });
+    await session.detach().catch(() => undefined);
+    const value = result?.value;
+    return Array.isArray(value) ? (value as LiveSelectOption[]) : [];
+  } catch {
+    return [];
+  } finally {
+    if (marked) {
+      await root
+        .evaluate((el) => (el as { removeAttribute(name: string): void }).removeAttribute("data-cm-list"))
+        .catch(() => undefined);
+    }
+  }
+}
+
+async function readPointerRows(page: Page, root: PwLocator): Promise<LiveSelectOption[]> {
+  const own = await readOwnPointerRows(root);
+  if (own.length > 0) return dropCompositeRows(own);
+  return dropCompositeRows(await readCdpListenerRows(page, root));
+}
+
 async function readOpenTypeaheadOptions(loc: PwLocator, page: Page): Promise<LiveSelectOption[]> {
-  return readRoleListOptions(await boundRoot(loc, page), true);
+  const root = await boundRoot(loc, page);
+  const roles = await readRoleListOptions(root, true);
+  if (roles.length > 0) return roles;
+  return readPointerRows(page, root);
 }
 
 /** Leading NAICS-style code, else the first word a search can use. */
@@ -155,7 +300,7 @@ export function pickOpenTypeahead(
 async function waitForOptions(loc: PwLocator, page: Page, timeoutMs = TYPEAHEAD_OPEN_WAIT_MS): Promise<void> {
   const root = await boundRoot(loc, page);
   await root
-    .locator('[role="option"]:visible')
+    .locator('[role="option"]:visible, [role="menuitem"]:visible, button:visible')
     .first()
     .waitFor({ state: "visible", timeout: timeoutMs })
     .catch(() => undefined);
@@ -212,12 +357,19 @@ function escapeRe(s: string): string {
 
 async function clickNamedOption(root: PwLocator, name: string): Promise<boolean> {
   if (!name) return false;
+  const token = new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(name)}(?:[^A-Za-z0-9]|$)`, "i");
+  const prefix = new RegExp(`^${escapeRe(name)}`, "i");
   const tries = [
     root.getByRole("option", { name, exact: true }),
-    root.getByRole("option", { name: new RegExp(`^${escapeRe(name)}`, "i") }),
-    root.getByRole("option", {
-      name: new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(name)}(?:[^A-Za-z0-9]|$)`, "i"),
-    }),
+    root.getByRole("menuitem", { name, exact: true }),
+    root.getByRole("button", { name, exact: true }),
+    root.getByRole("option", { name: prefix }),
+    root.getByRole("menuitem", { name: prefix }),
+    root.getByRole("button", { name: prefix }),
+    root.getByRole("option", { name: token }),
+    root.getByRole("menuitem", { name: token }),
+    root.getByRole("button", { name: token }),
+    root.getByText(name, { exact: true }),
   ];
   for (const hit of tries) {
     if ((await hit.count().catch(() => 0)) === 0) continue;
@@ -249,6 +401,17 @@ async function clickTypeaheadOption(
   return false;
 }
 
+async function liveInput(loc: PwLocator): Promise<string> {
+  return (await loc.inputValue().catch(() => "")).trim();
+}
+
+async function selectWithKeyboard(loc: PwLocator): Promise<string | undefined> {
+  await loc.press("ArrowDown").catch(() => undefined);
+  await loc.press("Enter").catch(() => undefined);
+  const live = await liveInput(loc);
+  return live || undefined;
+}
+
 async function chooseListedOption(
   loc: PwLocator,
   page: Page,
@@ -258,21 +421,31 @@ async function chooseListedOption(
   const hit = pickOpenTypeahead(shown, wanted);
   if (!hit) return undefined;
   if (await clickTypeaheadOption(loc, page, hit.pick, hit.matched ? wanted : undefined)) {
-    const live = (await loc.inputValue().catch(() => "")).trim();
+    const live = await liveInput(loc);
     if (live) {
       await loc.press("Escape").catch(() => undefined);
       return live;
     }
   }
+  const keyed = await selectWithKeyboard(loc);
+  if (keyed) {
+    await loc.press("Escape").catch(() => undefined);
+    return keyed;
+  }
   const query = optionSearchQuery(hit.pick);
   if (!query) return undefined;
   await searchTypeahead(loc, page, query);
   if (await clickTypeaheadOption(loc, page, hit.pick)) {
-    const live = (await loc.inputValue().catch(() => "")).trim();
+    const live = await liveInput(loc);
     if (live) {
       await loc.press("Escape").catch(() => undefined);
       return live;
     }
+  }
+  const afterSearch = await selectWithKeyboard(loc);
+  if (afterSearch) {
+    await loc.press("Escape").catch(() => undefined);
+    return afterSearch;
   }
   return undefined;
 }
@@ -337,7 +510,7 @@ export async function fillTypeahead(
       },
     };
   }
-  await loc.fill("");
-  await loc.fill(wanted);
-  return { handled: true, value: wanted };
+  await loc.fill("").catch(() => undefined);
+  await loc.press("Escape").catch(() => undefined);
+  return { handled: true, value: "" };
 }

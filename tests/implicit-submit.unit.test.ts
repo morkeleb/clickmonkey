@@ -74,6 +74,7 @@ describe("skipImplicitSubmit", () => {
     assert.equal(skipImplicitSubmit({ inForm: true, ariaDisabled: "true" }), true);
     assert.equal(skipImplicitSubmit({ inForm: true, ariaHidden: true }), true);
     assert.equal(skipImplicitSubmit({ inForm: true, inToolbar: true }), true);
+    assert.equal(skipImplicitSubmit({ inForm: true, inListPopup: true }), true);
     assert.equal(skipImplicitSubmit({ inForm: true, hidden: true }), true);
     assert.equal(skipImplicitSubmit({ inForm: true, zeroBox: true }), true);
   });

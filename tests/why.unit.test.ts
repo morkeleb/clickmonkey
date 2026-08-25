@@ -21,6 +21,9 @@ describe("why copy", () => {
 
   it("explains duplicate names and junk-crash pageErrors", () => {
     assert.match(whyRule("duplicateName") ?? "", /first one/);
+    assert.match(whyRule("clickableNonWidget") ?? "", /React onClick/);
+    assert.match(whyRule("clickableNonWidget") ?? "", /addEventListener/);
+    assert.match(whyRule("clickableNonWidget") ?? "", /map/);
     assert.match(whyFinding("pageError", "validation is missing or does not wrap parsing"), /field error/);
     assert.match(whyFinding("expectFailed", "page.button_employees was not found"), /duplicate name|flake/);
     assert.match(whyFinding("expectFailed", "page.button_save is disabled"), /stayed disabled/);

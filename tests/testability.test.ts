@@ -71,6 +71,37 @@ describe("testability audit", () => {
     }
   });
 
+  it("flags HTML onclick, React onClick, and addEventListener on a non-widget, not list rows or real buttons", async () => {
+    const { baseUrl, close } = await serveSite("clickable-handler");
+    try {
+      await withRun({}, async ({ page }) => {
+        await page.goto(baseUrl);
+        const result = await inspect(page, { model: emptyDraft() });
+        const hits = result.testability.issues.filter((i) => i.code === "clickableNonWidget");
+        const blob = JSON.stringify(hits);
+        assert.ok(
+          hits.some((i) => /html-onclick|HTML onclick/i.test(i.where ?? "")),
+          `HTML onclick, got ${blob}`,
+        );
+        assert.ok(
+          hits.some((i) => /js-click|Listener click/i.test(i.where ?? "")),
+          `addEventListener click, got ${blob}`,
+        );
+        assert.ok(
+          hits.some((i) => /react-click|React click/i.test(i.where ?? "")),
+          `React onClick, got ${blob}`,
+        );
+        assert.equal(
+          hits.some((i) => /real|Save|list-row|Soybean/i.test(`${i.where ?? ""} ${i.tag}`)),
+          false,
+          `real buttons and open-list rows stay off the finding, got ${blob}`,
+        );
+      });
+    } finally {
+      await close();
+    }
+  });
+
   it("does not block a labeled catalog page", async () => {
     const { baseUrl, close } = await serveSite("catalog");
     try {

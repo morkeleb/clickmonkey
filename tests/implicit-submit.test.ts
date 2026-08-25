@@ -38,13 +38,15 @@ describe("scanImplicitSubmit", () => {
 
       assert.equal(
         hits.some((i) =>
-          /save|outside|ok|explicit|reset|hidden-cancel|aria-hidden-cancel|disabled-cancel|aria-disabled-cancel|input-button|tool-bold|tool-save|save-edit|dangling/.test(
+          /save|outside|ok|explicit|reset|hidden-cancel|aria-hidden-cancel|disabled-cancel|aria-disabled-cancel|input-button|tool-bold|tool-save|save-edit|dangling|naics-soy|naics-corn/.test(
             i.where ?? "",
           ),
         ),
         false,
-        `explicit types, outside, disabled, hidden, toolbar, input, and dangling form= must be skipped, got ${dump}`,
+        `explicit types, outside, disabled, hidden, toolbar, input, dangling form=, and open list rows must be skipped, got ${dump}`,
       );
+      const add = hits.find((i) => /add-attorney/.test(i.where ?? ""));
+      assert.ok(add, `Add Attorney in the form is still implicit submit, got ${dump}`);
       assert.ok(hits.length <= 8);
     });
   });

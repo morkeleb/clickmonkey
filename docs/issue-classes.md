@@ -23,7 +23,7 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 | **HTML validity** | Illegal nesting, duplicate ids, … | html-validate after inspect |
 | **A11y scanners** | WCAG 2.0/2.1 A/AA (contrast, names, ARIA, labels, …) plus a small extra allowlist — not all axe `best-practice` | axe-core after inspect |
 | **SEO hygiene** | Missing title/description/OG on public paths; the same title on every route | `seo` on the leash |
-| **Testability** | Unlabeled fields, unnamed controls, click on `<svg>`/`<div>`, no `main`, occluded widgets, duplicate names, missing stable ids | Inspect audit |
+| **Testability** | Unlabeled fields, unnamed controls, **clickableNonWidget** (click on a `div`/`span`/`svg` via onclick, React onClick, or `addEventListener` — not a `<button>`/`role=button`, so keyboard and the map miss it), no `main`, occluded widgets, duplicate names, missing stable ids | Inspect audit. Findings explain why; list rows and `#root` are not mapped as actions. |
 | **Layout / DOM extras** | Overflow (1280, 375, 320), clip, overlap, z-index, scanline, sparse, broken images, hit targets, focus-obscured, focus rings, text occlusion, tiny type, text-spacing, dead hashes, implicit submit, noopener, scroll-padding, pointer-events:none | DOM on every inspect (no model). High confidence → finding folder; medium → quality ledger |
 | **Empty required** | Blank required field + submit must look invalid | Playbook `empty-required` |
 | **Junk not invalid** | `--nasty` / typed junk + submit **sent those values or left the form** without `aria-invalid` / visible error / HTML5 constraint validation | Unleash after submit |

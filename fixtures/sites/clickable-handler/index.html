@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Clickable non-widget</title>
+  </head>
+  <body>
+    <main data-testid="home">
+      <button type="button" data-testid="real">Save</button>
+      <div id="html-onclick" onclick="void 0">HTML onclick</div>
+      <div id="js-click">Listener click</div>
+      <div id="react-click">React click</div>
+      <div role="listbox">
+        <div id="list-row">Soybean Farming</div>
+      </div>
+    </main>
+    <script>
+      document.getElementById("js-click").addEventListener("click", function () {});
+      var react = document.getElementById("react-click");
+      react.__reactProps$test = { onClick: function () {} };
+      document.getElementById("list-row").addEventListener("click", function () {});
+    </script>
+  </body>
+</html>

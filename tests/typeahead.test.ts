@@ -60,6 +60,22 @@ function typeaheadConfig(url: string): Config {
                   value: "industry",
                   status: "ok",
                 },
+                {
+                  id: "vendor",
+                  required: false,
+                  type: "text",
+                  by: "testId",
+                  value: "vendor",
+                  status: "ok",
+                },
+                {
+                  id: "matter",
+                  required: false,
+                  type: "text",
+                  by: "testId",
+                  value: "matter",
+                  status: "ok",
+                },
               ],
               actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
             },
@@ -139,6 +155,42 @@ describe("typeahead fill", () => {
         assert.notEqual(typed, "beatus bos");
         const industry = await handle.page.locator("#industryId").inputValue();
         assert.match(industry, /Soybean Farming|Oilseed|Corn Farming/, industry);
+      });
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+      await close();
+    }
+  });
+
+  it("clicks a listed menu button when the popup has no role=option", async () => {
+    const { baseUrl, close } = await serveSite("typeahead-form");
+    const outDir = mkdtempSync(join(tmpdir(), "cm-typeahead-vendor-"));
+    try {
+      await withRun({ timeout: 20_000 }, async (handle) => {
+        const state = await bootRun(handle, typeaheadConfig(baseUrl), outDir);
+        const exec = createExecutor(state);
+        const miss = await exec.runLine('fill page.vendor "aequitas vulticulus"');
+        assert.equal(miss.ok, true, miss.finding?.message);
+        const vendor = await handle.page.locator("#vendorId").inputValue();
+        assert.match(vendor, /Acme Supplies|Seed Office|FV Admin/, vendor);
+      });
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+      await close();
+    }
+  });
+
+  it("picks a listed row that only has addEventListener('click')", async () => {
+    const { baseUrl, close } = await serveSite("typeahead-form");
+    const outDir = mkdtempSync(join(tmpdir(), "cm-typeahead-matter-"));
+    try {
+      await withRun({ timeout: 20_000 }, async (handle) => {
+        const state = await bootRun(handle, typeaheadConfig(baseUrl), outDir);
+        const exec = createExecutor(state);
+        const miss = await exec.runLine('fill page.matter "AAAA"');
+        assert.equal(miss.ok, true, miss.finding?.message);
+        const matter = await handle.page.locator("#matterId").inputValue();
+        assert.match(matter, /Alpha Matter|Beta Matter|Gamma Matter/, matter);
       });
     } finally {
       rmSync(outDir, { recursive: true, force: true });

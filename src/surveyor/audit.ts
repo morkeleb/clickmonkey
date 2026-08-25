@@ -28,7 +28,7 @@ const AUDIT_SRC = `
 var DIALOG_SEL = "dialog, [role='dialog'], [aria-modal='true']";
 var FIELD_SEL = 'input, select, textarea, [contenteditable="true"]';
 var ACTION_SEL = 'button, a[href], [role="button"], input[type="submit"], input[type="button"]';
-var EXTRA_SEL = "[onclick], [tabindex]";
+var WIDGET_ROLES = { button: 1, link: 1, tab: 1, menuitem: 1, option: 1, combobox: 1, checkbox: 1, radio: 1, switch: 1, slider: 1, textbox: 1, searchbox: 1, spinbutton: 1 };
 var doc = document;
 var issues = [];
 var els;
@@ -136,6 +136,54 @@ function describeWhere(node) {
   if (href && href.trim()) return tag + '[href="' + clip(href.trim(), 48) + '"]';
   return tag;
 }
+function isSemanticWidget(node) {
+  var tag = node.tagName.toLowerCase();
+  if (tag === "button" || tag === "input" || tag === "select" || tag === "textarea") return true;
+  if (tag === "a" && node.hasAttribute("href")) return true;
+  var role = (node.getAttribute("role") || "").toLowerCase();
+  return Boolean(WIDGET_ROLES[role]);
+}
+function inListPopup(node) {
+  return Boolean(node.closest && node.closest("[role='listbox'], [role='menu'], [role='tree'], [role='option'], [role='menuitem']"));
+}
+function isShell(node) {
+  var tag = node.tagName.toLowerCase();
+  if (tag === "html" || tag === "body" || tag === "main" || tag === "svg" || tag === "path") return true;
+  var id = (node.id || "").toLowerCase();
+  if (id === "root" || id === "app" || id === "__next" || id === "__nuxt") return true;
+  var role = (node.getAttribute("role") || "").toLowerCase();
+  return role === "main" || role === "application";
+}
+function tooBig(node) {
+  var r = node.getBoundingClientRect();
+  var vw = window.innerWidth || 1;
+  var vh = window.innerHeight || 1;
+  return r.width * r.height > vw * vh * 0.4;
+}
+function hasOwnPointer(node) {
+  if (node.onclick || node.onmousedown || node.onpointerdown) return true;
+  if (node.getAttribute("onclick") || node.getAttribute("onmousedown")) return true;
+  var k;
+  var keys = Object.keys(node);
+  for (k = 0; k < keys.length; k++) {
+    var key = keys[k];
+    if (key.indexOf("__reactProps") !== 0 && key.indexOf("__reactEventHandlers") !== 0) continue;
+    var p = node[key];
+    if (p && (p.onClick || p.onMouseDown || p.onPointerDown)) return true;
+  }
+  return false;
+}
+function skipClickableNonWidget(node) {
+  var tag = node.tagName.toLowerCase();
+  if (tag === "script" || tag === "style" || tag === "noscript" || tag === "link" || tag === "meta") return true;
+  if (!shown(node)) return true;
+  if (flags.excludeVisibleDialogs && insideForeignDialog(node)) return true;
+  if (isSemanticWidget(node)) return true;
+  if (inListPopup(node)) return true;
+  if (isShell(node)) return true;
+  if (tooBig(node)) return true;
+  return false;
+}
 function push(code, severity, node) {
   var tag = node.tagName.toLowerCase();
   var role = implicitRole(node);
@@ -187,16 +235,17 @@ for (i = 0; i < dupKeys.length; i++) {
   issues.push(dupItem);
 }
 
-els = root.querySelectorAll(EXTRA_SEL);
-for (i = 0; i < els.length; i++) {
+els = root.querySelectorAll("*");
+var clickableHits = 0;
+for (i = 0; i < els.length && clickableHits < 8; i++) {
   el = els[i];
-  if (!shown(el)) continue;
-  if (flags.excludeVisibleDialogs && insideForeignDialog(el)) continue;
-  var eTag = el.tagName.toLowerCase();
-  if (eTag === "input" || eTag === "select" || eTag === "textarea" || eTag === "button" || eTag === "a") continue;
-  if (el.getAttribute("role") === "button") continue;
-  if (el.tabIndex < 0 && !el.hasAttribute("onclick")) continue;
+  if (skipClickableNonWidget(el)) continue;
+  var pointer = hasOwnPointer(el) || el.hasAttribute("onclick");
+  var tabbable = el.tabIndex >= 0;
+  if (!pointer && !tabbable) continue;
+  if (!pointer && el.tabIndex < 0) continue;
   push("clickableNonWidget", "block", el);
+  clickableHits += 1;
 }
 
 var dialogRoots = [];
@@ -231,6 +280,100 @@ if (flags.checkMain) {
 return issues;
 `;
 
+const LISTENER_AUDIT_JS = `(() => {
+  var sel = __SEL__;
+  var root = document.querySelector(sel);
+  if (!root) return [];
+  var WIDGET_ROLES = { button: 1, link: 1, tab: 1, menuitem: 1, option: 1, combobox: 1, checkbox: 1, radio: 1, switch: 1, slider: 1, textbox: 1, searchbox: 1, spinbutton: 1 };
+  var POINTER = { click: 1, mousedown: 1, mouseup: 1, pointerdown: 1, pointerup: 1 };
+  var out = [];
+  var nodes = root.querySelectorAll("*");
+  var i;
+  function clip(s, n) {
+    var one = String(s || "").replace(/\\s+/g, " ").trim();
+    return one.length <= n ? one : one.slice(0, n - 1) + "…";
+  }
+  function describeWhere(node) {
+    var tag = node.tagName.toLowerCase();
+    var hooks = ["data-testid", "data-test-id", "data-test", "data-cy"];
+    var h;
+    for (h = 0; h < hooks.length; h++) {
+      var hook = node.getAttribute(hooks[h]);
+      if (hook && hook.trim()) return tag + "[" + hooks[h] + '="' + clip(hook.trim(), 40) + '"]';
+    }
+    var id = node.id && String(node.id).trim();
+    if (id) return "#" + clip(id, 40);
+    var named = node.getAttribute("aria-label") || node.getAttribute("title") || node.getAttribute("alt");
+    if (named && named.trim()) return tag + ' "' + clip(named.trim(), 40) + '"';
+    var text = (node.innerText || "").replace(/\\s+/g, " ").trim();
+    if (text) return tag + ' "' + clip(text, 40) + '"';
+    return tag;
+  }
+  function skip(node) {
+    var tag = node.tagName.toLowerCase();
+    if (tag === "script" || tag === "style" || tag === "noscript" || tag === "html" || tag === "body" || tag === "main") return true;
+    if (typeof node.checkVisibility === "function" && !node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return true;
+    if (tag === "button" || tag === "input" || tag === "select" || tag === "textarea") return true;
+    if (tag === "a" && node.hasAttribute("href")) return true;
+    var role = (node.getAttribute("role") || "").toLowerCase();
+    if (WIDGET_ROLES[role]) return true;
+    if (node.closest && node.closest("[role='listbox'], [role='menu'], [role='tree'], [role='option'], [role='menuitem']")) return true;
+    var rid = (node.id || "").toLowerCase();
+    if (rid === "root" || rid === "app" || rid === "__next") return true;
+    var r = node.getBoundingClientRect();
+    var vw = window.innerWidth || 1;
+    var vh = window.innerHeight || 1;
+    if (r.width * r.height > vw * vh * 0.4) return true;
+    return false;
+  }
+  for (i = 0; i < nodes.length && out.length < 8; i++) {
+    var node = nodes[i];
+    if (skip(node)) continue;
+    var listeners = {};
+    try { listeners = getEventListeners(node) || {}; } catch (e) {}
+    var types = Object.keys(listeners);
+    if (!types.some(function (t) { return POINTER[t]; })) continue;
+    out.push({ code: "clickableNonWidget", severity: "block", tag: node.tagName.toLowerCase(), where: describeWhere(node) });
+  }
+  return out;
+})()`;
+
+async function listenerNonWidgets(page: Page, loc: PwLocator): Promise<TestabilityIssue[]> {
+  let marked = false;
+  try {
+    const sel = await loc.first().evaluate((el) => {
+      const n = el as { id?: string; tagName?: string; setAttribute(name: string, value: string): void };
+      if (n.id) return `[id=${JSON.stringify(n.id)}]`;
+      if ((n.tagName || "").toLowerCase() === "html") return "html";
+      n.setAttribute("data-cm-audit", "1");
+      return "[data-cm-audit='1']";
+    });
+    marked = sel.includes("data-cm-audit");
+    const session = await page.context().newCDPSession(page);
+    const { result } = await session.send("Runtime.evaluate", {
+      includeCommandLineAPI: true,
+      returnByValue: true,
+      expression: LISTENER_AUDIT_JS.replace("__SEL__", JSON.stringify(sel)),
+    });
+    await session.detach().catch(() => undefined);
+    const raw = result?.value;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (row): row is TestabilityIssue =>
+        Boolean(row && row.code === "clickableNonWidget" && typeof row.tag === "string"),
+    );
+  } catch {
+    return [];
+  } finally {
+    if (marked) {
+      await loc
+        .first()
+        .evaluate((el) => (el as { removeAttribute(name: string): void }).removeAttribute("data-cm-audit"))
+        .catch(() => undefined);
+    }
+  }
+}
+
 function isPage(root: Page | PwLocator): root is Page {
   return typeof (root as Page).locator === "function" && typeof (root as Page).url === "function";
 }
@@ -252,7 +395,9 @@ export async function auditVisible(
     (el, arg) => new Function("root", "flags", arg.src)(el, arg.flags),
     { src: AUDIT_SRC, flags },
   );
-  const issues = dedupeIssues(raw as TestabilityIssue[]);
+  const fromDom = Array.isArray(raw) ? (raw as TestabilityIssue[]) : [];
+  const fromListeners = await listenerNonWidgets(page, loc);
+  const issues = dedupeIssues([...fromDom, ...fromListeners]);
   return { issues, insufficient: isInsufficient(issues) };
 }
 

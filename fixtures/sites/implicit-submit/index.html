@@ -43,6 +43,14 @@
       </form>
       <button data-testid="clear-edit" form="edit-form">Clear</button>
       <button data-testid="dangling" form="missing">Nope</button>
+      <form>
+        <input role="combobox" aria-controls="naics-list" aria-label="Industry" />
+        <div id="naics-list" role="listbox">
+          <button data-testid="naics-soy">111110 — Soybean Farming</button>
+          <button data-testid="naics-corn">111150 — Corn Farming</button>
+        </div>
+        <button data-testid="add-attorney">Add Attorney</button>
+      </form>
     </main>
   </body>
 </html>

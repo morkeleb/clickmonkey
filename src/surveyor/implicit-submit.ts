@@ -43,6 +43,8 @@ export function skipImplicitSubmit(opts: {
   ariaDisabled?: string | null;
   ariaHidden?: boolean;
   inToolbar?: boolean;
+  /** Open combobox/menu rows — not submit controls. */
+  inListPopup?: boolean;
   hidden?: boolean;
   zeroBox?: boolean;
 }): boolean {
@@ -53,6 +55,7 @@ export function skipImplicitSubmit(opts: {
   if (opts.disabled || opts.ariaDisabled === "true") return true;
   if (opts.ariaHidden) return true;
   if (opts.inToolbar) return true;
+  if (opts.inListPopup) return true;
   if (opts.hidden || opts.zeroBox) return true;
   return false;
 }
@@ -220,6 +223,12 @@ const COLLECT_SRC = `(() => {
     if (isDisabled(el)) continue;
     if (isAriaHidden(el)) continue;
     if (el.closest && el.closest("[role='toolbar']")) continue;
+    if (
+      el.closest &&
+      el.closest("[role='listbox'], [role='menu'], [role='tree'], [role='option'], [role='menuitem']")
+    ) {
+      continue;
+    }
     if (!hasFormOwner(el)) continue;
     var name = widgetName(el) || "Button";
     var where = describeWhere(el);
