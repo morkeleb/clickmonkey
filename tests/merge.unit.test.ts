@@ -450,4 +450,26 @@ describe("mergeTrees", () => {
     assert.equal(merged.pages[0]?.description, "Home dashboard with KPI cards.");
     assert.equal(merged.pages[0]?.describedBy, "vision");
   });
+
+  it("keeps page fog when inspect has none, and takes the later clock", () => {
+    const base = loadHome();
+    base.pages[0]!.fog = {
+      at: "2026-04-01T00:00:00.000Z",
+      jobs: { map: "2026-04-01T00:00:00.000Z" },
+      modes: {},
+    };
+    const incoming = loadHome();
+    const kept = mergeTrees(base, incoming);
+    assert.equal(kept.pages[0]?.fog?.jobs.map, "2026-04-01T00:00:00.000Z");
+    incoming.pages[0]!.fog = {
+      at: "2026-05-01T00:00:00.000Z",
+      jobs: { unleash: "2026-05-01T00:00:00.000Z" },
+      modes: { form: "2026-05-01T00:00:00.000Z" },
+    };
+    const merged = mergeTrees(base, incoming);
+    assert.equal(merged.pages[0]?.fog?.at, "2026-05-01T00:00:00.000Z");
+    assert.equal(merged.pages[0]?.fog?.jobs.map, "2026-04-01T00:00:00.000Z");
+    assert.equal(merged.pages[0]?.fog?.jobs.unleash, "2026-05-01T00:00:00.000Z");
+    assert.equal(merged.pages[0]?.fog?.modes.form, "2026-05-01T00:00:00.000Z");
+  });
 });

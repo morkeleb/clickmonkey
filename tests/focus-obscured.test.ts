@@ -53,6 +53,11 @@ describe("scanFocusObscured", () => {
         false,
         `aria-hidden, disabled, skip-links, and a centered below-fold control must be skipped, got ${dump}`,
       );
+      assert.equal(
+        hits.some((i) => /Billing|Corporate Cards|Settings/.test(`${i.where ?? ""} ${i.message}`)),
+        false,
+        `collapsed overflow:hidden submenu must not look like 2.4.11, got ${dump}`,
+      );
     });
   });
 

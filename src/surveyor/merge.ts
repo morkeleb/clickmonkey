@@ -11,6 +11,7 @@ import type {
 import { locatorIdentity, type Locator } from "../schema/locator.js";
 import { readyKey } from "../schema/refs.js";
 import { mintedBase, uniqueMint } from "./ids.js";
+import { mergePageFog } from "../schema/fog.js";
 import { descriptionRank } from "./describe.js";
 import { pageIdFromPath } from "./ready.js";
 import { templatizePath } from "./path-template.js";
@@ -298,6 +299,9 @@ function mergePageDef(keep: PageT, other: PageT): { page: PageT; added: number }
     if (incomingPage.describeKey) page.describeKey = incomingPage.describeKey;
     if (incomingPage.describedBy) page.describedBy = incomingPage.describedBy;
   }
+  const fog = mergePageFog(page.fog, incomingPage.fog);
+  if (fog) page.fog = fog;
+  else delete page.fog;
   const used = new Set(page.surfaces.map((s) => s.id));
   const byKey = new Map<string, number>();
   page.surfaces.forEach((s, i) => {

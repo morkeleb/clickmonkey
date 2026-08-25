@@ -57,6 +57,26 @@ describe("scanFocusVisible", () => {
         false,
         `disabled, native checkbox, and skip-links must be skipped, got ${dump}`,
       );
+      assert.equal(
+        hits.some((i) => /username|Email/i.test(`${i.where ?? ""} ${i.message}`)),
+        false,
+        `:focus-within wrapper ring must count, got ${dump}`,
+      );
+      assert.equal(
+        hits.some((i) => /js-ring|Ask LOIS/i.test(`${i.where ?? ""} ${i.message}`)),
+        false,
+        `JS Tab+focus ring (MUI-style) must count, got ${dump}`,
+      );
+      assert.equal(
+        hits.some((i) => /search-lois|Talk to LOIS/i.test(`${i.where ?? ""} ${i.message}`)),
+        false,
+        `MUI notched-outline sibling ring must count, got ${dump}`,
+      );
+      assert.equal(
+        hits.some((i) => /underline-name|placeholder="Name"|Name has no/i.test(`${i.where ?? ""} ${i.message}`)),
+        false,
+        `MUI underline ::after ring must count, got ${dump}`,
+      );
     });
   });
 });

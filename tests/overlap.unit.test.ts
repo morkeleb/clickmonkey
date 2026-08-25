@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  CHROME_COVER_MESSAGE,
+  CHROME_OVERLAP_MESSAGE,
+  clipRectByClips,
   expectedOverlay,
+  isStackedSelectPair,
   issuesFromWidgets,
   MAX_OVERLAP_HITS,
   overlapConfidence,
@@ -32,6 +36,17 @@ describe("overlap helpers", () => {
     assert.equal(overlapConfidence(16, 16), "high");
   });
 
+  it("drops a tab chip scrolled out of an overflow-hidden strip (does not pin it onto the sidebar)", () => {
+    const tab = box(-180, 48, 160, 32);
+    const strip = box(240, 40, 900, 48);
+    const viewport = box(0, 0, 1280, 720);
+    assert.equal(clipRectByClips(tab, [strip, viewport]), undefined);
+    const visibleClose = box(1100, 48, 24, 24);
+    const clipped = clipRectByClips(visibleClose, [strip, viewport]);
+    assert.ok(clipped);
+    assert.equal(clipped.left, 1100);
+  });
+
   it("treats equal rects as overlap, not containment", () => {
     const a = box(0, 0, 40, 40);
     assert.equal(rectContains(a, a), false);
@@ -55,6 +70,60 @@ describe("overlap helpers", () => {
 });
 
 describe("issuesFromWidgets overlap", () => {
+  it("uses one chrome message for header/nav pairs so pages do not mint unique names", () => {
+    const issues = issuesFromWidgets([
+      widget({
+        name: "folder_open Clients & Matters",
+        kind: "link",
+        rect: box(0, 0, 120, 40),
+        inChrome: true,
+      }),
+      widget({
+        name: "Your account",
+        kind: "button",
+        rect: box(80, 0, 80, 40),
+        inChrome: true,
+      }),
+      widget({
+        name: "group Employees expand_more",
+        kind: "button",
+        rect: box(40, 8, 80, 32),
+        inChrome: true,
+      }),
+    ]);
+    const overlaps = issues.filter((i) => i.rule === "overlap");
+    assert.ok(overlaps.length >= 1);
+    assert.ok(overlaps.every((i) => i.message === CHROME_OVERLAP_MESSAGE));
+  });
+
+  it("keeps page-local overlap names when either control is not chrome", () => {
+    const issues = issuesFromWidgets([
+      widget({ name: "Save", kind: "button", rect: box(0, 200, 80, 40) }),
+      widget({ name: "Cancel", kind: "button", rect: box(40, 200, 80, 40) }),
+    ]);
+    const hit = issues.find((i) => i.rule === "overlap");
+    assert.ok(hit);
+    assert.match(hit.message, /Save and Cancel occupy the same pixels/);
+  });
+
+  it("does not flag a select stacked on its visible value / option list", () => {
+    const closed = box(80, 400, 280, 40);
+    const selectEl = widget({
+      name: "Select address type Mailing Remittance …",
+      kind: "select",
+      rect: closed,
+      hit: { covered: true, by: "Remittance", byNamedControl: true },
+    });
+    const value = widget({ name: "Remittance", kind: "button", rect: closed });
+    assert.equal(isStackedSelectPair(selectEl, value), true);
+    const issues = issuesFromWidgets([selectEl, value]);
+    assert.equal(
+      issues.some((i) => i.rule === "overlap" || i.rule === "zIndex"),
+      false,
+      `closed address-type select is one control, got ${JSON.stringify(issues)}`,
+    );
+  });
+
   it("flags two buttons sharing at least 8×8 px", () => {
     const issues = issuesFromWidgets([
       widget({ name: "Alpha", kind: "button", rect: box(0, 0, 100, 40) }),
@@ -143,6 +212,83 @@ describe("issuesFromWidgets overlap", () => {
 });
 
 describe("issuesFromWidgets zIndex", () => {
+  it("does not zIndex a closed dropdown whose innerText still lists the options", () => {
+    const closed = box(980, 120, 220, 40);
+    const list = widget({
+      name: "All statuses Draft Active Closed",
+      kind: "button",
+      rect: closed,
+      hit: { covered: true, by: "All statuses", byNamedControl: true },
+    });
+    const value = widget({ name: "All statuses", kind: "button", rect: closed });
+    const issues = issuesFromWidgets([list, value]);
+    assert.equal(
+      issues.some((i) => i.rule === "overlap" || i.rule === "zIndex"),
+      false,
+      `closed status filter is not an open menu, got ${JSON.stringify(issues)}`,
+    );
+    const solo = issuesFromWidgets([list]);
+    assert.equal(
+      solo.some((i) => i.rule === "zIndex"),
+      false,
+      `option-list name covered by visible value must skip, got ${JSON.stringify(solo)}`,
+    );
+  });
+
+  it("does not also zIndex a page-local pair that already overlapped", () => {
+    const issues = issuesFromWidgets([
+      widget({
+        name: "Save",
+        kind: "button",
+        rect: box(0, 200, 80, 40),
+        hit: { covered: true, by: "Cancel", byNamedControl: true },
+      }),
+      widget({ name: "Cancel", kind: "button", rect: box(40, 200, 80, 40) }),
+    ]);
+    assert.equal(issues.filter((i) => i.rule === "overlap").length, 1);
+    assert.equal(issues.some((i) => i.rule === "zIndex"), false);
+  });
+
+  it("does not also zIndex a chrome pair that already overlapped", () => {
+    const issues = issuesFromWidgets([
+      widget({
+        name: "folder_open Clients & Matters",
+        kind: "link",
+        rect: box(0, 400, 200, 40),
+        inChrome: true,
+        hit: { covered: true, by: "Your account", byNamedControl: true },
+      }),
+      widget({
+        name: "Your account",
+        kind: "button",
+        rect: box(0, 420, 200, 48),
+        inChrome: true,
+      }),
+    ]);
+    assert.equal(issues.filter((i) => i.rule === "overlap").length, 1);
+    assert.equal(
+      issues.some((i) => i.rule === "zIndex"),
+      false,
+      `overlap already has the pair, got ${JSON.stringify(issues)}`,
+    );
+  });
+
+  it("uses one chrome cover message for header/nav controls", () => {
+    const issues = issuesFromWidgets([
+      widget({
+        name: "folder_open Clients & Matters",
+        kind: "link",
+        rect: box(0, 0, 120, 40),
+        inChrome: true,
+        hit: { covered: true, by: "Your account", byNamedControl: true },
+      }),
+    ]);
+    const hit = issues.find((i) => i.rule === "zIndex");
+    assert.ok(hit);
+    assert.equal(hit.message, CHROME_COVER_MESSAGE);
+    assert.match(hit.where ?? "", /Clients/);
+  });
+
   it("skips sticky header/nav chrome covering a button", () => {
     const issues = issuesFromWidgets([
       widget({

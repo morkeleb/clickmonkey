@@ -112,6 +112,22 @@ export function isSmallOpenDialog(box: OverflowBox, vw: number): boolean {
   return box.right - box.left < vw * DIALOG_PAGE_SHARE;
 }
 
+/** True when 320 overflow is new, not the same ~Npx 100vw leak already seen at 1280. */
+export function isReflowDocumentLeak(desktopPx: number | undefined, reflowPx: number): boolean {
+  if (!Number.isFinite(reflowPx) || reflowPx <= DOCUMENT_X_SLACK) return false;
+  if (desktopPx === undefined || !Number.isFinite(desktopPx) || desktopPx <= DOCUMENT_X_SLACK) {
+    return true;
+  }
+  return reflowPx > desktopPx + DOCUMENT_X_SLACK;
+}
+
+export function pageWidthOverflowPx(message: string): number | undefined {
+  const m = message.match(/^Page is (\d+)px wider than the viewport/i);
+  if (!m) return undefined;
+  const px = Number(m[1]);
+  return Number.isFinite(px) ? px : undefined;
+}
+
 export function overflowConfidence(
   sample: OverflowSample,
   viewportWidth?: number,

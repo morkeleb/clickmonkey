@@ -8,6 +8,7 @@ import {
   crossesViewportEdge,
   documentOverflowPx,
   isDocumentXOverflow,
+  isReflowDocumentLeak,
   isFixedChromeInViewport,
   isIntendedScroll,
   isSmallOpenDialog,
@@ -99,6 +100,15 @@ describe("overflowLayoutIssue", () => {
     assert.ok(issue);
     assert.equal(issue.confidence, "medium");
     assert.equal(issue.severity, "warning");
+  });
+
+  it("treats 320 page-width as reflow only when it is new vs desktop", () => {
+    assert.equal(isReflowDocumentLeak(undefined, 20), true);
+    assert.equal(isReflowDocumentLeak(0, 20), true);
+    assert.equal(isReflowDocumentLeak(15, 20), true);
+    assert.equal(isReflowDocumentLeak(30, 30), false);
+    assert.equal(isReflowDocumentLeak(30, 36), false);
+    assert.equal(isReflowDocumentLeak(30, 50), true);
   });
 
   it("treats a 20px document leak as high at 320 reflow width", () => {

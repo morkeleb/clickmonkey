@@ -9,7 +9,13 @@ import { scanImplicitSubmit } from "./implicit-submit.js";
 import { scanListScanline } from "./list-scanline.js";
 import { scanNoopener } from "./noopener.js";
 import { scanOverlap } from "./overlap.js";
-import { scanOverflow, scanOverflowMobile, scanOverflowReflow } from "./overflow.js";
+import {
+  isReflowDocumentLeak,
+  pageWidthOverflowPx,
+  scanOverflow,
+  scanOverflowMobile,
+  scanOverflowReflow,
+} from "./overflow.js";
 import { scanPointerEvents } from "./pointer-events.js";
 import { scanTableLayout } from "./scanline.js";
 import { scanScrollPadding } from "./scroll-padding.js";
@@ -73,8 +79,18 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
   await take(scanFocusVisible);
   const unspaced = issues.filter((i) => i.rule === "clip" || i.rule === "overflow");
   await take((p) => scanTextSpacing(p, unspaced));
+  const desktopPagePx = issues
+    .map((i) => (i.rule === "overflow" ? pageWidthOverflowPx(i.message) : undefined))
+    .find((px) => px !== undefined);
   await take(scanOverflowMobile);
-  await take(scanOverflowReflow);
+  await take(async (p) => {
+    const hits = await scanOverflowReflow(p);
+    return hits.filter((h) => {
+      const px = pageWidthOverflowPx(h.message);
+      if (px === undefined) return true;
+      return isReflowDocumentLeak(desktopPagePx, px);
+    });
+  });
   if (prevView) await page.setViewportSize(prevView).catch(() => undefined);
   await page.evaluate(`window.scrollTo(${sx}, ${sy})`).catch(() => undefined);
   return {

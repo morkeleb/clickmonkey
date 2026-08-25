@@ -113,13 +113,14 @@ export const VISUAL_PROMPT = [
   "- mojibake / tofu: replacement glyphs, \uFFFD, empty icon-font squares beyond a single canvas hole",
   "- chart/canvas labels cut or missing (no DOM text)",
   "- leftover lorem / \"TODO\" / \"lorem ipsum\" / debug copy in the main pane",
+  "- missing fade/mask on a scrolling list (items cut with a hard edge, no gradient)",
   "- contrast: type is unreadable in this screenshot (too faint on its background)",
   "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px, not a stacked label above its field)",
   "",
   "Rules (file only these):",
   "- contrast: type is unreadable in this image (too faint on its background)",
   "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px taste, not a stacked label above its field)",
-  "- other: a user-visible rendering defect that does not fit the list (empty-vs-broken, toast chrome, missing mapped widget, icon collision, canvas hole, abnormal ellipsis, mojibake/tofu, chart labels, leftover lorem/TODO)",
+  "- other: a user-visible rendering defect that does not fit the list (empty-vs-broken, toast chrome, missing mapped widget, icon collision, canvas hole, abnormal ellipsis, mojibake/tofu, chart labels, leftover lorem/TODO, missing scroll fade)",
   "",
   "Type defects are contrast (unreadable in this image). Not font-family, brand preference, or body copy size (DOM already measured font-size).",
   "Do not report: sticky headers/nav, expected page scroll, missing features, hover/focus you cannot see, WCAG math, inventing that a control is unclickable, masonry or staggered cards, a center-aligned hero title.",
@@ -191,7 +192,7 @@ function extractJsonObject(raw: string): unknown {
 
 /** Geometry words next to these hunts are still pixel-only (toast, chart labels, icon collision). */
 const PIXEL_OTHER_KEEP =
-  /\b(?:toast|snackbar|ellipsis|mojibake|tofu|replacement.?glyph|lorem|todo|(?:chart|canvas)(?:\s+axis)?\s+labels?|failed.?load|icons?\s+collision)\b|(?:icons?.{0,40}collid|collid.{0,40}icons?)/i;
+  /\b(?:toast|snackbar|ellipsis|mojibake|tofu|replacement.?glyph|lorem|todo|(?:chart|canvas)(?:\s+axis)?\s+labels?|failed.?load|icons?\s+collision|missing fade|scroll(?:ing)?\s+(?:fade|mask))\b|(?:icons?.{0,40}collid|collid.{0,40}icons?)/i;
 /** Geometry restated as `other`, and product-chrome clip of junk (dropPayloadContentVisual). */
 const LAYOUT_DEFECT =
   /\b(?:overflow(?:ing|s)?|clip(?:ped|s)?|overlap(?:ping|s)?|z-?index|scanline|unreadable|cover(?:ed|ing)|leaking|cut off|collid(?:e|es|ed|ing)|misalign|shear(?:ed|s)?|ragged|gutter|truncated|too small to read)\b/i;

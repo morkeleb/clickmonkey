@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <title>Focus obscured</title>
     <style>
-      body { margin: 0; font: 16px/1.4 sans-serif; }
+      body { margin: 0; font: 16px/1.4 sans-serif; padding-top: 80px; }
       header.sticky {
         position: fixed;
         top: 0;
@@ -102,6 +102,13 @@
   </head>
   <body>
     <header class="sticky">App header</header>
+    <nav>
+      <button type="button" id="settings" data-testid="settings">Settings</button>
+      <div id="settings-sub" style="height:0;overflow:hidden">
+        <button type="button" id="billing" data-testid="billing">Billing &amp; Subscriptions</button>
+        <button type="button" id="cards" data-testid="cards">Corporate Cards</button>
+      </div>
+    </nav>
     <main data-testid="home">
       <button type="button" id="save" data-testid="save">Save</button>
       <button type="button" id="aria-hidden-save" data-testid="aria-hidden-save" aria-hidden="true">Ghost</button>

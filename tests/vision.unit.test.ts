@@ -81,6 +81,7 @@ describe("parseVisualReply", () => {
     assert.match(VISUAL_PROMPT, /mojibake|tofu/);
     assert.match(VISUAL_PROMPT, /chart/);
     assert.match(VISUAL_PROMPT, /lorem/);
+    assert.match(VISUAL_PROMPT, /missing fade\/mask on a scrolling list/);
     assert.match(VISUAL_PROMPT, /unreadable in this screenshot/);
     assert.match(VISUAL_PROMPT, /Not font-family/);
     assert.doesNotMatch(VISUAL_PROMPT, /Must-check/);

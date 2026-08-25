@@ -14,6 +14,7 @@ export type FocusStyle = {
   borderTopWidth: string;
   borderTopColor: string;
   borderBottomWidth: string;
+  borderBottomColor: string;
   backgroundColor: string;
   color: string;
   textDecorationLine?: string;
@@ -25,6 +26,12 @@ export type FocusVisibleHit = {
   where: string;
   before?: FocusStyle;
   after?: FocusStyle;
+  /** Wrapping field chrome (`:focus-within` ring), not the input itself. */
+  beforeParents?: FocusStyle[];
+  afterParents?: FocusStyle[];
+  /** Sibling notched outline / ::before / ::after (MUI OutlinedInput). */
+  beforeChrome?: FocusStyle[];
+  afterChrome?: FocusStyle[];
 };
 
 function noneish(v: string | undefined): boolean {
@@ -58,11 +65,15 @@ function hasVisibleOutline(style: FocusStyle): boolean {
   return Number.isFinite(w) && w > 0;
 }
 
+function outlineKey(style: FocusStyle): string {
+  return `${style.outlineStyle ?? ""}|${style.outlineWidth ?? ""}|${style.outlineColor ?? ""}|${style.outlineOffset ?? ""}`;
+}
+
 /** True when the focused snapshot has a ring, glow, or author stand-in. */
 export function focusIndicatorChanged(before: FocusStyle, after: FocusStyle): boolean {
   if (!before || !after) return false;
-  // UA `auto` + non-zero width counts even when outlineColor is unchanged.
-  if (hasVisibleOutline(after)) return true;
+  // A ring that was already there (UA outline on a sibling) is not a new indicator.
+  if (hasVisibleOutline(after) && outlineKey(before) !== outlineKey(after)) return true;
 
   const afterShadow = String(after.boxShadow ?? "").replace(/\s+/g, " ").trim();
   const beforeShadow = String(before.boxShadow ?? "").replace(/\s+/g, " ").trim();
@@ -71,11 +82,23 @@ export function focusIndicatorChanged(before: FocusStyle, after: FocusStyle): bo
   if (String(after.borderTopWidth ?? "") !== String(before.borderTopWidth ?? "")) return true;
   if (String(after.borderTopColor ?? "") !== String(before.borderTopColor ?? "")) return true;
   if (String(after.borderBottomWidth ?? "") !== String(before.borderBottomWidth ?? "")) return true;
+  if (String(after.borderBottomColor ?? "") !== String(before.borderBottomColor ?? "")) return true;
 
   if (String(after.backgroundColor ?? "") !== String(before.backgroundColor ?? "")) return true;
   if (String(after.color ?? "") !== String(before.color ?? "")) return true;
 
   if (decorationLine(before) === "none" && decorationLine(after) !== "none") return true;
+  return false;
+}
+
+function parentIndicatorChanged(before: FocusStyle[] | undefined, after: FocusStyle[] | undefined): boolean {
+  if (!before?.length || !after?.length) return false;
+  const n = Math.min(before.length, after.length);
+  for (let i = 0; i < n; i++) {
+    const b = before[i];
+    const a = after[i];
+    if (b && a && focusIndicatorChanged(b, a)) return true;
+  }
   return false;
 }
 
@@ -85,6 +108,8 @@ export function focusVisibleIssue(hit: FocusVisibleHit): QualityIssue | undefine
   const where = String(hit.where || "").replace(/\s+/g, " ").trim();
   if (!name || !where) return undefined;
   if (hit.before && hit.after && focusIndicatorChanged(hit.before, hit.after)) return undefined;
+  if (parentIndicatorChanged(hit.beforeParents, hit.afterParents)) return undefined;
+  if (parentIndicatorChanged(hit.beforeChrome, hit.afterChrome)) return undefined;
   return {
     source: "visual",
     rule: "focusVisible",
@@ -231,8 +256,8 @@ const COLLECT_SRC = `(() => {
     return tag;
   }
 
-  function snap(el) {
-    var cs = window.getComputedStyle(el);
+  function snapCs(cs) {
+    if (!cs) return null;
     return {
       outlineStyle: cs.outlineStyle,
       outlineWidth: cs.outlineWidth,
@@ -242,11 +267,69 @@ const COLLECT_SRC = `(() => {
       borderTopWidth: cs.borderTopWidth,
       borderTopColor: cs.borderTopColor,
       borderBottomWidth: cs.borderBottomWidth,
+      borderBottomColor: cs.borderBottomColor,
       backgroundColor: cs.backgroundColor,
       color: cs.color,
       textDecorationLine: cs.textDecorationLine,
       textDecoration: cs.textDecoration
     };
+  }
+
+  function snap(el) {
+    if (!el) return null;
+    return snapCs(window.getComputedStyle(el));
+  }
+
+  function snapParents(el) {
+    var out = [];
+    var p = el && el.parentElement;
+    var n = 0;
+    while (p && n < 4 && p !== document.body && p !== document.documentElement) {
+      var s = snap(p);
+      if (s) out.push(s);
+      p = p.parentElement;
+      n += 1;
+    }
+    return out;
+  }
+
+  function snapPseudos(el) {
+    var out = [];
+    if (!el) return out;
+    out.push(snapCs(window.getComputedStyle(el, "::before")));
+    out.push(snapCs(window.getComputedStyle(el, "::after")));
+    return out;
+  }
+
+  function snapSiblings(el) {
+    var out = [];
+    var p = el && el.parentElement;
+    if (!p) return out;
+    var kids = p.children;
+    var i;
+    for (i = 0; i < kids.length && out.length < 6; i++) {
+      var node = kids[i];
+      if (node === el) continue;
+      var tag = (node.tagName || "").toLowerCase();
+      if (tag === "script" || tag === "style" || tag === "noscript") continue;
+      var s = snap(node);
+      if (s) out.push(s);
+    }
+    return out;
+  }
+
+  function snapChrome(el) {
+    var out = [];
+    out = out.concat(snapSiblings(el));
+    out = out.concat(snapPseudos(el));
+    var p = el && el.parentElement;
+    var n = 0;
+    while (p && n < 4 && p !== document.body && p !== document.documentElement) {
+      out = out.concat(snapPseudos(p));
+      p = p.parentElement;
+      n += 1;
+    }
+    return out.filter(Boolean);
   }
 
   var main = document.querySelector("main, [role='main']");
@@ -279,14 +362,28 @@ const COLLECT_SRC = `(() => {
   }
   for (i = 0; i < candidates.length; i++) rememberOverflow(candidates[i]);
 
+  // MUI / WICG focus-visible only add the ring after a Tab keydown, not focus().
+  try {
+    var tab = { key: "Tab", code: "Tab", keyCode: 9, which: 9, bubbles: true, cancelable: true };
+    document.dispatchEvent(new KeyboardEvent("keydown", tab));
+    window.dispatchEvent(new KeyboardEvent("keydown", tab));
+  } catch (errTab) {}
+
   var prev = document.activeElement;
   var scrollX = window.scrollX || 0;
   var scrollY = window.scrollY || 0;
   for (i = 0; i < candidates.length; i++) {
     var target = candidates[i];
+    try {
+      if (document.activeElement === target && typeof target.blur === "function") target.blur();
+    } catch (errBlur) {}
     var before;
+    var beforeParents;
+    var beforeChrome;
     try {
       before = snap(target);
+      beforeParents = snapParents(target);
+      beforeChrome = snapChrome(target);
     } catch (err) {
       continue;
     }
@@ -303,8 +400,12 @@ const COLLECT_SRC = `(() => {
     var active = document.activeElement;
     if (active !== target && !(target.contains && target.contains(active))) continue;
     var after;
+    var afterParents;
+    var afterChrome;
     try {
       after = snap(target);
+      afterParents = snapParents(target);
+      afterChrome = snapChrome(target);
     } catch (err4) {
       continue;
     }
@@ -312,7 +413,11 @@ const COLLECT_SRC = `(() => {
       name: widgetName(target) || "Control",
       where: describeWhere(target),
       before: before,
-      after: after
+      after: after,
+      beforeParents: beforeParents,
+      afterParents: afterParents,
+      beforeChrome: beforeChrome,
+      afterChrome: afterChrome
     });
   }
   try {

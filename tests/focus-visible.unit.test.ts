@@ -19,6 +19,7 @@ const rest: FocusStyle = {
   borderTopWidth: "1px",
   borderTopColor: "rgb(51, 51, 51)",
   borderBottomWidth: "1px",
+  borderBottomColor: "rgb(51, 51, 51)",
   backgroundColor: "rgb(238, 238, 238)",
   color: "rgb(17, 17, 17)",
   textDecorationLine: "none",
@@ -63,6 +64,8 @@ describe("focusVisible helpers", () => {
       focusIndicatorChanged(rest, style({ outlineStyle: "none", outlineWidth: "2px" })),
       false,
     );
+    const already = style({ outlineStyle: "auto", outlineWidth: "1px" });
+    assert.equal(focusIndicatorChanged(already, already), false);
   });
 
   it("accepts box-shadow, border, fill, and underline stand-ins", () => {
@@ -74,6 +77,7 @@ describe("focusVisible helpers", () => {
     assert.equal(focusIndicatorChanged(rest, style({ borderTopWidth: "3px" })), true);
     assert.equal(focusIndicatorChanged(rest, style({ borderTopColor: "rgb(0, 0, 255)" })), true);
     assert.equal(focusIndicatorChanged(rest, style({ borderBottomWidth: "3px" })), true);
+    assert.equal(focusIndicatorChanged(rest, style({ borderBottomColor: "rgb(0, 0, 255)" })), true);
     assert.equal(focusIndicatorChanged(rest, style({ backgroundColor: "rgb(255, 255, 0)" })), true);
     assert.equal(focusIndicatorChanged(rest, style({ color: "rgb(0, 0, 255)" })), true);
     assert.equal(
@@ -98,6 +102,45 @@ describe("focusVisible helpers", () => {
 });
 
 describe("focusVisibleIssue", () => {
+  it("accepts a ring on a wrapping field (`:focus-within`)", () => {
+    const issue = focusVisibleIssue({
+      name: "Email address",
+      where: "#username",
+      before: rest,
+      after: rest,
+      beforeParents: [rest],
+      afterParents: [style({ borderTopColor: "rgb(0, 0, 255)" })],
+    });
+    assert.equal(issue, undefined);
+  });
+
+  it("does not treat a sibling's unchanged UA outline as the field's ring", () => {
+    const ua = style({ outlineStyle: "auto", outlineWidth: "1px" });
+    const issue = focusVisibleIssue({
+      name: "Search",
+      where: 'input "Search"',
+      before: rest,
+      after: rest,
+      beforeChrome: [ua],
+      afterChrome: [ua],
+    });
+    assert.ok(issue, "pre-existing outline on a neighbor is not WCAG 2.4.7 coverage");
+  });
+
+  it("accepts a ring on a sibling notched outline (MUI OutlinedInput)", () => {
+    const issue = focusVisibleIssue({
+      name: "Search or Talk to LOIS",
+      where: 'input "Search or Talk to LOIS"',
+      before: rest,
+      after: rest,
+      beforeParents: [rest],
+      afterParents: [rest],
+      beforeChrome: [rest],
+      afterChrome: [style({ borderTopColor: "rgb(0, 0, 255)", borderTopWidth: "2px" })],
+    });
+    assert.equal(issue, undefined);
+  });
+
   it("emits a high-confidence visual warning when nothing changed", () => {
     const issue = focusVisibleIssue(hit({ name: "Save", where: 'button[data-testid="bare"]' }));
     assert.ok(issue);

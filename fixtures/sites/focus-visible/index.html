@@ -28,6 +28,75 @@
         outline: 2px solid #000;
         outline-offset: 2px;
       }
+      /* Ring on the wrapper (`:focus-within`), not the input — Auth0 / outlined fields. */
+      .ulp-field {
+        border: 1px solid #333;
+        padding: 8px;
+      }
+      .ulp-field:focus-within {
+        border-color: #00f;
+      }
+      .ulp-field input {
+        outline: none;
+        border: none;
+        box-shadow: none;
+        background: transparent;
+      }
+      /* Ring only after Tab keydown + focus (MUI Mui-focusVisible / WICG polyfill). */
+      #js-ring,
+      #js-ring:focus,
+      #js-ring:focus-visible {
+        outline: none;
+        box-shadow: none;
+        border: 1px solid #333;
+      }
+      #js-ring.js-focused {
+        outline: 2px solid #000;
+        outline-offset: 2px;
+      }
+      /* MUI OutlinedInput: ring is the sibling fieldset, not the input. */
+      .outlined {
+        display: inline-flex;
+        position: relative;
+      }
+      .outlined input {
+        outline: none;
+        border: none;
+        box-shadow: none;
+        background: transparent;
+        padding: 8px;
+      }
+      .outlined fieldset {
+        margin: 0;
+        border: 1px solid #333;
+      }
+      .outlined:focus-within fieldset {
+        border-color: #00f;
+        border-width: 2px;
+      }
+      /* MUI underline: ring is ::after on the wrapper. */
+      .underline {
+        position: relative;
+        display: inline-block;
+      }
+      .underline input {
+        outline: none;
+        border: none;
+        box-shadow: none;
+        background: transparent;
+        padding: 8px 0;
+      }
+      .underline::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-bottom: 1px solid #333;
+      }
+      .underline:focus-within::after {
+        border-bottom: 2px solid #00f;
+      }
       #disabled-bare,
       #disabled-bare:focus,
       #disabled-bare:focus-visible {
@@ -41,6 +110,31 @@
       <button type="button" id="bare" data-testid="bare">Save</button>
       <button type="button" id="ok" data-testid="ok">Continue</button>
       <button type="button" id="disabled-bare" data-testid="disabled-bare" disabled>Off</button>
+      <div class="ulp-field">
+        <input type="email" id="username" data-testid="username" placeholder="Email address" />
+      </div>
+      <button type="button" id="js-ring" data-testid="js-ring">Ask LOIS</button>
+      <div class="outlined">
+        <input id="search-lois" data-testid="search-lois" placeholder="Search or Talk to LOIS" />
+        <fieldset><legend>Search</legend></fieldset>
+      </div>
+      <div class="underline">
+        <input id="underline-name" data-testid="underline-name" placeholder="Name" />
+      </div>
+      <script>
+        (function () {
+          var kb = false;
+          document.addEventListener("keydown", function (e) {
+            if (e.key === "Tab") kb = true;
+          });
+          document.addEventListener("focusin", function (e) {
+            if (kb && e.target && e.target.id === "js-ring") e.target.classList.add("js-focused");
+          });
+          document.addEventListener("focusout", function (e) {
+            if (e.target && e.target.id === "js-ring") e.target.classList.remove("js-focused");
+          });
+        })();
+      </script>
       <input type="checkbox" id="agree" data-testid="agree" />
       <a href="#ok" id="skip" style="position:absolute;left:-10000px;width:1px;height:1px">Skip to continue</a>
     </main>

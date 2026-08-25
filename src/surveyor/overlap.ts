@@ -47,8 +47,13 @@ export type WidgetSample = {
   overlayId?: number;
   /** `[role=menuitem]` inside an open `[role=menu]` — not actable here. */
   inOpenMenu?: boolean;
+  /** Header, nav, aside, top strip, or left rail — same chrome on every page. */
+  inChrome?: boolean;
   hit?: CoverHit;
 };
+
+export const CHROME_OVERLAP_MESSAGE = "Header or nav controls occupy the same pixels";
+export const CHROME_COVER_MESSAGE = "A header or nav control is covered";
 
 const ACTABLE_KINDS = new Set<string>([
   "button",
@@ -90,11 +95,7 @@ const COLLECT_SRC = `(() => {
     var cs = window.getComputedStyle(el);
     if (cs.visibility === "hidden" || cs.display === "none") return false;
     if (parseFloat(cs.opacity) === 0) return false;
-    var r = el.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return false;
-    if (r.bottom <= 0 || r.right <= 0) return false;
-    if (r.top >= vh || r.left >= vw) return false;
-    return true;
+    return Boolean(visibleRect(el));
   }
 
   function kindOf(el) {
@@ -129,6 +130,12 @@ const COLLECT_SRC = `(() => {
         return hit ? hit.innerText : "";
       }).join(" ").trim();
       if (text) return clipText(text, 40);
+    }
+    var tag = (el.tagName || "").toLowerCase();
+    if (tag === "select" && el.options && el.selectedIndex >= 0) {
+      var opt = el.options[el.selectedIndex];
+      var selected = opt ? String(opt.text || opt.label || "").replace(/\\s+/g, " ").trim() : "";
+      if (selected) return clipText(selected, 40);
     }
     var text = (el.innerText || el.value || "").replace(/\\s+/g, " ").trim();
     if (text) return clipText(text, 40);
@@ -197,17 +204,46 @@ const COLLECT_SRC = `(() => {
 
   function visibleRect(el) {
     var r = el.getBoundingClientRect();
-    return {
-      left: Math.max(r.left, 0),
-      top: Math.max(r.top, 0),
-      right: Math.min(r.right, vw),
-      bottom: Math.min(r.bottom, vh),
-    };
+    var box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    var node = el.parentElement;
+    while (node && node !== document.documentElement) {
+      var ocs = window.getComputedStyle(node);
+      if (ocs.overflowX !== "visible" || ocs.overflowY !== "visible") {
+        var pr = node.getBoundingClientRect();
+        box.left = Math.max(box.left, pr.left);
+        box.top = Math.max(box.top, pr.top);
+        box.right = Math.min(box.right, pr.right);
+        box.bottom = Math.min(box.bottom, pr.bottom);
+      }
+      node = node.parentElement;
+    }
+    box.left = Math.max(box.left, 0);
+    box.top = Math.max(box.top, 0);
+    box.right = Math.min(box.right, vw);
+    box.bottom = Math.min(box.bottom, vh);
+    if (box.right - box.left < ${OVERLAP_MIN_PX} || box.bottom - box.top < ${OVERLAP_MIN_PX}) return null;
+    return box;
+  }
+
+  function inChrome(el) {
+    if (!el) return false;
+    if (el.closest && el.closest("header, nav, aside, [role='banner'], [role='navigation'], [role='complementary']")) {
+      return true;
+    }
+    var r = el.getBoundingClientRect();
+    if (r.top >= 0 && r.top < 56) return true;
+    if (r.left >= 0 && r.left < 72 && r.width < vw * 0.45) return true;
+    return false;
   }
 
   function coverName(top) {
     if (top.closest && top.closest("header, [role='banner']")) return "header";
     if (top.closest && top.closest("footer, [role='contentinfo']")) return "footer";
+    var node = top;
+    while (node && node !== document.body && node !== document.documentElement) {
+      if (kindOf(node)) return widgetName(node);
+      node = node.parentElement;
+    }
     return widgetName(top);
   }
 
@@ -225,10 +261,10 @@ const COLLECT_SRC = `(() => {
   }
 
   function readHit(el) {
-    var r = el.getBoundingClientRect();
-    if (r.width < 2 || r.height < 2) return { covered: false };
-    var x = r.left + r.width / 2;
-    var y = r.top + r.height / 2;
+    var box = visibleRect(el);
+    if (!box) return { covered: false };
+    var x = (box.left + box.right) / 2;
+    var y = (box.top + box.bottom) / 2;
     if (x < 0 || y < 0 || x > vw || y > vh) return { covered: false };
     var top = document.elementFromPoint(x, y);
     if (!top) return { covered: false };
@@ -260,7 +296,7 @@ const COLLECT_SRC = `(() => {
     if (!kind) continue;
     if (!shown(el)) continue;
     var box = visibleRect(el);
-    if (box.right - box.left <= 0 || box.bottom - box.top <= 0) continue;
+    if (!box) continue;
     var info = overlayInfo(el);
     var inOpenMenu = kind === "menuitem" && info.overlay === "menu";
     items.push({
@@ -294,6 +330,7 @@ const COLLECT_SRC = `(() => {
       rect: it.rect,
       parentIds: it.parentIds,
       inOpenMenu: it.inOpenMenu,
+      inChrome: inChrome(it.el),
       hit: it.hit,
     };
     if (it.overlay) {
@@ -324,6 +361,21 @@ export function intersectRects(a: Rect, b: Rect): Rect | undefined {
   const bottom = Math.min(a.bottom, b.bottom);
   if (right <= left || bottom <= top) return undefined;
   return { left, top, right, bottom };
+}
+
+/**
+ * Paint box: overflow:hidden/auto/scroll/clip ancestors (then the viewport).
+ * Scrolled-off tab chips keep a layout rect in the sidebar; they must not.
+ */
+export function clipRectByClips(box: Rect, clips: readonly Rect[], minPx = OVERLAP_MIN_PX): Rect | undefined {
+  let out: Rect = { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
+  for (const c of clips) {
+    const next = intersectRects(out, c);
+    if (!next) return undefined;
+    out = next;
+  }
+  if (rectWidth(out) < minPx || rectHeight(out) < minPx) return undefined;
+  return out;
 }
 
 /** True when `outer` fully covers `inner` and is strictly larger on at least one axis. */
@@ -375,69 +427,147 @@ function isParentChild(a: WidgetSample, b: WidgetSample, i: number, j: number): 
   return false;
 }
 
+function nameContainsOption(a: string, b: string): boolean {
+  const x = a.toLowerCase().replace(/\s+/g, " ").trim();
+  const y = b.toLowerCase().replace(/\s+/g, " ").trim();
+  if (x.length < 4 || y.length < 4) return false;
+  if (x === y) return true;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  return long.includes(short);
+}
+
+/** Visible value vs closed list whose innerText still concatenates the options. */
+function optionListCoversValue(name: string, by: string): boolean {
+  const x = name.toLowerCase().replace(/\s+/g, " ").trim();
+  const y = by.toLowerCase().replace(/\s+/g, " ").trim();
+  if (y.length < 4 || x.length <= y.length) return false;
+  if (!(x.startsWith(`${y} `) || x.endsWith(` ${y}`) || x.includes(` ${y} `))) return false;
+  const extra = ` ${x} `.replace(` ${y} `, " ").trim();
+  return extra.split(" ").filter(Boolean).length >= 2;
+}
+
+function coveringWidget(widgets: WidgetSample[], w: WidgetSample, by: string): WidgetSample | undefined {
+  const want = by.toLowerCase().replace(/\s+/g, " ").trim();
+  for (const other of widgets) {
+    if (other === w || !usable(other)) continue;
+    if (widgetLabel(other).toLowerCase().replace(/\s+/g, " ").trim() === want) return other;
+  }
+  return undefined;
+}
+
+/** Native &lt;select&gt; under a custom trigger, or option text vs concatenated option list. */
+export function isStackedSelectPair(a: WidgetSample, b: WidgetSample): boolean {
+  const inter = intersectRects(a.rect, b.rect);
+  if (!inter) return false;
+  const area = (r: Rect) => rectWidth(r) * rectHeight(r);
+  const smaller = Math.min(area(a.rect), area(b.rect));
+  if (smaller <= 0) return false;
+  if (area(inter) / smaller < 0.6) return false;
+  if (a.kind === "select" || b.kind === "select") return true;
+  return nameContainsOption(widgetLabel(a), widgetLabel(b));
+}
+
+/** Closed filter/select: option-list innerText hit-tested onto the visible value. */
+function isClosedSelectCover(w: WidgetSample, by: string, widgets: WidgetSample[]): boolean {
+  if (optionListCoversValue(widgetLabel(w), by)) return true;
+  const cover = coveringWidget(widgets, w, by);
+  return Boolean(cover && isStackedSelectPair(w, cover));
+}
+
 function widgetLabel(w: WidgetSample): string {
   const name = w.name?.replace(/\s+/g, " ").trim();
   return name || w.kind;
 }
 
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}\0${b}` : `${b}\0${a}`;
+}
+
+function overlapIssue(a: WidgetSample, b: WidgetSample, width: number, height: number): QualityIssue {
+  const nameA = widgetLabel(a);
+  const nameB = widgetLabel(b);
+  const chrome = Boolean(a.inChrome && b.inChrome);
+  return {
+    source: "visual",
+    rule: "overlap",
+    severity: "warning",
+    confidence: overlapConfidence(width, height),
+    count: 1,
+    where: `${nameA}, ${nameB}`,
+    message: chrome ? CHROME_OVERLAP_MESSAGE : `${nameA} and ${nameB} occupy the same pixels`,
+  };
+}
+
+function zIndexIssue(w: WidgetSample, by: string, byNamedControl: boolean | undefined): QualityIssue {
+  const name = widgetLabel(w);
+  return {
+    source: "visual",
+    rule: "zIndex",
+    severity: zIndexSeverity(w.kind),
+    confidence: byNamedControl ? "high" : "medium",
+    count: 1,
+    where: `${name} covered by ${by}`,
+    message: w.inChrome ? CHROME_COVER_MESSAGE : `${name} is covered by ${by}`,
+  };
+}
+
 export function issuesFromWidgets(widgets: WidgetSample[]): QualityIssue[] {
   const hits: QualityIssue[] = [];
+  const overlapPairs = new Set<string>();
   const n = widgets.length;
   let overlapHits = 0;
   let zHits = 0;
-  for (let i = 0; i < n; i++) {
-    const a = widgets[i];
-    if (!a || !usable(a)) continue;
-    for (let j = i + 1; j < n; j++) {
-      const b = widgets[j];
-      if (!b || !usable(b)) continue;
-      if (isParentChild(a, b, i, j)) continue;
-      if (stackId(a.overlayId) !== stackId(b.overlayId)) continue;
-      if (rectContains(a.rect, b.rect) || rectContains(b.rect, a.rect)) continue;
-      const inter = intersectRects(a.rect, b.rect);
-      if (!inter) continue;
-      const width = rectWidth(inter);
-      const height = rectHeight(inter);
-      if (width < OVERLAP_MIN_PX || height < OVERLAP_MIN_PX) continue;
-      const nameA = widgetLabel(a);
-      const nameB = widgetLabel(b);
-      hits.push({
-        source: "visual",
-        rule: "overlap",
-        severity: "warning",
-        confidence: overlapConfidence(width, height),
-        count: 1,
-        where: `${nameA}, ${nameB}`,
-        message: `${nameA} and ${nameB} occupy the same pixels`,
-      });
-      overlapHits += 1;
-      if (overlapHits >= MAX_OVERLAP_HITS) break;
+  const pushOverlap = (chromeFirst: boolean): void => {
+    if (overlapHits >= MAX_OVERLAP_HITS) return;
+    for (let i = 0; i < n; i++) {
+      const a = widgets[i];
+      if (!a || !usable(a)) continue;
+      for (let j = i + 1; j < n; j++) {
+        const b = widgets[j];
+        if (!b || !usable(b)) continue;
+        if (Boolean(a.inChrome && b.inChrome) !== chromeFirst) continue;
+        if (isParentChild(a, b, i, j)) continue;
+        if (isStackedSelectPair(a, b)) continue;
+        if (stackId(a.overlayId) !== stackId(b.overlayId)) continue;
+        if (rectContains(a.rect, b.rect) || rectContains(b.rect, a.rect)) continue;
+        const inter = intersectRects(a.rect, b.rect);
+        if (!inter) continue;
+        const width = rectWidth(inter);
+        const height = rectHeight(inter);
+        if (width < OVERLAP_MIN_PX || height < OVERLAP_MIN_PX) continue;
+        overlapPairs.add(pairKey(widgetLabel(a), widgetLabel(b)));
+        hits.push(overlapIssue(a, b, width, height));
+        overlapHits += 1;
+        if (overlapHits >= MAX_OVERLAP_HITS) return;
+      }
     }
-    if (overlapHits >= MAX_OVERLAP_HITS) break;
-  }
-  for (let i = 0; i < n; i++) {
-    const w = widgets[i];
-    if (!w || !usable(w)) continue;
-    const hit = w.hit;
-    if (!hit?.covered || !hit.by) continue;
-    const by = hit.by.replace(/\s+/g, " ").trim() || "overlay";
-    if (CHROME_COVER.has(by.toLowerCase())) continue;
-    if (expectedOverlay(hit.coverOverlay) && stackId(w.overlayId) !== stackId(hit.coverOverlayId)) {
-      continue;
+  };
+  pushOverlap(true);
+  pushOverlap(false);
+  const chromeOverlap = hits.some((i) => i.rule === "overlap" && i.message === CHROME_OVERLAP_MESSAGE);
+  const pushZ = (chromeFirst: boolean): void => {
+    if (zHits >= MAX_OVERLAP_HITS) return;
+    for (let i = 0; i < n; i++) {
+      const w = widgets[i];
+      if (!w || !usable(w)) continue;
+      if (Boolean(w.inChrome) !== chromeFirst) continue;
+      const hit = w.hit;
+      if (!hit?.covered || !hit.by) continue;
+      const by = hit.by.replace(/\s+/g, " ").trim() || "overlay";
+      if (CHROME_COVER.has(by.toLowerCase())) continue;
+      if (expectedOverlay(hit.coverOverlay) && stackId(w.overlayId) !== stackId(hit.coverOverlayId)) {
+        continue;
+      }
+      if (overlapPairs.has(pairKey(widgetLabel(w), by))) continue;
+      if (w.inChrome && chromeOverlap) continue;
+      if (isClosedSelectCover(w, by, widgets)) continue;
+      hits.push(zIndexIssue(w, by, hit.byNamedControl));
+      zHits += 1;
+      if (zHits >= MAX_OVERLAP_HITS) return;
     }
-    const name = widgetLabel(w);
-    hits.push({
-      source: "visual",
-      rule: "zIndex",
-      severity: zIndexSeverity(w.kind),
-      confidence: hit.byNamedControl ? "high" : "medium",
-      count: 1,
-      where: `${name} covered by ${by}`,
-      message: `${name} is covered by ${by}`,
-    });
-    zHits += 1;
-    if (zHits >= MAX_OVERLAP_HITS) break;
-  }
+  };
+  pushZ(true);
+  pushZ(false);
   return hits;
 }
 

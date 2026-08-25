@@ -207,6 +207,25 @@ const COLLECT_SRC = `(() => {
     return false;
   }
 
+  function overflowPaintedRect(el) {
+    var r = el.getBoundingClientRect();
+    var box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    var node = el.parentElement;
+    while (node && node !== document.documentElement) {
+      var ocs = window.getComputedStyle(node);
+      if (ocs.overflowX !== "visible" || ocs.overflowY !== "visible") {
+        var pr = node.getBoundingClientRect();
+        box.left = Math.max(box.left, pr.left);
+        box.top = Math.max(box.top, pr.top);
+        box.right = Math.min(box.right, pr.right);
+        box.bottom = Math.min(box.bottom, pr.bottom);
+      }
+      node = node.parentElement;
+    }
+    if (box.right - box.left < 2 || box.bottom - box.top < 2) return null;
+    return box;
+  }
+
   function shown(el) {
     if (!el) return false;
     if (typeof el.checkVisibility === "function") {
@@ -215,9 +234,9 @@ const COLLECT_SRC = `(() => {
     var cs = window.getComputedStyle(el);
     if (cs.display === "none" || cs.visibility === "hidden") return false;
     if (parseFloat(cs.opacity) === 0) return false;
-    var r = el.getBoundingClientRect();
-    if (r.width < 1 || r.height < 1) return false;
-    if (r.right <= 0 || r.left >= vw || r.bottom <= 0) return false;
+    var box = overflowPaintedRect(el);
+    if (!box) return false;
+    if (box.right <= 0 || box.left >= vw || box.bottom <= 0) return false;
     return true;
   }
 
@@ -345,8 +364,8 @@ const COLLECT_SRC = `(() => {
   }
 
   function probePoints(r) {
-    var w = r.width;
-    var h = r.height;
+    var w = r.right - r.left;
+    var h = r.bottom - r.top;
     if (!(w > 0 && h > 0)) return [];
     var ix = Math.min(Math.max(w * 0.1, 1), w / 2);
     var iy = Math.min(Math.max(h * 0.1, 1), h / 2);
@@ -364,8 +383,8 @@ const COLLECT_SRC = `(() => {
   }
 
   function readCover(el) {
-    var r = el.getBoundingClientRect();
-    if (r.width < 2 || r.height < 2) return null;
+    var r = overflowPaintedRect(el);
+    if (!r) return null;
     var pts = probePoints(r);
     var landed = 0;
     var selfHits = 0;
