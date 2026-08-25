@@ -302,34 +302,123 @@ describe("finding folder", () => {
     assert.match(readFileSync(join(dir, "report.md"), "utf8"), /High-confidence visual issue/);
   });
 
-  it("dedups a visualIssue on the same templated path and rule", () => {
+  it("dedups the same visualIssue message on a later page (chrome overlap)", () => {
     const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-vlm-dedup-"));
     const issue: QualityIssue = {
       source: "visual",
       rule: "overlap",
-      severity: "error",
-      message: "filter chip on table header",
+      severity: "warning",
+      message: "folder_open Clients & Matters and Your account occupy the same pixels",
       count: 1,
       confidence: "high",
+      where: "folder_open Clients & Matters, Your account",
     };
     const first = persistVisualIssueFindings(outDir, [issue], {
       stepIndex: 2,
-      url: "http://127.0.0.1:3000/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations",
+      url: "https://demo.f2dev.test/home",
+      pageId: "home",
+      tapePath: join(outDir, "replay.log"),
+    });
+    const second = persistVisualIssueFindings(outDir, [issue], {
+      stepIndex: 9,
+      url: "https://demo.f2dev.test/reports/cash-flow",
+      pageId: "reports_cash_flow",
+      tapePath: join(outDir, "replay.log"),
+    });
+    assert.equal(first[0]?.created, true);
+    assert.equal(second[0]?.created, false);
+    assert.equal(second[0]?.finding.id, first[0]?.finding.id);
+    assert.deepEqual(findingFolders(outDir), [findingId(2, "visualIssue")]);
+  });
+
+  it("dedups when only the joined where suffix grew", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-vlm-where-"));
+    const base: QualityIssue = {
+      source: "visual",
+      rule: "overlap",
+      severity: "warning",
+      message: "Header or nav controls occupy the same pixels",
+      count: 1,
+      confidence: "high",
+      where: "folder_open Clients & Matters, Your account",
+    };
+    const first = persistVisualIssueFindings(outDir, [base], {
+      stepIndex: 1,
+      url: "https://demo.f2dev.test/home",
       tapePath: join(outDir, "replay.log"),
     });
     const second = persistVisualIssueFindings(
       outDir,
-      [{ ...issue, message: "chip overlaps the column title" }],
+      [
+        {
+          ...base,
+          where: "folder_open Clients & Matters, Your account · group Employees expand_more, Your account",
+        },
+      ],
       {
-        stepIndex: 9,
-        url: "http://127.0.0.1:3000/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations",
+        stepIndex: 8,
+        url: "https://demo.f2dev.test/reports/cash-flow",
         tapePath: join(outDir, "replay.log"),
       },
     );
     assert.equal(first[0]?.created, true);
     assert.equal(second[0]?.created, false);
-    assert.equal(second[0]?.finding.id, first[0]?.finding.id);
-    assert.deepEqual(findingFolders(outDir), [findingId(2, "visualIssue")]);
+  });
+
+  it("dedups 18×18 close buttons that only differ by tab name", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-target-"));
+    const issue = (where: string): QualityIssue => ({
+      source: "visual",
+      rule: "targetSize",
+      severity: "warning",
+      message: "Button is 18×18px; WCAG 2.5.8 minimum is 24×24",
+      count: 1,
+      confidence: "high",
+      where,
+    });
+    const first = persistVisualIssueFindings(outDir, [issue('button "Close Action Items"')], {
+      stepIndex: 2,
+      url: "https://demo.f2dev.test/action-items",
+      tapePath: join(outDir, "replay.log"),
+    });
+    const second = persistVisualIssueFindings(outDir, [issue('button "Close Trial Balance"')], {
+      stepIndex: 6,
+      url: "https://demo.f2dev.test/reports/trial-balance",
+      tapePath: join(outDir, "replay.log"),
+    });
+    assert.equal(first[0]?.created, true);
+    assert.equal(second[0]?.created, false);
+  });
+
+  it("keeps different overlap messages even on the same page", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-vlm-msgs-"));
+    const url = "https://demo.f2dev.test/home";
+    persistVisualIssueFindings(
+      outDir,
+      [
+        {
+          source: "visual",
+          rule: "overlap",
+          severity: "warning",
+          message: "folder_open Clients & Matters and Your account occupy the same pixels",
+          count: 1,
+          confidence: "high",
+        },
+        {
+          source: "visual",
+          rule: "overlap",
+          severity: "warning",
+          message: "dashboard Dashboard and checklist Action Items close occupy the same pixels",
+          count: 1,
+          confidence: "high",
+        },
+      ],
+      { stepIndex: 4, url, tapePath: join(outDir, "replay.log") },
+    );
+    assert.deepEqual(findingFolders(outDir), [
+      findingId(4, "visualIssue", 0),
+      findingId(4, "visualIssue", 1),
+    ]);
   });
 
   it("keeps separate visualIssue folders for different rules on the same page", () => {

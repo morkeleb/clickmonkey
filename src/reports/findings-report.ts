@@ -2,6 +2,7 @@ import { dirname, relative } from "node:path";
 import { z } from "zod";
 import { chat, type ChatClient } from "../brains/chat.js";
 import { isDismissed, loadDismissed } from "../persist/dismissed.js";
+import { visualFindingKey } from "../persist/finding.js";
 import { collectFindingCases, type FindingCase } from "../persist/runs.js";
 import { loadPresence, presencePath } from "../persist/presence.js";
 import { loadCombinedQuality } from "../persist/quality.js";
@@ -12,20 +13,40 @@ import type { Config } from "../schema/config.js";
 import { formatExplorePlanItemLine, type UiExploreOutline } from "../schema/ui.js";
 import {
   findingReportTitle,
-  pageErrorExplanation,
+  pageErrorDetail,
   severityForKind,
   type FindingSeverity,
 } from "../schema/finding.js";
 import { templatizePath } from "../surveyor/path-template.js";
 import { applyDuplicateTitles } from "../surveyor/seo.js";
 import { parseLog } from "../schema/dsl.js";
-import type { QualityReport, QualityPage, QualityIssue, QualityRuntimeEvent } from "../schema/quality.js";
-import { joinWheres, qualityLedgerItems, qualityPageCounts } from "../schema/quality.js";
-import { sameLedgerPage, type TestabilityReport, type TestabilityPage } from "../schema/testability.js";
+import type { QualityReport } from "../schema/quality.js";
+import { joinWheres, qualityLedgerItems } from "../schema/quality.js";
+import type { TestabilityReport } from "../schema/testability.js";
 import { wrapClickmonkeyFence } from "./fences.js";
-import { whyFindingBlock, whyRule } from "./why.js";
+import { assignClassLabels } from "./labels.js";
+import {
+  chapterOf,
+  compareSc,
+  coverageLines,
+  splitOverflowByViewport,
+  wcagOf,
+  type OverflowViewport,
+  type ReportChapter,
+} from "./wcag.js";
+import { whyFinding, whyRule } from "./why.js";
 
 const SEV_ORDER: FindingSeverity[] = ["critical", "major", "minor", "suggestion"];
+
+/** Unique-to-a-route pages with their own issues shown in default reports. */
+export const LEFTOVER_PAGE_CAP = 8;
+
+const CHAPTER_HEADING: Record<ReportChapter, string> = {
+  testability: "Testability",
+  accessibility: "Accessibility",
+  visual: "Visual",
+  quality: "Quality",
+};
 
 const LlmItems = z.object({
   summary: z.string().min(1),
@@ -51,7 +72,7 @@ export function findingFingerprint(c: FindingCase): string {
   if (kind === "notFound") return `notFound\t${path}`;
   if (kind === "httpError") return `httpError\t${c.finding.httpStatus ?? ""}\t${path}`;
   if (kind === "visualIssue") {
-    return `visualIssue\t${c.finding.widgetRef ?? ""}\t${templatizePath(path).path}`;
+    return visualFindingKey(c.finding);
   }
   const msg = c.finding.message.replace(/\s+/g, " ").trim();
   const harness = /^(locator\.|Timeout \d+ms exceeded)/i.test(msg);
@@ -85,7 +106,7 @@ export interface ReportMeta {
   brain?: string;
   testability?: TestabilityReport;
   quality?: QualityReport;
-  /** Per-page quality dump. Default is a rolled-up digest. */
+  /** Uncap unique-to-a-route pages with their own issues. Same chapters either way. */
   qualityFull?: boolean;
   outlines?: Array<{ runId: string; outline: UiExploreOutline }>;
   extra?: string;
@@ -96,16 +117,6 @@ function resolveApiKey(apiKeyEnv: string | undefined): string | undefined {
   const value = process.env[apiKeyEnv];
   if (!value) throw new Error(`${apiKeyEnv} is not set`);
   return value;
-}
-
-function groupBySeverity(cases: FindingCase[]): Map<FindingSeverity, FindingCase[]> {
-  const map = new Map<FindingSeverity, FindingCase[]>();
-  for (const sev of SEV_ORDER) map.set(sev, []);
-  for (const c of cases) {
-    const sev = c.severity ?? severityForKind(c.finding.kind);
-    map.get(sev)?.push(c);
-  }
-  return map;
 }
 
 function shotMarkdown(abs: string | undefined, reportPath: string): string | undefined {
@@ -124,11 +135,90 @@ function pathOfHref(href: string): string | undefined {
   }
 }
 
+function expectedActual(c: FindingCase): { expected?: string; actual?: string } {
+  const kind = c.finding.kind;
+  const message = c.finding.message.trim();
+  const title = findingReportTitle(kind, c.title || message).trim();
+  switch (kind) {
+    case "pageError": {
+      const junk = /validation is missing|junk value that crashes|was not marked invalid/i.test(message);
+      return {
+        expected: junk
+          ? "The page stays usable, and junk in a field shows as a field error."
+          : "The page stays usable.",
+        actual: `Uncaught JavaScript \`${pageErrorDetail(message)}\`.`,
+      };
+    }
+    case "expectFailed": {
+      if (/was not found|Timeout \d+ms exceeded|locator\./i.test(message)) {
+        return { actual: message };
+      }
+      if (/\bis disabled\b/i.test(message)) {
+        return { expected: "The action is enabled.", actual: message };
+      }
+      return {
+        expected: "The field is marked invalid.",
+        actual: "The form sent or left without rejecting the input.",
+      };
+    }
+    case "httpError":
+    case "notFound":
+      return { expected: "The resource loads.", actual: message };
+    case "visualIssue":
+      return { expected: "The control is readable and clickable.", actual: message };
+    default:
+      return message && message !== title ? { actual: message } : {};
+  }
+}
+
+type ClassCatalog = {
+  rows: Array<{ rule: string; chapter: ReportChapter; label?: string; pages: number }>;
+};
+
+function visualIssueWhere(message: string): { core: string; where?: string } {
+  const idx = message.indexOf(" — ");
+  if (idx < 0) return { core: message };
+  return { core: message.slice(0, idx), where: message.slice(idx + 3) };
+}
+
+function seeClassLabel(c: FindingCase, catalog?: ClassCatalog): string | undefined {
+  if (!catalog || c.finding.kind !== "visualIssue") return undefined;
+  const rule = c.finding.widgetRef || c.finding.message.split(":")[0]?.trim();
+  if (!rule) return undefined;
+  const { core, where } = visualIssueWhere(c.finding.message);
+  const viewports: OverflowViewport[] | undefined =
+    rule === "overflow"
+      ? [
+          ...new Set(
+            splitOverflowByViewport(where, core).map((s) => s.viewport),
+          ),
+        ].sort((a, b) => Number(b === "320") - Number(a === "320"))
+      : undefined;
+  const chapters = viewports
+    ? viewports.map((viewport) =>
+        chapterOf(rule, { source: "visual", message: core, where, viewport }),
+      )
+    : [chapterOf(rule, { source: "visual", message: core, where })];
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const chapter of chapters) {
+    const hit = catalog.rows
+      .filter((r) => r.rule === rule && r.chapter === chapter && r.label)
+      .sort((a, b) => b.pages - a.pages)[0];
+    if (hit?.label && !seen.has(hit.label)) {
+      seen.add(hit.label);
+      labels.push(`see ${hit.label}`);
+    }
+  }
+  return labels.length > 0 ? labels.join(" · ") : undefined;
+}
+
 function renderCase(
   c: FindingCase,
   reportPath: string,
   extra?: { title?: string; expected?: string; actual?: string; why?: string },
   copies: FindingCase[] = [],
+  catalog?: ClassCatalog,
 ): string {
   const title = extra?.title || findingReportTitle(c.finding.kind, c.title || c.finding.message);
   const url = c.finding.url ?? c.url;
@@ -137,33 +227,25 @@ function renderCase(
   const runIds = [...new Set(all.map((x) => x.runId))];
   const pages = [...new Set(all.map((x) => x.pageId).filter(Boolean))];
   const seen =
-    all.length > 1 ? ` · ${all.length}× in ${runIds.length} run${runIds.length === 1 ? "" : "s"}` : "";
+    all.length > 1 ? `${all.length}× in ${runIds.length} run${runIds.length === 1 ? "" : "s"}` : "";
+  const pathBit = path && url ? `[${path}](${url})` : url ? url : undefined;
+  const head = [pathBit, c.severity, seen || undefined].filter(Boolean).join(" · ");
+  const canned = expectedActual(c);
+  const expected = extra?.expected?.trim() || canned.expected;
+  const actual = extra?.actual?.trim() || canned.actual;
+  const why = (extra?.why?.trim() || whyFinding(c.finding.kind, c.finding.message)).trim();
   const loc: string[] = [
-    `\`${c.finding.kind}\` · ${c.severity}${seen} · \`${c.id}\``,
-    runIds.length === 1 ? `\`${runIds[0]}\`` : runIds.map((id) => `\`${id}\``).join(" "),
+    `\`${c.finding.kind}\` · ${c.severity}${seen ? ` · ${seen}` : ""} · \`${c.id}\``,
   ];
+  if (runIds.length === 1) loc.push(`\`${runIds[0]}\``);
+  else loc.push(runIds.map((id) => `\`${id}\``).join(" "));
   if (pages.length === 1) loc.push(`\`${pages[0]}\``);
   else if (pages.length > 1) loc.push(pages.map((id) => `\`${id}\``).join(" "));
-  if (path && url) loc.push(`[${path}](${url})`);
-  else if (url) loc.push(url);
-  const lines = [
-    `### ${title}`,
-    "",
-    loc.join(" · "),
-    "",
-    whyFindingBlock(c.finding.kind, c.finding.message, extra?.why),
-    "",
-  ];
-  if (extra?.expected) {
-    lines.push(`**Expected:** ${extra.expected}`, "");
-  }
-  if (extra?.actual) {
-    lines.push(`**Actual:** ${extra.actual}`, "");
-  } else if (c.finding.kind === "pageError") {
-    lines.push(pageErrorExplanation(c.finding.message), "");
-  } else if (c.finding.message.trim() && c.finding.message.trim() !== title.trim()) {
-    lines.push(c.finding.message, "");
-  }
+  const lines = [`### ${title}`, ""];
+  if (head) lines.push(head, "");
+  if (expected) lines.push(`**Expected:** ${expected}`, "");
+  if (actual) lines.push(`**Actual:** ${actual}`, "");
+  if (why) lines.push(`**Why it matters:** ${why}`, "");
   const shot = shotMarkdown(c.screenshotPath, reportPath);
   if (shot) lines.push(shot, "");
   if (c.tape.trim()) {
@@ -182,19 +264,15 @@ function renderCase(
     }
     lines.push("");
   }
+  const see = seeClassLabel(c, catalog);
+  if (see) lines.push(see, "");
+  lines.push(loc.join(" · "), "");
   return lines.join("\n");
 }
 
 /** Wrap HTML tags in backticks so markdown/HTML viewers do not treat them as markup. */
 export function markdownSafeQualityMessage(message: string): string {
   return message.replace(/<\/?[A-Za-z][A-Za-z0-9:-]*(?:\s[^<>]*)?>/g, (tag) => `\`${tag}\``);
-}
-
-function formatIssueLine(i: QualityIssue | QualityRuntimeEvent): string {
-  const times = i.count > 1 ? ` ×${i.count}` : "";
-  const conf = "confidence" in i && i.confidence ? ` ${i.confidence}` : "";
-  const where = "where" in i && i.where ? ` · ${i.where}` : "";
-  return `- \`${i.rule}\` · ${i.severity}${conf}${times}${where} — ${markdownSafeQualityMessage(i.message)}`;
 }
 
 export function isNoisyQualityMessage(message: string): boolean {
@@ -205,98 +283,9 @@ export function isNoisyQualityMessage(message: string): boolean {
   return false;
 }
 
-function pageHasQuality(testability?: TestabilityPage, quality?: QualityPage): boolean {
-  if (testability && testability.issues.length > 0) return true;
-  if (!quality) return false;
-  return qualityLedgerItems(quality).length > 0;
-}
-
 function qualityHeading(page: { path: string; origin?: string }): string {
   const path = templatizePath(page.path).path;
   return page.origin ? `${path} @ ${page.origin}` : path;
-}
-
-export function renderQualitySection(
-  testability?: TestabilityReport,
-  quality?: QualityReport,
-): string[] {
-  quality = quality ? applyDuplicateTitles(quality) : quality;
-  const keys: Array<{ path: string; origin?: string }> = [];
-  const add = (page: { path: string; origin?: string }) => {
-    if (!keys.some((k) => sameLedgerPage(k, page))) keys.push({ path: page.path, origin: page.origin });
-  };
-  for (const p of testability?.pages ?? []) {
-    if (p.issues.length > 0) add(p);
-  }
-  for (const p of quality?.pages ?? []) {
-    if (qualityLedgerItems(p).length > 0) add(p);
-  }
-  if (keys.length === 0) return [];
-
-  const lines = [
-    "## Quality",
-    "",
-    "Recorded while walking — HTML (html-validate), accessibility (axe-core), testability, JavaScript, and DOM layout (overflow including 375/320, clip, overlap, focus, text spacing, dead hashes, and related extras) always; SEO (title/description/OG) on public paths; extra pixel notes if a vision model ran.",
-    "",
-  ];
-  keys.sort((a, b) => {
-    const o = (a.origin ?? "").localeCompare(b.origin ?? "");
-    return o !== 0 ? o : a.path.localeCompare(b.path);
-  });
-  for (const key of keys) {
-    const t = testability?.pages.find((p) => sameLedgerPage(p, key));
-    const q = quality?.pages.find((p) => sameLedgerPage(p, key));
-    if (!pageHasQuality(t, q)) continue;
-    const counts = q ? qualityPageCounts(q) : { errors: 0, warnings: 0 };
-    const tBlocks = t?.issues.filter((i) => i.severity === "block").length ?? 0;
-    const tWarns = (t?.issues.length ?? 0) - tBlocks;
-    const errors = counts.errors + tBlocks;
-    const warnings = counts.warnings + tWarns;
-    const flag = t?.insufficient ? ", insufficient" : "";
-    lines.push(
-      `### \`${qualityHeading(key)}\` — ${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}${flag}`,
-      "",
-    );
-    if (t && t.issues.length > 0) {
-      lines.push("**Testability**", "");
-      for (const i of t.issues) {
-        const extra = [i.role, i.inputType].filter(Boolean).join(" ");
-        const loc = i.where ? ` · ${i.where}` : "";
-        const head = extra
-          ? `- \`${i.code}\` ${i.severity} · ${i.tag} ${extra}${loc}`
-          : `- \`${i.code}\` ${i.severity} · ${i.tag}${loc}`;
-        const why = whyRule(i.code);
-        lines.push(why ? `${head}\n\n  > ${why}` : head);
-      }
-      lines.push("");
-    }
-    if (q && q.html.length > 0) {
-      lines.push("**HTML**", "");
-      for (const i of q.html) lines.push(formatIssueLine(i));
-      lines.push("");
-    }
-    if (q && q.a11y.length > 0) {
-      lines.push("**Accessibility**", "");
-      for (const i of q.a11y) lines.push(formatIssueLine(i));
-      lines.push("");
-    }
-    if (q && (q.seo ?? []).length > 0) {
-      lines.push("**SEO**", "");
-      for (const i of q.seo) lines.push(formatIssueLine(i));
-      lines.push("");
-    }
-    if (q && q.visual.length > 0) {
-      lines.push("**Visual**", "");
-      for (const i of q.visual) lines.push(formatIssueLine(i));
-      lines.push("");
-    }
-    if (q && q.runtime.length > 0) {
-      lines.push("**JavaScript**", "");
-      for (const i of q.runtime) lines.push(formatIssueLine(i));
-      lines.push("");
-    }
-  }
-  return lines;
 }
 
 type DigestRow = {
@@ -308,10 +297,18 @@ type DigestRow = {
   count: number;
   pageSet: Set<string>;
   where?: string;
+  chapter: ReportChapter;
+  label?: string;
+  viewport?: OverflowViewport;
 };
 
-function digestKey(row: Pick<DigestRow, "source" | "rule" | "severity" | "message">): string {
-  return `${row.source}\0${row.rule}\0${row.severity}\0${row.message}`;
+function digestKey(row: Pick<DigestRow, "source" | "rule" | "severity" | "message" | "viewport">): string {
+  const vp = row.rule === "overflow" ? (row.viewport ?? "") : "";
+  return `${row.source}\0${row.rule}\0${row.severity}\0${row.message}\0${vp}`;
+}
+
+function rowExtras(row: Pick<DigestRow, "message" | "where" | "source" | "viewport">) {
+  return { message: row.message, where: row.where, source: row.source, viewport: row.viewport };
 }
 
 function shortQualityMessage(message: string): string {
@@ -337,17 +334,26 @@ function shortWhere(where: string | undefined): string | undefined {
   return markdownSafeQualityMessage(parts.join(" · "));
 }
 
-/** Header is rule + severity + pages. Message and where sit on the next line. */
-function formatDigestIssue(row: DigestRow, underPage = false, trail?: string): string {
-  const times = !underPage && row.count > 1 ? ` ×${row.count}` : "";
-  const bits = [`\`${row.rule}\``, `${row.severity}${times}`];
-  if (trail) bits.push(trail);
-  const head = bits.join(" · ");
+function pageCountTrail(row: Pick<DigestRow, "pages">): string {
+  return `${row.pages} page${row.pages === 1 ? "" : "s"}`;
+}
+
+function formatLedgerRow(row: DigestRow, scope: StartScope, page?: string): string {
+  const wcag = wcagOf(row.rule, rowExtras(row));
+  const bits = [row.label ? `**${row.label}**` : undefined];
+  if (wcag.level) bits.push(wcag.level);
+  if (wcag.sc) bits.push(wcag.sc);
+  bits.push(`\`${row.rule}\``);
+  bits.push(row.severity);
+  if (scope === "chrome") bits.push("chrome", pageCountTrail(row));
+  else if (scope === "cluster") bits.push("cluster", pageCountTrail(row));
+  else bits.push("page", page ? `\`${page}\`` : pageCountTrail(row));
+  const head = `- ${bits.filter(Boolean).join(" · ")}`;
   const detail = [shortQualityMessage(row.message), shortWhere(row.where)].filter(Boolean).join(" · ");
   const why = whyRule(row.rule);
   const lines = [head];
-  if (detail) lines.push("", `  ${detail}`);
-  if (why) lines.push("", `  > ${why}`);
+  if (detail) lines.push(`  ${detail}`);
+  if (why) lines.push(`  Why it matters: ${why}`);
   return lines.join("\n");
 }
 
@@ -470,15 +476,52 @@ function sortDigestRows<T extends { severity: string; rule: string; message: str
   });
 }
 
-export function renderQualityDigest(
+function sortA11yRows(rows: DigestRow[]): DigestRow[] {
+  return [...rows].sort((a, b) => {
+    const wa = wcagOf(a.rule, rowExtras(a));
+    const wb = wcagOf(b.rule, rowExtras(b));
+    const sc = compareSc(wa.sc, wb.sc);
+    if (sc !== 0) return sc;
+    const sev = Number(b.severity === "error") - Number(a.severity === "error");
+    if (sev !== 0) return sev;
+    if (b.pages !== a.pages) return b.pages - a.pages;
+    return a.rule.localeCompare(b.rule) || a.message.localeCompare(b.message);
+  });
+}
+
+function scGroupLabel(row: DigestRow): string {
+  const wcag = wcagOf(row.rule, rowExtras(row));
+  if (wcag.sc) {
+    const title = wcag.title && wcag.title !== "Best practice" ? ` ${wcag.title}` : "";
+    const level = wcag.level ? ` (${wcag.level})` : "";
+    return `${wcag.sc}${title}${level}`;
+  }
+  return wcag.title || "Best practice";
+}
+
+type Catalog = {
+  rows: DigestRow[];
+  pageCount: number;
+  chrome: DigestRow[];
+  clusters: DigestRow[];
+  uniqueRows: DigestRow[];
+  leftoverPages: string[];
+  leftoverTotal: number;
+  start: Array<{ row: DigestRow; scope: StartScope }>;
+};
+
+function collectDigestRows(
   testability?: TestabilityReport,
   quality?: QualityReport,
-): string[] {
+): { rows: DigestRow[]; pageCount: number } {
   quality = quality ? applyDuplicateTitles(quality) : quality;
   const byKey = new Map<string, DigestRow>();
-  const add = (pageKey: string, row: Omit<DigestRow, "pages" | "pageSet">) => {
+  const add = (pageKey: string, row: Omit<DigestRow, "pages" | "pageSet" | "chapter" | "label">) => {
     if (row.severity === "warning" && isNoisyQualityMessage(row.message)) return;
-    const key = digestKey(row);
+    const extras = { message: row.message, where: row.where, source: row.source, viewport: row.viewport };
+    const chapter = chapterOf(row.rule, extras);
+    const keyed = { ...row, chapter };
+    const key = digestKey(keyed);
     const prev = byKey.get(key);
     if (prev) {
       prev.count += row.count;
@@ -486,10 +529,11 @@ export function renderQualityDigest(
       prev.pages = prev.pageSet.size;
       const where = joinWheres(prev.where, row.where);
       if (where) prev.where = where;
+      prev.chapter = chapterOf(prev.rule, rowExtras(prev));
       return;
     }
     const pageSet = new Set([pageKey]);
-    byKey.set(key, { ...row, pages: 1, pageSet });
+    byKey.set(key, { ...keyed, pages: 1, pageSet });
   };
 
   for (const p of testability?.pages ?? []) {
@@ -508,26 +552,50 @@ export function renderQualityDigest(
   for (const p of quality?.pages ?? []) {
     const pageKey = qualityHeading(p);
     for (const i of qualityLedgerItems(p)) {
-      add(pageKey, {
+      const base = {
         source: i.source,
         rule: i.rule,
         severity: i.severity,
         message: i.message,
         count: i.count,
+      };
+      if (i.rule === "overflow") {
+        const where = "where" in i ? i.where : undefined;
+        for (const seg of splitOverflowByViewport(where, i.message)) {
+          add(pageKey, {
+            ...base,
+            viewport: seg.viewport,
+            ...(seg.where ? { where: seg.where } : {}),
+          });
+        }
+        continue;
+      }
+      add(pageKey, {
+        ...base,
         ...("where" in i && i.where ? { where: i.where } : {}),
       });
     }
   }
 
   const rows = [...byKey.values()];
-  if (rows.length === 0) return [];
-
+  const labels = assignClassLabels(
+    rows.map((r) => ({
+      chapter: r.chapter,
+      severity: r.severity,
+      pages: r.pages,
+      rule: r.rule,
+      message: r.message,
+      key: digestKey(r),
+    })),
+  );
+  for (const row of rows) row.label = labels.get(digestKey(row));
   const pageCount = new Set(
     [...(testability?.pages ?? []), ...(quality?.pages ?? [])].map((p) => qualityHeading(p)),
   ).size;
-  const chrome = sortDigestRows(rows.filter((r) => isChromeRow(r, pageCount)));
-  const clusters = sortDigestRows(rows.filter((r) => isClusterRow(r, pageCount)));
-  const uniqueRows = rows.filter((r) => !isChromeRow(r, pageCount) && !isClusterRow(r, pageCount));
+  return { rows, pageCount };
+}
+
+function leftoverPageOrder(uniqueRows: DigestRow[]): string[] {
   const pageScores = new Map<string, { errors: number; warnings: number }>();
   const bump = (page: string, severity: string) => {
     const cur = pageScores.get(page) ?? { errors: 0, warnings: 0 };
@@ -538,57 +606,186 @@ export function renderQualityDigest(
   for (const row of uniqueRows) {
     for (const page of row.pageSet) bump(page, row.severity);
   }
-  const topPages = [...pageScores.entries()]
+  return [...pageScores.entries()]
     .filter(([, score]) => score.errors + score.warnings > 0)
-    .sort((a, b) => b[1].errors - a[1].errors || b[1].warnings - a[1].warnings || a[0].localeCompare(b[0]));
+    .sort((a, b) => b[1].errors - a[1].errors || b[1].warnings - a[1].warnings || a[0].localeCompare(b[0]))
+    .map(([page]) => page);
+}
 
-  const start = pickStartHere(chrome, clusters, uniqueRows);
+function buildCatalog(
+  testability?: TestabilityReport,
+  quality?: QualityReport,
+  leftoverCap = LEFTOVER_PAGE_CAP,
+): Catalog {
+  const { rows, pageCount } = collectDigestRows(testability, quality);
+  const chrome = sortDigestRows(rows.filter((r) => isChromeRow(r, pageCount)));
+  const clusters = sortDigestRows(rows.filter((r) => isClusterRow(r, pageCount)));
+  const uniqueRows = rows.filter((r) => !isChromeRow(r, pageCount) && !isClusterRow(r, pageCount));
+  const leftoverAll = leftoverPageOrder(uniqueRows);
+  const leftoverPages = leftoverAll.slice(0, leftoverCap);
+  return {
+    rows,
+    pageCount,
+    chrome,
+    clusters,
+    uniqueRows,
+    leftoverPages,
+    leftoverTotal: leftoverAll.length,
+    start: pickStartHere(chrome, clusters, uniqueRows),
+  };
+}
 
-  const lines = [
-    "## Quality",
-    "",
-    `Workspace ledger across ${pageCount} page${pageCount === 1 ? "" : "s"}. **Start here** is what to fix first. Chrome is the shared shell — one change drops those counts everywhere. Issues on several pages are one component. **Pages** lists every route that still has its own issues. Console preload/keyframe warnings omitted.`,
-    "",
-  ];
-  if (start.length > 0) {
-    lines.push("### Start here", "");
-    start.forEach((item, i) => {
-      lines.push(`${i + 1}. ${formatStartItem(item.row, item.scope)}`);
-    });
+function emitLedgerRows(rows: DigestRow[], chapter: ReportChapter, scope: StartScope, page?: string): string[] {
+  const sorted = chapter === "accessibility" ? sortA11yRows(rows) : sortDigestRows(rows);
+  const lines: string[] = [];
+  let lastGroup: string | undefined;
+  for (const row of sorted) {
+    if (chapter === "accessibility") {
+      const group = scGroupLabel(row);
+      if (group !== lastGroup) {
+        if (lastGroup !== undefined) lines.push("");
+        lines.push(`**${group}**`, "");
+        lastGroup = group;
+      }
+    }
+    lines.push(formatLedgerRow(row, scope, page));
+  }
+  return lines;
+}
+
+function renderChapter(
+  chapter: ReportChapter,
+  catalog: Catalog,
+  opts?: { coverage?: boolean },
+): string[] {
+  const chrome = catalog.chrome.filter((r) => r.chapter === chapter);
+  const clusters = catalog.clusters.filter((r) => r.chapter === chapter);
+  const leftoverSet = new Set(catalog.leftoverPages);
+  const leftoverPages = catalog.leftoverPages.filter((page) =>
+    catalog.uniqueRows.some((r) => r.chapter === chapter && r.pageSet.has(page) && leftoverSet.has(page)),
+  );
+  if (chrome.length === 0 && clusters.length === 0 && leftoverPages.length === 0) return [];
+
+  const lines = [`## ${CHAPTER_HEADING[chapter]}`, ""];
+  if (opts?.coverage) {
+    const a11yRows = catalog.rows.filter((r) => r.chapter === "accessibility");
+    for (const line of coverageLines(a11yRows.map((r) => ({ rule: r.rule, extras: rowExtras(r) })))) {
+      lines.push(line);
+    }
     lines.push("");
   }
   if (chrome.length > 0) {
     lines.push("### Chrome", "");
-    for (const row of chrome) {
-      lines.push(`- ${formatDigestIssue(row, false, wherePages(row))}`);
-    }
-    lines.push("");
+    lines.push(...emitLedgerRows(chrome, chapter, "chrome"), "");
   }
   if (clusters.length > 0) {
     lines.push("### On several pages", "");
-    for (const row of clusters) {
-      lines.push(`- ${formatDigestIssue(row, false, wherePages(row))}`);
-    }
-    lines.push("");
+    lines.push(...emitLedgerRows(clusters, chapter, "cluster"), "");
   }
-  if (topPages.length > 0) {
+  if (leftoverPages.length > 0) {
     lines.push("### Pages", "");
-    for (const [page, score] of topPages) {
-      lines.push(
-        `#### \`${page}\``,
-        "",
-        `${score.errors} error${score.errors === 1 ? "" : "s"}, ${score.warnings} warning${score.warnings === 1 ? "" : "s"}`,
-        "",
-      );
-      const issues = sortDigestRows(uniqueRows.filter((r) => r.pageSet.has(page)));
-      for (const row of issues) {
-        lines.push(`- ${formatDigestIssue(row, true)}`);
-      }
-      lines.push("");
+    for (const page of leftoverPages) {
+      lines.push(`#### \`${page}\``, "");
+      const issues = catalog.uniqueRows.filter((r) => r.chapter === chapter && r.pageSet.has(page));
+      lines.push(...emitLedgerRows(issues, chapter, "page", page), "");
     }
-    lines.push("");
   }
   return lines;
+}
+
+function renderByPage(catalog: Catalog, qualityFull?: boolean): string[] {
+  const pages = qualityFull
+    ? [...new Set(catalog.rows.flatMap((r) => [...r.pageSet]))].sort()
+    : catalog.leftoverPages;
+  if (pages.length === 0) return [];
+  const lines = ["## By page", ""];
+  for (const page of pages) {
+    const labels = catalog.rows
+      .filter((r) => r.pageSet.has(page) && r.label)
+      .map((r) => r.label!)
+      .filter((v, i, all) => all.indexOf(v) === i)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    if (labels.length === 0) continue;
+    lines.push(`- \`${page}\` — ${labels.join(", ")}`);
+  }
+  if (lines.length === 2) return [];
+  lines.push("");
+  return lines;
+}
+
+function coverageForSummary(catalog: Catalog): string[] {
+  const a11y = catalog.rows.filter((r) => r.chapter === "accessibility");
+  if (a11y.length === 0) return [];
+  return coverageLines(a11y.map((r) => ({ rule: r.rule, extras: rowExtras(r) })));
+}
+
+function countLine(
+  clusters: FindingCluster[],
+  runCount: number,
+  catalog: Catalog,
+  qualityFull?: boolean,
+): string {
+  const counts = SEV_ORDER.map((s) => {
+    const n = clusters.filter((g) => (g.primary.severity ?? severityForKind(g.primary.finding.kind)) === s).length;
+    return n > 0 ? `${n} ${s}` : undefined;
+  }).filter(Boolean);
+  const n = clusters.length;
+  const findings = `${n} finding${n === 1 ? "" : "s"} from ${runCount} run${runCount === 1 ? "" : "s"} (${counts.join(", ") || "none"}).`;
+  if (qualityFull || catalog.leftoverTotal <= LEFTOVER_PAGE_CAP) return findings;
+  return `${findings} Showing the top ${LEFTOVER_PAGE_CAP} of ${catalog.leftoverTotal} pages with issues.`;
+}
+
+function fallbackSummary(
+  clusters: FindingCluster[],
+  catalog: Catalog,
+  meta: ReportMeta,
+): string[] {
+  const lines = [countLine(clusters, meta.runIds.length, catalog, meta.qualityFull)];
+  if (catalog.pageCount > 0) {
+    lines[0] = `${lines[0]} Workspace ledger across ${catalog.pageCount} page${catalog.pageCount === 1 ? "" : "s"}.`;
+  }
+  const start = catalog.start;
+  if (start.length > 0) {
+    lines.push("", "### Start here", "");
+    start.forEach((item, i) => {
+      lines.push(`${i + 1}. ${formatStartItem(item.row, item.scope)}`);
+    });
+  } else if (clusters.length > 0) {
+    lines.push("", "### Start here", "");
+    clusters.slice(0, 3).forEach((g, i) => {
+      const title = findingReportTitle(g.primary.finding.kind, g.primary.title || g.primary.finding.message);
+      lines.push(`${i + 1}. ${title} (${g.primary.severity})`);
+    });
+  }
+  const coverage = coverageForSummary(catalog);
+  if (coverage.length > 0) {
+    lines.push("", ...coverage);
+  }
+  return lines;
+}
+
+function renderCatalogChapters(catalog: Catalog, includeStartHere: boolean): string[] {
+  if (catalog.rows.length === 0) return [];
+  const lines: string[] = [];
+  if (includeStartHere && catalog.start.length > 0) {
+    lines.push("### Start here", "");
+    catalog.start.forEach((item, i) => {
+      lines.push(`${i + 1}. ${formatStartItem(item.row, item.scope)}`);
+    });
+    lines.push("");
+  }
+  for (const chapter of ["testability", "accessibility", "visual", "quality"] as const) {
+    lines.push(...renderChapter(chapter, catalog, { coverage: chapter === "accessibility" }));
+  }
+  return lines;
+}
+
+export function renderQualityDigest(
+  testability?: TestabilityReport,
+  quality?: QualityReport,
+): string[] {
+  const catalog = buildCatalog(testability, quality, LEFTOVER_PAGE_CAP);
+  return renderCatalogChapters(catalog, true);
 }
 
 export function outlinesFromRunDirs(runDirs: readonly string[]): Array<{ runId: string; outline: UiExploreOutline }> {
@@ -603,7 +800,7 @@ export function outlinesFromRunDirs(runDirs: readonly string[]): Array<{ runId: 
 
 function renderExploreOutlines(outlines: ReportMeta["outlines"]): string[] {
   if (!outlines || outlines.length === 0) return [];
-  const lines = ["## Explore", ""];
+  const lines = ["### Explore", ""];
   for (const { runId, outline } of outlines) {
     lines.push(`### ${runId}`, "", `**Charter:** ${outline.charter}`, "");
     if (outline.now) lines.push(`**Now:** ${outline.now}`, "");
@@ -635,27 +832,23 @@ export function renderFindingsReport(
   summary?: string,
 ): string {
   const clusters = collapseFindingCases(cases);
-  const counts = SEV_ORDER.map((s) => {
-    const n = clusters.filter((g) => (g.primary.severity ?? severityForKind(g.primary.finding.kind)) === s).length;
-    return n > 0 ? `${n} ${s}` : undefined;
-  }).filter(Boolean);
-  const qualityLines = meta.qualityFull
-    ? renderQualitySection(meta.testability, meta.quality)
-    : renderQualityDigest(meta.testability, meta.quality);
+  const leftoverCap = meta.qualityFull ? Number.POSITIVE_INFINITY : LEFTOVER_PAGE_CAP;
+  const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap);
+  const summaryLines = summary?.trim()
+    ? [summary.trim()]
+    : fallbackSummary(clusters, catalog, meta);
   const lines = [
     "# Findings report",
     "",
     "## Summary",
     "",
-    summary?.trim() ||
-      `${clusters.length} finding${clusters.length === 1 ? "" : "s"} from ${meta.runIds.length} run${meta.runIds.length === 1 ? "" : "s"} (${counts.join(", ") || "none"}).`,
+    ...summaryLines,
     "",
     `- **url:** ${meta.url}`,
     `- **generated:** ${meta.generatedAt}`,
     `- **runs:** ${meta.runIds.join(", ") || "(none)"}`,
     ...(meta.brain ? [`- **brain:** ${meta.brain}`] : []),
     "",
-    ...renderExploreOutlines(meta.outlines),
     "## Findings",
     "",
   ];
@@ -670,20 +863,22 @@ export function renderFindingsReport(
     if (items.length === 0) continue;
     lines.push(`## ${sev[0]!.toUpperCase()}${sev.slice(1)}`, "");
     for (const g of items) {
-      lines.push(renderCase(g.primary, reportPath, llm?.get(caseKey(g.primary)), g.copies), "");
+      lines.push(renderCase(g.primary, reportPath, llm?.get(caseKey(g.primary)), g.copies, catalog), "");
     }
   }
   if (clusters.length === 0) {
     lines.push("_No findings in the selected runs._", "");
   }
-  if (qualityLines.length > 0) {
-    lines.push(...qualityLines);
+  for (const chapter of ["testability", "accessibility", "visual", "quality"] as const) {
+    lines.push(...renderChapter(chapter, catalog, { coverage: chapter === "accessibility" }));
   }
+  lines.push(...renderByPage(catalog, meta.qualityFull));
   const extra = meta.extra?.trim();
   if (extra) {
     lines.push("## Extra", "", extra, "");
   }
   lines.push("## Appendix", "", "Source finding folders live under each run's `findings/` directory.", "");
+  lines.push(...renderExploreOutlines(meta.outlines));
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
 }
 
@@ -732,15 +927,6 @@ export async function writeRunsReport(opts: {
   const extra = clipHostText(opts.extra);
   let summary: string | undefined = hostSummary;
   let extras: Map<string, { title?: string; expected?: string; actual?: string; why?: string }> | undefined;
-  if (opts.config.brain) {
-    try {
-      const enriched = await enrichWithBrain(cases, opts.config);
-      if (!summary) summary = enriched.summary || undefined;
-      extras = enriched.extras;
-    } catch (err) {
-      opts.onBrainError?.(err instanceof Error ? err.message : String(err));
-    }
-  }
   const outlines = opts.outlines?.length ? opts.outlines : outlinesFromRunDirs(opts.runDirs);
   const meta: ReportMeta = {
     url: opts.config.url,
@@ -753,6 +939,18 @@ export async function writeRunsReport(opts: {
     ...(outlines.length > 0 ? { outlines } : {}),
     ...(extra ? { extra } : {}),
   };
+  if (opts.config.brain) {
+    try {
+      const leftoverCap = opts.qualityFull ? Number.POSITIVE_INFINITY : LEFTOVER_PAGE_CAP;
+      const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap);
+      const digest = fallbackSummary(collapseFindingCases(cases), catalog, meta).join("\n");
+      const enriched = await enrichWithBrain(cases, opts.config, chat, digest);
+      if (!summary) summary = enriched.summary || undefined;
+      extras = enriched.extras;
+    } catch (err) {
+      opts.onBrainError?.(err instanceof Error ? err.message : String(err));
+    }
+  }
   const markdown = renderFindingsReport(cases, meta, mdPath, extras, summary);
   const findingCount = collapseFindingCases(cases).length;
   const written = writeReportFolder(opts.configPath, {
@@ -780,6 +978,7 @@ export async function enrichWithBrain(
   cases: FindingCase[],
   config: Config,
   invoke: ChatClient = chat,
+  fallbackDigest?: string,
 ): Promise<{ summary: string; extras: Map<string, { title?: string; expected?: string; actual?: string; why?: string }> }> {
   const extras = new Map<string, { title?: string; expected?: string; actual?: string; why?: string }>();
   const brain = config.brain;
@@ -802,13 +1001,18 @@ export async function enrichWithBrain(
         role: "system",
         content: [
           "You write a short exploratory / usability findings digest.",
-          "Reply with JSON only: { \"summary\": \"...\", \"items\": [{ \"id\", \"title\", \"expected\", \"actual\", \"why\" }] }.",
+          'Reply with JSON only: { "summary": "...", "items": [{ "id", "title", "expected", "actual", "why" }] }.',
           "Use only the provided ids (runId/findingId). Do not invent reproduction steps.",
-          "Titles: area – action – unexpected result.",
-          "summary: 2–4 sentences, highest-severity first.",
+          "Title is one sentence stating the unexpected result, not \"area – action – unexpected result\".",
+          "expected and actual are the contract versus what happened.",
+          "why is this user or flow, not the class name.",
+          "summary: 2–4 sentences from the supplied digest, start-here and highest severity first.",
         ].join("\n"),
       },
-      { role: "user", content: JSON.stringify(digest) },
+      {
+        role: "user",
+        content: JSON.stringify({ digest: fallbackDigest ?? "", findings: digest }),
+      },
     ],
   });
   const start = raw.indexOf("{");

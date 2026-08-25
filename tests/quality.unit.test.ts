@@ -818,20 +818,20 @@ describe("quality ledger", () => {
       },
       "/tmp/findings.md",
     );
+    assert.match(md, /^## Testability/m);
+    assert.match(md, /^## Accessibility/m);
+    assert.match(md, /^## Visual/m);
     assert.match(md, /^## Quality/m);
-    assert.match(md, /html-validate/);
-    assert.match(md, /axe-core/);
-    assert.match(md, /SEO \(title\/description\/OG\) on public paths/);
-    assert.match(md, /DOM layout/);
+    assert.doesNotMatch(md, /html-validate/);
     assert.doesNotMatch(md, /No LLM/);
-    assert.match(md, /`opaqueControl` block/);
+    assert.match(md, /`opaqueControl`/);
     assert.match(md, /`no-dup-id` · error/);
-    assert.match(md, /`image-alt` · error ×2/);
-    assert.match(md, /\*\*Visual\*\*/);
+    assert.match(md, /`image-alt` · error/);
     assert.match(md, /`overlap` · warning/);
     assert.match(md, /cards overlap the footer/);
     assert.match(md, /`console.error` · error/);
     assert.match(md, /cm-quality-error/);
+    assert.doesNotMatch(md, /\*\*SEO\*\*/);
     const seoOnly = renderFindingsReport(
       [],
       {
@@ -865,8 +865,9 @@ describe("quality ledger", () => {
       "/tmp/findings.md",
     );
     assert.match(seoOnly, /`\/about`/);
-    assert.match(seoOnly, /\*\*SEO\*\*/);
+    assert.match(seoOnly, /^## Quality/m);
     assert.match(seoOnly, /`meta-description` · warning/);
+    assert.doesNotMatch(seoOnly, /\*\*SEO\*\*/);
     const digest = renderFindingsReport(
       [],
       {
@@ -897,7 +898,8 @@ describe("quality ledger", () => {
       },
       "/tmp/findings.md",
     );
-    assert.match(digest, /`overlap` · warning\n\n  cards overlap the footer/);
-    assert.doesNotMatch(digest, /\*\*Visual\*\*/);
+    assert.match(digest, /^## Visual/m);
+    assert.match(digest, /`overlap` · warning/);
+    assert.match(digest, /cards overlap the footer/);
   });
 });

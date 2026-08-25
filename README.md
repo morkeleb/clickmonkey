@@ -70,6 +70,7 @@ clickmonkey unleash --steps 200          # hunt mapped forms, fill, submit
 clickmonkey nasty --steps 200            # junk in those forms (site you own)
 clickmonkey explore --charter "…"        # exploratory testing, no MCP (needs brain)
 clickmonkey mcp                          # host-LLM walk, then freeze/replay specs
+clickmonkey fog --reset                  # drop fog clocks on the sitemap; rooms stay
 ```
 
 Five monkeys (working names): **map**, **unleash**, **nasty**, **explore**, **mcp**.
@@ -107,7 +108,7 @@ take a screenshot when the last step was already a screenshot.
 ```
 clickmonkey.json                 # leash: url, fence, intro, writePolicy, screenshots, brain, vision, seo
 clickmonkey/
-  map.json                       # living sitemap — parallel monkeys merge here
+  map.json                       # living sitemap (rooms, doors, descriptions, fog clocks)
   testability.json               # legacy workspace ledger (inspect without a run)
   quality.json                   # legacy workspace ledger (inspect without a run)
   broken.json                    # legacy workspace ledger (inspect without a run)
@@ -120,7 +121,7 @@ clickmonkey/
   replays/<id>/comparison.md     # before/after vs that report
   explore-context.md             # optional: app architecture for explore --skills
   specs/*.md                     # replayable clickmonkey fences
-  lands.json                     # last land per page, job, and mode (fog / hunger)
+  lands.json                     # leftover sidecar; absorbed onto map pages then deleted
 ```
 
 ### Git
@@ -140,7 +141,7 @@ clickmonkey/**/*.json.lock
 clickmonkey/**/*.json.tmp
 ```
 
-Leave `clickmonkey.json`, `clickmonkey/map.json`, `clickmonkey/specs/`, and `clickmonkey/explore-context.md` tracked. Secrets in the leash are `$CLICKMONKEY_*` tokens, not values.
+Leave `clickmonkey.json`, `clickmonkey/map.json`, `clickmonkey/specs/`, and `clickmonkey/explore-context.md` tracked. Secrets in the leash are `$CLICKMONKEY_*` tokens, not values. Fog clocks live on each sitemap page (`page.fog`); they change as monkeys walk. `clickmonkey fog --reset` drops the clocks and keeps the rooms — use that in CI or before a commit if you do not want hunger in git.
 
 `reports/` is optional to ignore: markdown without `runs/` has no screenshots. CI should keep reports as job artifacts (`examples/gitlab-ci.yml`). Commit a single `findings.md` only if you want a paper trail.
 
@@ -223,6 +224,7 @@ clickmonkey unleash [--config] [--url] [--out] [--steps] [--nasty]
 clickmonkey nasty [--config] [--url] [--out] [--steps]
 clickmonkey explore [--config] [--url] [--out] [--steps] [--minutes] [--charter] [--skills]
 clickmonkey mcp [--config]
+clickmonkey fog [--config] [--reset] [--job map|unleash|nasty]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
 clickmonkey replay <log|report.md> [--config] [--url] [--out]
 clickmonkey spec [file.md] [--check] [--fail-on-findings]
@@ -259,7 +261,7 @@ Explore exit `1` means findings, not a crash — mark the job `allow_failure`. E
 
 `--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 
-`clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox, none pre-selected), then **Quality section?** — digest (Start here, chrome, pages) or full (per-page HTML/a11y/SEO/JS). `--runs id,id` is explicit; `--all` takes every run that has findings. `--quality-full` skips the quality prompt (scripts). Findings come first (severity, page, url, screenshot, compacted tape), then the Quality section. Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. Findings and quality rows include a short **Why it matters** paragraph (copy-pasteable). With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF) and Copy (text + screenshots).
+`clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox, none pre-selected), then **Pages with issues?** — default (top 8) or full (every page with its own issues). `--runs id,id` is explicit; `--all` takes every run that has findings. `--quality-full` skips the prompt (scripts). Chapters match the sitemap page sheet: Findings, Testability, Accessibility, Visual, Quality (HTML, SEO, Runtime). `Pages` groups list unique-to-a-route issues (default: top 8; full: every such page). The report also has a By page index: default lists those pages; `--quality-full` indexes every labeled ledger page (chrome as labels on those lines, not extra headings). Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. Findings and ledger rows include a short **Why it matters** paragraph (copy-pasteable). With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF) and Copy (text + screenshots).
 
 `clickmonkey prune` is human review: pick a report, then checkbox findings to drop as false positives. Finding folders on disk stay; the report markdown is rewritten and ids/fingerprints go into `clickmonkey/dismissed.json` so later `report` runs skip them. With `brain` configured the model reads the report first and pre-checks likely walker noise (you can uncheck). Scripts: `clickmonkey prune <reportId> --ids fnd_3_expectFailed,fnd_10_visualIssue`.
 

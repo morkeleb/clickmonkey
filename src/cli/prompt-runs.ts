@@ -23,16 +23,17 @@ export async function promptRuns(runs: RunSummary[]): Promise<string[]> {
   });
 }
 
-/** Digest vs per-page HTML/a11y/SEO/JS. `--quality-full` skips this. */
+/** Cap unique-to-a-route pages vs list them all. `--quality-full` skips this. */
 export async function promptQualityFull(): Promise<boolean> {
   if (!isTty()) return false;
   const { select } = await import("@inquirer/prompts");
   return select({
-    message: "Quality section?",
+    message: "Pages with issues?",
     default: false,
     choices: [
-      { name: "Digest — Start here, chrome, pages", value: false },
-      { name: "Full — per-page HTML, a11y, SEO, JS", value: true },
+      // 8 must match LEFTOVER_PAGE_CAP (and README / issue-classes). Do not import findings-report here.
+      { name: "Default — top 8 pages with issues", value: false },
+      { name: "Full — every page with issues", value: true },
     ],
   });
 }

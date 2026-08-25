@@ -121,6 +121,84 @@ done
     assert.equal(both.dropped.length, 0, "bare colliding id must not drop both cards");
   });
 
+  it("parses a loc line after the tape when Accessibility follows Findings", () => {
+    const md = `# Findings report
+
+## Summary
+
+1 finding from 1 run (1 major).
+
+## Findings
+
+## Major
+
+### expected invalid
+
+[/home](http://127.0.0.1/home) · major
+
+**Expected:** The field is marked invalid.
+
+**Actual:** The form sent.
+
+**Why it matters:** Bad data.
+
+\`\`\`clickmonkey
+open home
+\`\`\`
+
+\`expectFailed\` · major · \`fnd_3_expectFailed\` · \`sess-a\` · \`home\`
+
+## Accessibility
+
+Checked: WCAG 2.0/2.1 A and AA (axe subset).
+
+## Appendix
+
+done
+`;
+    const parsed = parseReportFindings(md);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0]?.id, "fnd_3_expectFailed");
+    assert.equal(parsed[0]?.kind, "expectFailed");
+    assert.equal(parsed[0]?.runIds[0], "sess-a");
+    const { markdown, dropped, kept } = dropReportFindings(md, ["fnd_3_expectFailed"]);
+    assert.equal(dropped.length, 1);
+    assert.equal(kept.length, 0);
+    assert.match(markdown, /## Accessibility/);
+    assert.doesNotMatch(markdown, /fnd_3_expectFailed/);
+  });
+
+  it("keeps leftover-cap text when dropping a finding", () => {
+    const md = `# Findings report
+
+## Summary
+
+2 findings from 2 runs (2 major). Showing the top 8 of 12 pages with issues. Workspace ledger across 40 pages.
+
+## Findings
+
+## Major
+
+### a
+
+\`expectFailed\` · major · 2× in 2 runs · \`fnd_3_expectFailed\` · \`run-a\` \`run-b\` · \`home\`
+
+### b
+
+\`visualIssue\` · minor · \`fnd_4_visualIssue\` · \`run-a\`
+
+## Quality
+
+leftover
+`;
+    const parsed = parseReportFindings(md);
+    assert.equal(parsed.length, 2);
+    assert.deepEqual(parsed[0]?.runIds, ["run-a", "run-b"]);
+    const { markdown } = dropReportFindings(md, ["fnd_4_visualIssue"]);
+    assert.match(markdown, /1 finding from 2 runs \(1 major\)\. Showing the top 8 of 12 pages with issues\. Workspace ledger across 40 pages\./);
+    assert.match(markdown, /## Quality/);
+  });
+
   it("clears the findings section when every card is dropped", () => {
     const md = `# Findings report
 

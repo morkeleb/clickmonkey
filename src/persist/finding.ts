@@ -12,7 +12,6 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { cannedReport } from "../reports/canned.js";
 import { Finding, findingId, severityForKind, type FindingKind, type FindingSeverity } from "../schema/finding.js";
 import type { QualityIssue } from "../schema/quality.js";
-import { templatizePath } from "../surveyor/path-template.js";
 
 const BRAIN_MISS_KINDS = new Set<FindingKind>(["unknownId", "unresolvedId"]);
 
@@ -56,17 +55,6 @@ function pathOfFindingUrl(url: string | undefined): string | undefined {
   }
 }
 
-function templatedPathOfUrl(url: string | undefined): { origin: string; path: string } | undefined {
-  if (!url) return undefined;
-  try {
-    const parsed = new URL(url);
-    const path = parsed.pathname === "" ? "/" : parsed.pathname;
-    return { origin: parsed.origin, path: templatizePath(path).path };
-  } catch {
-    return { origin: "", path: templatizePath(url).path };
-  }
-}
-
 function samePersistedFinding(a: Finding, b: Finding): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "notFound") {
@@ -81,10 +69,7 @@ function samePersistedFinding(a: Finding, b: Finding): boolean {
     return Boolean(pa && pb && pa === pb);
   }
   if (a.kind === "visualIssue") {
-    const pa = templatedPathOfUrl(a.url);
-    const pb = templatedPathOfUrl(b.url);
-    if (!pa || !pb) return a.message === b.message;
-    return pa.origin === pb.origin && pa.path === pb.path && a.widgetRef === b.widgetRef;
+    return visualFindingKey(a) === visualFindingKey(b);
   }
   if (a.message !== b.message) return false;
   if (a.url && b.url && a.url !== b.url) return false;
@@ -163,6 +148,13 @@ export function appendFindingReport(outDir: string, findingId: string, extraMark
 export function visualIssueMessage(issue: Pick<QualityIssue, "rule" | "message" | "where">): string {
   const loc = issue.where ? ` — ${issue.where}` : "";
   return `${issue.rule}: ${issue.message}${loc}`;
+}
+
+/** Rule + scanner message. Drops the ` — where` suffix so joined examples do not mint a new finding. */
+export function visualFindingKey(f: Pick<Finding, "widgetRef" | "message">): string {
+  const raw = (f.message ?? "").replace(/\s+/g, " ").trim();
+  const core = raw.split(" — ")[0]!.trim();
+  return `${f.widgetRef ?? ""}\t${core}`;
 }
 
 export function severityForVisualIssue(issue: Pick<QualityIssue, "severity">): FindingSeverity {

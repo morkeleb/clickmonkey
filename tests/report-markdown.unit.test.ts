@@ -76,4 +76,45 @@ describe("wrapReportPrintBlocks", () => {
     assert.match(html, /<div class="report-subcard"><h4>/);
     assert.match(html, /<\/ul><\/div><h2>Appendix<\/h2>/);
   });
+
+  it("does not wrap chapter h2s or digest h3s, still wraps finding h3s", () => {
+    const html = wrapReportPrintBlocks(
+      [
+        "<h2>Summary</h2>",
+        "<h3>Start here</h3>",
+        "<ul><li>Fix color-contrast</li></ul>",
+        "<h2>Findings</h2>",
+        "<h2>Critical</h2>",
+        "<h3>HTTP 409</h3>",
+        "<p>httpError</p>",
+        "<h2>Testability</h2>",
+        "<h3>Chrome</h3>",
+        "<ul><li>duplicateName</li></ul>",
+        "<h2>Accessibility</h2>",
+        "<h3>On several pages</h3>",
+        "<ul><li>color-contrast</li></ul>",
+        "<h2>Visual</h2>",
+        "<h3>Pages</h3>",
+        "<h4><code>/vouchers</code></h4>",
+        "<p>overlap</p>",
+        "<h2>Quality</h2>",
+        "<h3>Chrome</h3>",
+        "<ul><li>element-permitted-content</li></ul>",
+        "<h2>By page</h2>",
+        "<ul><li>/vouchers</li></ul>",
+        "<h2>Appendix</h2>",
+      ].join(""),
+    );
+    assert.doesNotMatch(html, /report-card"><h2>/);
+    assert.doesNotMatch(html, /report-card"><h3>Start here/);
+    assert.doesNotMatch(html, /report-card"><h3>Chrome/);
+    assert.doesNotMatch(html, /report-card"><h3>On several pages/);
+    assert.doesNotMatch(html, /report-card"><h3>Pages/);
+    assert.match(html, /<div class="report-card"><h3>HTTP 409<\/h3>/);
+    assert.match(html, /<div class="report-subcard"><h4>/);
+    assert.equal((html.match(/class="report-card"/g) ?? []).length, 1);
+    for (const chapter of ["Testability", "Accessibility", "Visual", "Quality", "By page"]) {
+      assert.match(html, new RegExp(`<h2>${chapter}</h2>`));
+    }
+  });
 });

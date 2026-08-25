@@ -89,7 +89,7 @@ Fence bounce (`/logout`, off-app URL) is leash control, not a product finding.
 
 `--nasty` leftover text in a field is content, not a visual bug. The vision prompt lists catalog samples and tells the model to ignore them; parse still drops a finding that *quotes* a catalog string (we typed it). A table column that shears a product name mid-word (no `…`) is clip even when a nearby cell is leftover junk.
 
-Native `<select>` only accepts its `<option>` list. Unleash (and `--nasty`) pick one of those values. A spec fill that is not in the `<option>` list fails immediately and names the options. ARIA comboboxes / typeaheads (`role="combobox"`, `aria-autocomplete`, `<datalist>`) are harvested live. If opening the widget paints no rows, harvest types short probes (`a`, `e`, `s`) and waits for a debounced search to fill `[role="option"]`. Unleash then picks a listed option and clicks it so the form can submit. If the planned fill is not in the open list, the executor clicks a listed row instead of filing “has no option”. The list is found via `aria-controls` / `aria-owns` on the input or its closest combobox — including a listbox portaled to `document.body`. Catalog junk still goes into text, textarea, and type-in comboboxes under `--nasty`.
+Native `<select>` only accepts its `<option>` list. Unleash (and `--nasty`) pick one of those values. A spec fill that is not in the `<option>` list fails immediately and names the options. ARIA comboboxes / typeaheads (`role="combobox"`, `aria-autocomplete`, `<datalist>`) are driven from the live list, not from Faker. The executor opens the widget (click / ArrowDown). If rows appear, it clicks a match or any listed row — it does not type a generated string and hope that string exists. If opening paints no rows, it searches the planned fill (spec values), then short probes (`a`, `e`, `s`) for a debounced list. A listed row is clicked so the form can submit. A typeahead finding is only when rows were painted and none could be clicked. The list is found via `aria-controls` / `aria-owns` on the input or its closest combobox — including a listbox portaled to `document.body`. Catalog junk still goes into text, textarea, and type-in comboboxes under `--nasty`.
 
 ### Forms (empty-required)
 
@@ -149,6 +149,6 @@ ClickMonkey has no domain brain unless you put it in a **charter**, **skills** (
 | `mcp` | Host LLM walk, then spec freeze/replay |
 | `spec` | Fences as a real walk; findings still harvest unless you only care about PASS |
 | `replay` | Comparison vs a report, not a new survey |
-| `report` | Shareable markdown: findings first (each with Why it matters), then quality digest (Start here, Chrome, clusters, every page with leftover issues) |
+| `report` | Shareable markdown in the same chapters as the sitemap page sheet: Findings, Testability, Accessibility, Visual, Quality (HTML/SEO/Runtime). Default caps unique-to-a-route pages with issues at 8; `--quality-full` lists every such page. By page is a report-only index (default: those pages; full: every labeled ledger page) |
 
 ClickMonkey shrinks the **recurring survey**. It does not own **“is this the right system for this customer.”**

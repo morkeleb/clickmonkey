@@ -67,7 +67,7 @@ export type PageErrorFillCtx = {
 };
 
 /** Strip a wrapper we may have already applied at persist time. */
-function pageErrorDetail(message: string): string {
+export function pageErrorDetail(message: string): string {
   const exc = message.match(/Exception: `([^`]+)`/);
   if (exc?.[1]) return exc[1].replace(/\s+/g, " ").trim();
   const titled = message.match(/Uncaught JavaScript (?:error|exception):\s*(.+)/i);

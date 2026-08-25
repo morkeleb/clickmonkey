@@ -82,4 +82,38 @@ describe("reports folder", () => {
 `;
     assert.equal(countFindingsInMarkdown(md), 1);
   });
+
+  it("counts ### only inside severity groups, not Accessibility digest headings", () => {
+    const md = `# Findings report
+
+## Findings
+
+## Major
+
+### Button did not work
+
+\`expectFailed\` · major · \`fnd_1_expectFailed\`
+
+## Minor
+
+### Slow response
+
+\`httpError\` · minor · \`fnd_2_httpError\`
+
+## Accessibility
+
+### Chrome
+
+- \`color-contrast\` error
+
+### On several pages
+
+- \`focusVisible\`
+
+### Pages
+
+- \`/\` — 1 error
+`;
+    assert.equal(countFindingsInMarkdown(md), 2);
+  });
 });

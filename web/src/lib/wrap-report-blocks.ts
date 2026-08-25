@@ -11,9 +11,10 @@ function headingText(tag: string): string {
 }
 
 /**
- * Wrap finding titles (h3) and Quality page groups (h4) so print CSS can keep
- * a heading with its screenshot / issues. Tape fences stay outside the card
- * so a long replay can still split.
+ * Wrap finding titles (h3) and per-page groups (h4) so print CSS can keep
+ * a heading with its screenshot / issues. Chapter h2s and digest h3s
+ * (Start here, Chrome, On several pages, Pages) stay unwrapped. Tape fences
+ * stay outside the card so a long replay can still split.
  */
 export function wrapReportPrintBlocks(html: string): string {
   const parts = html.split(HEADING);

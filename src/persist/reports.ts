@@ -22,9 +22,19 @@ export function reportTitle(runIds: readonly string[], findingCount: number): st
 export function countFindingsInMarkdown(markdown: string): number {
   const byId = markdown.match(/^- \*\*id:\*\* /gm)?.length ?? 0;
   if (byId > 0) return byId;
-  const beforeQuality = markdown.split(/^## Quality\s*$/m)[0] ?? markdown;
-  const findings = beforeQuality.split(/^## Findings\s*$/m)[1] ?? "";
-  return (findings.match(/^### /gm) ?? []).length;
+  const start = markdown.search(/^## Findings\s*$/m);
+  if (start < 0) return 0;
+  const after = markdown.slice(start + 1);
+  const rel = after.search(
+    /^## (?:Testability|Accessibility|Visual|Quality|By page|Extra|Appendix)\s*$/m,
+  );
+  const slice = rel < 0 ? markdown.slice(start) : markdown.slice(start, start + 1 + rel);
+  const parts = slice.split(/^(## (?:Critical|Major|Minor|Suggestion))\s*$/m);
+  let n = 0;
+  for (let i = 1; i < parts.length; i += 2) {
+    n += (parts[i + 1] ?? "").match(/^### /gm)?.length ?? 0;
+  }
+  return n;
 }
 
 function parseRunsLine(markdown: string): string[] {

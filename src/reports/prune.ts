@@ -30,7 +30,7 @@ function findingsBounds(markdown: string): { start: number; end: number } | unde
   const start = markdown.search(/^## Findings\s*$/m);
   if (start < 0) return undefined;
   const after = markdown.slice(start + 1);
-  const rel = after.search(/^## (?:Quality|Extra|Appendix)\s*$/m);
+  const rel = after.search(/^## (?:Testability|Accessibility|Visual|Quality|By page|Extra|Appendix)\s*$/m);
   const end = rel < 0 ? markdown.length : start + 1 + rel;
   return { start, end };
 }
@@ -139,7 +139,9 @@ function summaryLine(kept: ReportFinding[], from: string): string {
     })
     .filter(Boolean);
   const n = kept.length;
-  return `${n} finding${n === 1 ? "" : "s"} from ${runs} (${counts.join(", ") || "none"}).`;
+  const head = `${n} finding${n === 1 ? "" : "s"} from ${runs} (${counts.join(", ") || "none"}).`;
+  const suffix = from.match(/^\d+ findings? from .+?\([^)]*\)\.(.*)$/)?.[1]?.trim();
+  return suffix ? `${head} ${suffix}` : head;
 }
 
 export function dropReportFindings(

@@ -5,6 +5,13 @@ import type { QualityIssue, QualityPage, QualityRuntimeEvent } from "@schema/qua
 import type { TestabilityIssue, TestabilityPage } from "@schema/testability";
 import { monkeyOfBrain } from "@schema/fog";
 import type { UiGraphNode, UiMapFinding, UiRun, UiSnapshot } from "@schema/ui";
+import {
+  chapterOf,
+  splitOverflowByViewport,
+  type OverflowViewport,
+  type ReportChapter,
+} from "../../../src/reports/wcag.ts";
+import { whyRule } from "../../../src/reports/why.ts";
 import { Shot } from "@/components/shot";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -15,8 +22,69 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { prettyIdent, prettyLeadingIdent } from "@ui/graph-labels";
 import { FOG_JOBS, fogHeatColor, landAgeLabel } from "@/lib/fog";
 import { runHue, sameLedgerPage } from "@/lib/utils";
+
+type LedgerKey = { path: string; origin?: string };
+
+function WhyItMatters({ rule }: { rule: string }) {
+  const why = whyRule(rule);
+  if (!why) return null;
+  return <p className="mt-1 text-xs break-words text-muted-foreground">Why it matters: {why}</p>;
+}
+
+function alsoOnOtherPages(n: number): string | undefined {
+  if (n <= 0) return undefined;
+  return n === 1 ? "also on 1 other page" : `also on ${n} other pages`;
+}
+
+function otherPagesWithTestabilityCode(pages: TestabilityPage[], current: LedgerKey, code: string): number {
+  return pages.filter((page) => !sameLedgerPage(page, current) && page.issues.some((issue) => issue.code === code))
+    .length;
+}
+
+function qualityPageHasRule(page: QualityPage, rule: string): boolean {
+  return (
+    page.html.some((issue) => issue.rule === rule) ||
+    page.a11y.some((issue) => issue.rule === rule) ||
+    (page.seo ?? []).some((issue) => issue.rule === rule) ||
+    page.visual.some((issue) => issue.rule === rule) ||
+    page.runtime.some((issue) => issue.rule === rule)
+  );
+}
+
+function otherPagesWithQualityRule(pages: QualityPage[], current: LedgerKey, rule: string): number {
+  return pages.filter((page) => !sameLedgerPage(page, current) && qualityPageHasRule(page, rule)).length;
+}
+
+function chapterExtras(
+  issue: QualityIssue,
+  extras?: { where?: string; viewport?: OverflowViewport },
+) {
+  return {
+    message: issue.message,
+    where: extras?.where ?? issue.where,
+    source: issue.source,
+    viewport: extras?.viewport,
+  };
+}
+
+/** Same chapterOf split as the report: axe + WCAG-mapped DOM (incl. 320 overflow) vs leftover layout. */
+function chapterIssues(issues: QualityIssue[], chapter: ReportChapter): QualityIssue[] {
+  const out: QualityIssue[] = [];
+  for (const issue of issues) {
+    if (issue.rule === "overflow") {
+      for (const seg of splitOverflowByViewport(issue.where, issue.message)) {
+        if (chapterOf(issue.rule, chapterExtras(issue, seg)) !== chapter) continue;
+        out.push(seg.where ? { ...issue, where: seg.where } : issue);
+      }
+      continue;
+    }
+    if (chapterOf(issue.rule, chapterExtras(issue)) === chapter) out.push(issue);
+  }
+  return out;
+}
 
 function InfoStat({
   label,
@@ -59,49 +127,79 @@ function widgetCounts(page: Page | undefined, node: UiGraphNode) {
   return { surfaces: surfaces.length, fields, actions, widgets: fields + actions };
 }
 
-function IssueList({ issues }: { issues: TestabilityIssue[] }) {
+function IssueList({
+  issues,
+  pages,
+  current,
+}: {
+  issues: TestabilityIssue[];
+  pages: TestabilityPage[];
+  current: LedgerKey;
+}) {
   if (issues.length === 0) return <p className="text-sm text-muted-foreground">No testability issues.</p>;
   return (
     <ul className="flex flex-col gap-2">
-      {issues.map((issue, i) => (
-        <li key={`${issue.code}-${issue.tag}-${i}`} className="min-w-0 rounded-md border border-border px-3 py-2 text-sm">
-          <div className="flex min-w-0 items-center gap-2">
-            <Badge variant={issue.severity === "block" ? "destructive" : "secondary"}>{issue.severity}</Badge>
-            <span className="min-w-0 truncate font-medium">{issue.code}</span>
-          </div>
-          <div className="mt-1 text-xs break-words text-muted-foreground">
-            {issue.tag}
-            {issue.role ? ` · ${issue.role}` : ""}
-            {issue.inputType ? ` · ${issue.inputType}` : ""}
-          </div>
-          {issue.where ? (
-            <p className="mt-0.5 text-[11px] break-all text-muted-foreground">Where: {issue.where}</p>
-          ) : null}
-        </li>
-      ))}
+      {issues.map((issue, i) => {
+        const alsoOn = alsoOnOtherPages(otherPagesWithTestabilityCode(pages, current, issue.code));
+        return (
+          <li key={`${issue.code}-${issue.tag}-${i}`} className="min-w-0 rounded-md border border-border px-3 py-2 text-sm">
+            <div className="flex min-w-0 items-center gap-2">
+              <Badge variant={issue.severity === "block" ? "destructive" : "secondary"}>{issue.severity}</Badge>
+              <span className="min-w-0 truncate font-medium" title={issue.code}>
+                {prettyIdent(issue.code)}
+              </span>
+              {alsoOn ? <span className="ml-auto shrink-0 text-xs text-muted-foreground">{alsoOn}</span> : null}
+            </div>
+            <div className="mt-1 text-xs break-words text-muted-foreground">
+              {issue.tag}
+              {issue.role ? ` · ${issue.role}` : ""}
+              {issue.inputType ? ` · ${issue.inputType}` : ""}
+            </div>
+            <WhyItMatters rule={issue.code} />
+            {issue.where ? (
+              <p className="mt-0.5 text-[11px] break-all text-muted-foreground">Where: {issue.where}</p>
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-function QualityIssueCards({ items }: { items: Array<QualityIssue | QualityRuntimeEvent> }) {
+function QualityIssueCards({
+  items,
+  pages,
+  current,
+}: {
+  items: Array<QualityIssue | QualityRuntimeEvent>;
+  pages: QualityPage[];
+  current: LedgerKey;
+}) {
   return (
     <ul className="flex flex-col gap-2">
-      {items.map((issue, i) => (
-        <li key={`${issue.source}-${issue.rule}-${i}`} className="min-w-0 rounded-md border border-border px-3 py-2 text-sm">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Badge variant={issue.severity === "error" ? "destructive" : "secondary"}>{issue.severity}</Badge>
-            <code className="max-w-full text-xs break-all">{issue.rule}</code>
-            {"confidence" in issue && issue.confidence ? (
-              <span className="text-xs text-muted-foreground">{issue.confidence}</span>
+      {items.map((issue, i) => {
+        const alsoOn = alsoOnOtherPages(otherPagesWithQualityRule(pages, current, issue.rule));
+        return (
+          <li key={`${issue.source}-${issue.rule}-${i}`} className="min-w-0 rounded-md border border-border px-3 py-2 text-sm">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Badge variant={issue.severity === "error" ? "destructive" : "secondary"}>{issue.severity}</Badge>
+              <span className="max-w-full text-xs font-medium break-all" title={issue.rule}>
+                {prettyIdent(issue.rule)}
+              </span>
+              {"confidence" in issue && issue.confidence ? (
+                <span className="text-xs text-muted-foreground">{issue.confidence}</span>
+              ) : null}
+              {issue.count > 1 ? <span className="text-xs text-muted-foreground">×{issue.count}</span> : null}
+              {alsoOn ? <span className="text-xs text-muted-foreground">{alsoOn}</span> : null}
+            </div>
+            <p className="mt-1 text-xs break-words text-muted-foreground">{issue.message}</p>
+            <WhyItMatters rule={issue.rule} />
+            {"where" in issue && issue.where ? (
+              <p className="mt-0.5 text-[11px] break-all text-muted-foreground">Where: {issue.where}</p>
             ) : null}
-            {issue.count > 1 ? <span className="text-xs text-muted-foreground">×{issue.count}</span> : null}
-          </div>
-          <p className="mt-1 text-xs break-words text-muted-foreground">{issue.message}</p>
-          {"where" in issue && issue.where ? (
-            <p className="mt-0.5 text-[11px] break-all text-muted-foreground">Where: {issue.where}</p>
-          ) : null}
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -109,9 +207,13 @@ function QualityIssueCards({ items }: { items: Array<QualityIssue | QualityRunti
 function QualityGroup({
   title,
   items,
+  pages,
+  current,
 }: {
   title: string;
   items: Array<QualityIssue | QualityRuntimeEvent>;
+  pages: QualityPage[];
+  current: LedgerKey;
 }) {
   if (items.length === 0) return null;
   return (
@@ -123,7 +225,7 @@ function QualityGroup({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mb-3">
-          <QualityIssueCards items={items} />
+          <QualityIssueCards items={items} pages={pages} current={current} />
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -131,7 +233,7 @@ function QualityGroup({
 }
 
 function qualityScannerCount(page: QualityPage): number {
-  return page.html.length + page.a11y.length + (page.seo ?? []).length + page.runtime.length;
+  return page.html.length + (page.seo ?? []).length + page.runtime.length;
 }
 
 function findingOnNode(finding: UiMapFinding, node: UiGraphNode): boolean {
@@ -155,6 +257,9 @@ export function NodeSheet({
   const node = snapshot.graph.nodes.find((n) => n.id === nodeId);
   const page = node ? findPage(snapshot, node.pageId) : undefined;
   const ledger = node ? ledgerFor(snapshot, node) : {};
+  const qualityRows = [...(ledger.quality?.a11y ?? []), ...(ledger.quality?.visual ?? [])];
+  const a11yItems = chapterIssues(qualityRows, "accessibility");
+  const visualItems = chapterIssues(qualityRows, "visual");
   const counts = node ? widgetCounts(page, node) : { surfaces: 0, fields: 0, actions: 0, widgets: 0 };
   const here =
     node &&
@@ -212,17 +317,17 @@ export function NodeSheet({
                 <InfoStat label="Entry">{node.entry ? "yes" : "no"}</InfoStat>
                 {node.kind === "page" ? (
                   <InfoStat label="Last land" wide>
-                    <div>{landAgeLabel(node.lastLandAt)}</div>
+                    <div>{landAgeLabel(node.fogAt)}</div>
                     <div className="mt-1.5 flex flex-col gap-1">
                       {FOG_JOBS.map((job) => (
                         <div key={job} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span
                             className="size-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: fogHeatColor(node.jobLands?.[job]) }}
+                            style={{ backgroundColor: fogHeatColor(node.jobFog?.[job]) }}
                             aria-hidden
                           />
                           <span className="font-medium text-foreground">{job}</span>
-                          <span>{landAgeLabel(node.jobLands?.[job])}</span>
+                          <span>{landAgeLabel(node.jobFog?.[job])}</span>
                         </div>
                       ))}
                     </div>
@@ -259,12 +364,16 @@ export function NodeSheet({
                             >
                               {finding.severity}
                             </Badge>
-                            <span className="min-w-0 truncate font-medium">{finding.kind}</span>
+                            <span className="min-w-0 truncate font-medium" title={finding.kind}>
+                              {prettyIdent(finding.kind)}
+                            </span>
                             <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
                               {finding.runId}
                             </span>
                           </div>
-                          <p className="mt-1 text-xs break-words text-muted-foreground">{finding.message}</p>
+                          <p className="mt-1 text-xs break-words text-muted-foreground">
+                            {prettyLeadingIdent(finding.message)}
+                          </p>
                         </button>
                       </li>
                     ))}
@@ -273,29 +382,55 @@ export function NodeSheet({
               </section>
               <section>
                 <h3 className="mb-2 text-sm font-medium">Testability</h3>
-                <IssueList issues={ledger.testability?.issues ?? []} />
+                <IssueList
+                  issues={ledger.testability?.issues ?? []}
+                  pages={snapshot.testability.pages}
+                  current={node}
+                />
+              </section>
+              <section>
+                <h3 className="mb-2 text-sm font-medium">Accessibility</h3>
+                {a11yItems.length > 0 ? (
+                  <QualityIssueCards items={a11yItems} pages={snapshot.quality.pages} current={node} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">No accessibility issues.</p>
+                )}
+              </section>
+              <section>
+                <h3 className="mb-2 text-sm font-medium">Visual</h3>
+                {visualItems.length > 0 ? (
+                  <QualityIssueCards items={visualItems} pages={snapshot.quality.pages} current={node} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {ledger.quality?.visualHash ? "Scanned, no extras." : "No visual extras."}
+                  </p>
+                )}
               </section>
               <section>
                 <h3 className="mb-2 text-sm font-medium">Quality</h3>
                 {ledger.quality && qualityScannerCount(ledger.quality) > 0 ? (
                   <div>
-                    <QualityGroup title="HTML" items={ledger.quality.html} />
-                    <QualityGroup title="Accessibility" items={ledger.quality.a11y} />
-                    <QualityGroup title="SEO" items={ledger.quality.seo ?? []} />
-                    <QualityGroup title="Runtime" items={ledger.quality.runtime} />
+                    <QualityGroup
+                      title="HTML"
+                      items={ledger.quality.html}
+                      pages={snapshot.quality.pages}
+                      current={node}
+                    />
+                    <QualityGroup
+                      title="SEO"
+                      items={ledger.quality.seo ?? []}
+                      pages={snapshot.quality.pages}
+                      current={node}
+                    />
+                    <QualityGroup
+                      title="Runtime"
+                      items={ledger.quality.runtime}
+                      pages={snapshot.quality.pages}
+                      current={node}
+                    />
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">No quality issues.</p>
-                )}
-              </section>
-              <section>
-                <h3 className="mb-2 text-sm font-medium">Visual</h3>
-                {ledger.quality && ledger.quality.visual.length > 0 ? (
-                  <QualityIssueCards items={ledger.quality.visual} />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {ledger.quality?.visualHash ? "Scanned, no extras." : "No visual extras."}
-                  </p>
                 )}
               </section>
               {here && here.length > 0 ? (

@@ -57,13 +57,18 @@ describe("findings report", () => {
     assert.match(md, /^## Major/m);
     assert.match(md, /!\[screenshot\]\(runs\/20260817T000000Z-abcd\/findings\/fnd_3_expectFailed\/screenshot\.png\)/);
     assert.match(md, /```clickmonkey/);
-    assert.match(md, /^> /m);
+    assert.match(md, /\*\*Expected:\*\*/);
+    assert.match(md, /\*\*Actual:\*\*/);
+    assert.match(md, /\*\*Why it matters:\*\*/);
     assert.doesNotMatch(md, /^- \*\*id:\*\*/m);
     assert.match(md, /`expectFailed` · major · `fnd_3_expectFailed` · `20260817T000000Z-abcd`/);
     assert.match(md, /^## Findings/m);
     const findingsAt = md.indexOf("## Findings");
     const qualityAt = md.indexOf("## Quality");
     assert.ok(qualityAt === -1 || findingsAt < qualityAt, "findings before quality");
+    const tapeAt = md.indexOf("```clickmonkey");
+    const locAt = md.indexOf("`expectFailed` · major · `fnd_3_expectFailed`");
+    assert.ok(tapeAt > 0 && locAt > tapeAt, "loc line after the tape");
     const fences = extractClickmonkeyFences(md);
     assert.equal(fences.length, 1);
     assert.equal(fences[0]?.log.steps.some((s) => s.kind === "expectInvalid"), true);
@@ -131,10 +136,11 @@ describe("findings report", () => {
     );
     assert.match(md, /2 findings from 2 runs/);
     assert.match(md, /2× in 2 runs/);
-    assert.equal((md.match(/^### /gm) ?? []).length, 2);
+    const findings = md.slice(md.indexOf("## Findings"));
+    assert.equal((findings.match(/^### /gm) ?? []).length, 2);
   });
 
-  it("collapses visualIssue findings on the same templated path and rule", () => {
+  it("collapses the same visualIssue message across pages and runs", () => {
     const root = mkdtempSync(join(tmpdir(), "cm-rep-visual-"));
     function writeVisual(runId: string, id: string, url: string, message: string) {
       const folder = join(root, "runs", runId, "findings", id);
@@ -150,27 +156,27 @@ describe("findings report", () => {
           tapePath: join(folder, "replay.log"),
           stepIndex: 1,
           url,
-          widgetRef: "scanline",
+          widgetRef: "overlap",
         })}\n`,
       );
       writeFileSync(join(folder, "replay.log"), "open home\n");
       writeFileSync(join(folder, "screenshot.png"), "png");
     }
-    writeVisual(
-      "run-a",
-      "fnd_2_visualIssue",
-      "http://127.0.0.1:3000/customers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migrations",
-      "scanline: row icons drift",
-    );
+    const chrome =
+      "overlap: Header or nav controls occupy the same pixels — folder_open Clients & Matters, Your account";
+    const chromeGrown =
+      "overlap: Header or nav controls occupy the same pixels — folder_open Clients & Matters, Your account · group Employees expand_more, Your account";
+    writeVisual("run-a", "fnd_2_visualIssue", "https://demo.f2dev.test/home", chrome);
+    writeVisual("run-b", "fnd_8_visualIssue", "https://demo.f2dev.test/reports/cash-flow", chromeGrown);
     writeVisual(
       "run-b",
-      "fnd_8_visualIssue",
-      "http://127.0.0.1:3000/customers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/migrations",
-      "scanline: icons do not share an edge",
+      "fnd_9_visualIssue",
+      "https://demo.f2dev.test/home",
+      "overlap: dashboard Dashboard and checklist Action Items close occupy the same pixels — dashboard Dashboard, checklist Action Items close",
     );
     const cases = collectFindingCases([join(root, "runs", "run-a"), join(root, "runs", "run-b")]);
-    assert.equal(cases.length, 2);
-    assert.equal(collapseFindingCases(cases).length, 1);
+    assert.equal(cases.length, 3);
+    assert.equal(collapseFindingCases(cases).length, 2);
   });
 
   it("renders an Explore outline from selected runs", () => {
@@ -230,15 +236,16 @@ describe("findings report", () => {
       },
       join(root, "findings.md"),
     );
-    assert.match(md, /^## Explore/m);
+    assert.match(md, /### Explore/);
     assert.match(md, /walk AR invoicing/);
     assert.match(md, /open accounts_receivable_invoices/);
     assert.match(md, /leave chrome via invoices/);
     assert.match(md, /\*\*Plan:\*\* Walk AR invoicing/);
     assert.match(md, /\[>\] Empty invoice name/);
-    const exploreAt = md.indexOf("## Explore");
+    const exploreAt = md.indexOf("### Explore");
     const findingsAt = md.indexOf("## Findings");
-    assert.ok(exploreAt > 0 && exploreAt < findingsAt);
+    const appendixAt = md.indexOf("## Appendix");
+    assert.ok(findingsAt > 0 && appendixAt > findingsAt && exploreAt > appendixAt);
   });
 
   it("renders plan coverage on explore outlines", () => {
@@ -403,9 +410,12 @@ describe("findings report", () => {
       /\[\/accounting\/closing-routines\]\(https:\/\/app\.example\/accounting\/closing-routines\)/,
     );
     assert.match(md, /Uncaught JavaScript error: Ga\(\.\.\.\) is not a function/);
-    assert.match(md, /uncaught JavaScript error/);
-    assert.match(md, /not `console\.error`/);
-    assert.match(md, /not a field validation message/);
+    assert.match(md, /\*\*Expected:\*\* The page stays usable\./);
+    assert.match(md, /\*\*Actual:\*\* Uncaught JavaScript `Ga\(\.\.\.\) is not a function`\./);
+    assert.match(md, /\*\*Why it matters:\*\*/);
+    assert.doesNotMatch(md, /Playwright `pageerror`/);
+    assert.doesNotMatch(md, /not `console\.error`/);
+    assert.doesNotMatch(md, /not a field validation message/);
     assert.doesNotMatch(md, /validation is missing/);
     assert.doesNotMatch(md, /bad input/);
   });
@@ -470,7 +480,9 @@ describe("findings report", () => {
       join(root, "findings.md"),
     );
     assert.match(md, /### Validation did not catch junk in `page\.from_date`/);
-    assert.match(md, /product bug/);
+    assert.match(md, /\*\*Expected:\*\* The field is marked invalid\./);
+    assert.match(md, /\*\*Actual:\*\* The form sent or left without rejecting the input\./);
+    assert.match(md, /\*\*Why it matters:\*\*/);
     assert.doesNotMatch(md, /### filled page\.from_date/);
     const canned = cannedReport({
       schemaVersion: 1,
@@ -552,8 +564,7 @@ describe("findings report", () => {
     assert.match(md, /main\.layout/);
     assert.match(md, /Ga\(\.\.\.\) is not a function/);
     assert.match(md, /#### `\/`/);
-    assert.match(md, /1 error, 0 warnings/);
-    assert.match(md, /- `pageError` · error\n\n  Ga\(\.\.\.\) is not a function/);
+    assert.match(md, /`pageError` · error/);
     assert.doesNotMatch(md, / {2}- `no-multiple-main`/);
     assert.doesNotMatch(md, /`\/vendors` —/);
     assert.doesNotMatch(md, /Recurring rules/);
@@ -890,5 +901,472 @@ describe("findings report", () => {
     assert.match(md, /A – empty name/);
     assert.match(md, /B – empty name/);
     assert.notEqual(extras.extras.get(caseKey(a))?.title, extras.extras.get(caseKey(b))?.title);
+  });
+
+  it("caps pages with issues at 8 and does not paginate chrome", () => {
+    const pages = Array.from({ length: 9 }, (_, i) => ({
+      path: `/p${i}`,
+      foundAt: "t",
+      html: [
+        {
+          source: "html" as const,
+          rule: "no-dup-id",
+          severity: "error" as const,
+          message: `dup-${i}`,
+          count: 1,
+        },
+      ],
+      a11y: [
+        {
+          source: "a11y" as const,
+          rule: "color-contrast",
+          severity: "error" as const,
+          message: "Elements must meet minimum color contrast ratio thresholds",
+          count: 1,
+        },
+      ],
+      visual: [],
+      runtime: [],
+    }));
+    const meta = {
+      url: "http://127.0.0.1:4173/",
+      generatedAt: "t",
+      runIds: [] as string[],
+      quality: { schemaVersion: 1 as const, pages },
+    };
+    const md = renderFindingsReport([], meta, "/tmp/findings.md");
+    assert.match(md, /## Accessibility/);
+    assert.match(md, /\*\*A-1\*\* · AA · 1\.4\.3 · `color-contrast` · error · chrome · 9 pages/);
+    assert.match(md, /## Quality/);
+    assert.equal((md.match(/^#### `/gm) ?? []).length, 8);
+    assert.match(md, /#### `\/p0`/);
+    assert.doesNotMatch(md, /#### `\/p8`/);
+    assert.doesNotMatch(md, /meets AA/i);
+    const full = renderFindingsReport([], { ...meta, qualityFull: true }, "/tmp/findings.md");
+    assert.match(full, /#### `\/p8`/);
+    assert.equal((full.match(/^#### `/gm) ?? []).length, 9);
+    assert.match(full, /`color-contrast` · error · chrome · 9 pages/);
+    const withShell = {
+      ...meta,
+      qualityFull: true,
+      quality: {
+        schemaVersion: 1 as const,
+        pages: [
+          ...pages,
+          {
+            path: "/shell",
+            foundAt: "t",
+            html: [],
+            a11y: [
+              {
+                source: "a11y" as const,
+                rule: "color-contrast",
+                severity: "error" as const,
+                message: "Elements must meet minimum color contrast ratio thresholds",
+                count: 1,
+              },
+            ],
+            visual: [],
+            runtime: [],
+          },
+        ],
+      },
+    };
+    const fullIndex = renderFindingsReport([], withShell, "/tmp/findings.md");
+    const byPage = fullIndex.slice(fullIndex.indexOf("## By page"));
+    assert.match(byPage, /`\/shell` — A-1/);
+    assert.doesNotMatch(fullIndex, /^#### `\/shell`/m);
+  });
+
+  it("splits accessibility vs visual by SC, including 320 overflow", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: [],
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/",
+              foundAt: "t",
+              html: [],
+              a11y: [
+                {
+                  source: "a11y",
+                  rule: "color-contrast",
+                  severity: "error",
+                  message: "Elements must meet minimum color contrast ratio thresholds",
+                  count: 1,
+                },
+                {
+                  source: "a11y",
+                  rule: "heading-order",
+                  severity: "warning",
+                  message: "Heading levels should only increase by one",
+                  count: 1,
+                },
+              ],
+              visual: [
+                {
+                  source: "visual",
+                  rule: "overlap",
+                  severity: "warning",
+                  message: "cards overlap the footer",
+                  count: 1,
+                },
+                {
+                  source: "visual",
+                  rule: "focusVisible",
+                  severity: "error",
+                  message: "no focus ring",
+                  count: 1,
+                },
+                {
+                  source: "visual",
+                  rule: "targetSize",
+                  severity: "error",
+                  message: "target is 16px",
+                  count: 1,
+                },
+                {
+                  source: "visual",
+                  rule: "overflow",
+                  severity: "error",
+                  message: "Page is 80px wider than the viewport",
+                  count: 1,
+                  where: "main @ 320px",
+                },
+                {
+                  source: "visual",
+                  rule: "overflow",
+                  severity: "warning",
+                  message: "Page is 48px wider than the viewport",
+                  count: 1,
+                  where: "main @ 1280px",
+                },
+              ],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Visual"));
+    const visual = md.slice(md.indexOf("## Visual"), md.indexOf("## Quality") === -1 ? md.length : md.indexOf("## Quality"));
+    assert.match(a11y, /`color-contrast`/);
+    assert.match(a11y, /\*\*A-\d+\*\*/);
+    assert.match(a11y, /`focusVisible`/);
+    assert.match(a11y, /`targetSize`/);
+    assert.match(a11y, /1\.4\.10/);
+    assert.match(a11y, /`overflow`/);
+    assert.match(a11y, /Checked: WCAG 2\.0\/2\.1 A and AA/);
+    assert.match(a11y, /Not checked: 3\.3\.8, 2\.5\.7, AAA/);
+    assert.match(a11y, /Fails on covered SCs: A — 0 rules; AA — 4 rules\./);
+    assert.doesNotMatch(a11y, /meets AA/i);
+    assert.match(a11y, /`heading-order`/);
+    assert.match(visual, /`overlap`/);
+    assert.match(visual, /\*\*V-\d+\*\*/);
+    assert.match(visual, /@ 1280px/);
+    assert.doesNotMatch(visual, /`focusVisible`/);
+    assert.doesNotMatch(visual, /`targetSize`/);
+    assert.doesNotMatch(visual, /@ 320px/);
+  });
+
+  it("fallback summary includes start-here, not only a count line", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: ["r"],
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/",
+              foundAt: "t",
+              html: [
+                {
+                  source: "html",
+                  rule: "no-multiple-main",
+                  severity: "error",
+                  message: "dup main",
+                  count: 1,
+                },
+              ],
+              a11y: [],
+              visual: [],
+              runtime: [],
+            },
+            {
+              path: "/vendors",
+              foundAt: "t",
+              html: [
+                {
+                  source: "html",
+                  rule: "no-multiple-main",
+                  severity: "error",
+                  message: "dup main",
+                  count: 1,
+                },
+              ],
+              a11y: [],
+              visual: [],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /0 findings from 1 run \(none\)/);
+    assert.match(md, /### Start here/);
+    assert.match(md, /Fix `no-multiple-main`/);
+    const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
+    assert.ok(summary.includes("Start here"));
+  });
+
+  it("uses a brain summary when valid and falls back when JSON is invalid", async () => {
+    const cases: Parameters<typeof renderFindingsReport>[0] = [
+      {
+        id: "fnd_1_uiIssue",
+        runId: "r",
+        runDir: "/tmp",
+        finding: {
+          schemaVersion: 1,
+          id: "fnd_1_uiIssue",
+          kind: "uiIssue",
+          message: "overlap",
+          tapePath: "/tmp/x",
+          stepIndex: 1,
+        },
+        severity: "suggestion",
+        title: "overlap",
+        description: "overlap",
+        tape: "screenshot ui overlap\n",
+      },
+    ];
+    const config = {
+      url: "http://127.0.0.1:4173/",
+      intro: [],
+      writePolicy: "validationOnly" as const,
+      map: { schemaVersion: 1 as const, app: "x", generation: 0, pages: [] },
+      brain: { baseUrl: "http://127.0.0.1:9", model: "mock" },
+    };
+    const ok = await enrichWithBrain(cases, config, async () =>
+      JSON.stringify({
+        summary: "The shell overlap is the thing to fix first.",
+        items: [
+          {
+            id: "r/fnd_1_uiIssue",
+            title: "Header buttons sit on top of each other.",
+            expected: "Buttons stay apart.",
+            actual: "They share pixels.",
+            why: "Users miss the account menu.",
+          },
+        ],
+      }),
+    );
+    const withBrain = renderFindingsReport(
+      cases,
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
+      "/tmp/findings.md",
+      ok.extras,
+      ok.summary,
+    );
+    assert.match(withBrain, /The shell overlap is the thing to fix first\./);
+    assert.match(withBrain, /Header buttons sit on top of each other\./);
+    assert.match(withBrain, /Users miss the account menu/);
+    assert.doesNotMatch(withBrain, /A human or charter marked this screenshot/);
+    const bad = await enrichWithBrain(cases, config, async () => `{ "summary": "x", "items": [`);
+    const fallback = renderFindingsReport(
+      cases,
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
+      "/tmp/findings.md",
+      bad.extras.size ? bad.extras : undefined,
+      bad.summary || undefined,
+    );
+    assert.match(fallback, /1 finding from 1 run/);
+    assert.match(fallback, /### Start here/);
+    assert.doesNotMatch(fallback, /The shell overlap is the thing to fix first/);
+  });
+
+  it("splits mixed overflow where into 320 accessibility and 1280 visual", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: [],
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/a",
+              foundAt: "t",
+              html: [],
+              a11y: [],
+              visual: [
+                {
+                  source: "visual",
+                  rule: "overflow",
+                  severity: "error",
+                  message: "Page is 80px wider than the viewport",
+                  count: 2,
+                  where: "header · main @ 320px · footer @ 375px",
+                },
+              ],
+              runtime: [],
+            },
+            {
+              path: "/b",
+              foundAt: "t",
+              html: [],
+              a11y: [],
+              visual: [
+                {
+                  source: "visual",
+                  rule: "overflow",
+                  severity: "error",
+                  message: "Page is 80px wider than the viewport",
+                  count: 1,
+                  where: "nav",
+                },
+              ],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Visual"));
+    const visual = md.slice(md.indexOf("## Visual"));
+    assert.match(a11y, /1\.4\.10/);
+    assert.match(a11y, /`overflow`/);
+    assert.match(a11y, /main @ 320px/);
+    assert.doesNotMatch(a11y, /@ 375px/);
+    assert.match(visual, /`overflow`/);
+    assert.match(visual, /@ 375px/);
+    assert.match(visual, /header/);
+    assert.doesNotMatch(visual, /@ 320px/);
+  });
+
+  it("cross-links a visualIssue card to the catalog label", () => {
+    const md = renderFindingsReport(
+      [
+        {
+          id: "fnd_2_visualIssue",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_2_visualIssue",
+            kind: "visualIssue",
+            message:
+              "overlap: Header controls occupy the same pixels — folder_open Clients",
+            tapePath: "/tmp/x",
+            stepIndex: 2,
+            widgetRef: "overlap",
+          },
+          severity: "minor",
+          title: "overlap: Header controls occupy the same pixels",
+          description: "overlap",
+          tape: "screenshot ui overlap\n",
+        },
+      ],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: ["r"],
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/",
+              foundAt: "t",
+              html: [],
+              a11y: [],
+              visual: [
+                {
+                  source: "visual",
+                  rule: "overlap",
+                  severity: "warning",
+                  message: "cards overlap the footer",
+                  count: 1,
+                },
+              ],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /see V-1/);
+    const locAt = md.indexOf("`visualIssue` · minor · `fnd_2_visualIssue`");
+    const seeAt = md.indexOf("see V-1");
+    assert.ok(seeAt > 0 && locAt > seeAt, "see-link before loc line");
+  });
+
+  it("cross-links mixed overflow visualIssue tapes to A-n and V-n", () => {
+    const md = renderFindingsReport(
+      [
+        {
+          id: "fnd_2_visualIssue",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_2_visualIssue",
+            kind: "visualIssue",
+            message:
+              "overflow: Page is 80px wider than the viewport — header · main @ 320px · footer @ 375px",
+            tapePath: "/tmp/x",
+            stepIndex: 2,
+            widgetRef: "overflow",
+          },
+          severity: "minor",
+          title: "overflow: Page is 80px wider than the viewport",
+          description: "overflow",
+          tape: "screenshot ui overflow\n",
+        },
+      ],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: ["r"],
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/",
+              foundAt: "t",
+              html: [],
+              a11y: [],
+              visual: [
+                {
+                  source: "visual",
+                  rule: "overflow",
+                  severity: "error",
+                  message: "Page is 80px wider than the viewport",
+                  count: 1,
+                  where: "header · main @ 320px · footer @ 375px",
+                },
+              ],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /see A-1/);
+    assert.match(md, /see V-1/);
+    const see = md.slice(md.indexOf("see A-1"), md.indexOf("`visualIssue`"));
+    assert.match(see, /see A-1 · see V-1/);
   });
 });
