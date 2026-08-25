@@ -226,7 +226,7 @@ describe("decideFormHunt", () => {
         }),
         stepsUsed: 0,
         pages: [home, customers, invoices],
-        pageLands: { invoices: hourAgo },
+        pageFog: { invoices: hourAgo },
       },
       () => 0,
     );

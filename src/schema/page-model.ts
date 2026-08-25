@@ -83,6 +83,16 @@ export const Surface = z
   });
 export type Surface = z.infer<typeof Surface>;
 
+/** Last-land clocks on a sitemap page. Missing `fog` = full fog. */
+export const PageFog = z
+  .object({
+    at: z.string().min(1),
+    jobs: z.record(z.string().min(1), z.string().min(1)).default({}),
+    modes: z.record(z.string().min(1), z.string().min(1)).default({}),
+  })
+  .strict();
+export type PageFog = z.infer<typeof PageFog>;
+
 export const Page = z
   .object({
     id: Id,
@@ -100,6 +110,8 @@ export const Page = z
     describedBy: z.enum(["inspect", "explore", "vision"]).optional(),
     /** Widget fingerprint when `description` was written. */
     describeKey: z.string().min(1).optional(),
+    /** Last land / job / mode clocks. Missing = full fog. Not a second map. */
+    fog: PageFog.optional(),
   })
   .strict()
   .superRefine((page, ctx) => {

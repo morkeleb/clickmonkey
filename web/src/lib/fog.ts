@@ -17,22 +17,22 @@ export const MONKEY_MARK: Record<string, string> = {
   mcp: "c",
 };
 
-export function fogOf(lastLandAt: string | undefined, now = Date.now()): number {
-  if (!lastLandAt) return 1;
-  const t = Date.parse(lastLandAt);
+export function fogOf(at: string | undefined, now = Date.now()): number {
+  if (!at) return 1;
+  const t = Date.parse(at);
   if (!Number.isFinite(t)) return 1;
   return fogHunger(Math.max(0, now - t));
 }
 
 /** Green (fresh) → red (hungry). Stretches fogHunger 0.35…1 across the hue. */
-export function fogHeatColor(lastLandAt: string | undefined, now = Date.now()): string {
-  const t = Math.min(1, Math.max(0, (fogOf(lastLandAt, now) - 0.35) / 0.65));
+export function fogHeatColor(at: string | undefined, now = Date.now()): string {
+  const t = Math.min(1, Math.max(0, (fogOf(at, now) - 0.35) / 0.65));
   return `hsl(${Math.round(125 * (1 - t))} 72% 42%)`;
 }
 
-export function landAgeLabel(lastLandAt: string | undefined, now = Date.now()): string {
-  if (!lastLandAt) return "never visited";
-  const t = Date.parse(lastLandAt);
+export function landAgeLabel(at: string | undefined, now = Date.now()): string {
+  if (!at) return "never visited";
+  const t = Date.parse(at);
   if (!Number.isFinite(t)) return "never visited";
   const ms = now - t;
   if (ms < 0) return "visited just now";

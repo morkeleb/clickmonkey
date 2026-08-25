@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { saveConfig } from "../src/persist/config.js";
 import { exploreOutlineOf, setPresenceOutline, startPresence } from "../src/persist/presence.js";
 import { emptyConfig } from "../src/schema/config.js";
-import { touchLand } from "../src/persist/lands.js";
+import { stampFog } from "../src/persist/fog.js";
 import { buildUiSnapshot, refreshUiSnapshot } from "../src/ui/snapshot.js";
 
 describe("buildUiSnapshot", () => {
@@ -154,11 +154,11 @@ describe("buildUiSnapshot", () => {
       patched.graph.nodes.find((n) => n.id === "home")?.screenshotUrl,
       "/files/runs/20260818T150000Z-ab12/shots/step-000.png",
     );
-    touchLand(path, "home", { at: "2026-01-02T00:00:00.000Z", job: "map" });
+    stampFog(path, "home", { at: "2026-01-02T00:00:00.000Z", job: "map" });
     const runPatch = refreshUiSnapshot(snap, path, "runs");
     assert.equal(runPatch.graph.nodes.find((n) => n.id === "home")?.screenshotUrl, home?.screenshotUrl);
-    assert.equal(runPatch.graph.nodes.find((n) => n.id === "home")?.lastLandAt, "2026-01-02T00:00:00.000Z");
-    assert.equal(runPatch.graph.nodes.find((n) => n.id === "home")?.jobLands?.map, "2026-01-02T00:00:00.000Z");
+    assert.equal(runPatch.graph.nodes.find((n) => n.id === "home")?.fogAt, "2026-01-02T00:00:00.000Z");
+    assert.equal(runPatch.graph.nodes.find((n) => n.id === "home")?.jobFog?.map, "2026-01-02T00:00:00.000Z");
   });
 
   it("attaches screenshots from a live run that has no log.txt yet", () => {

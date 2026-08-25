@@ -42,10 +42,10 @@ export interface BrainContext {
   lootSteps?: number;
   /** Times this run stood on `page/surface`. map lifts unseen rooms first. */
   pageVisits?: Readonly<Record<string, number>>;
-  /** Last land ISO times by page id for this job (`clickmonkey/lands.json`). */
-  pageLands?: Readonly<Record<string, string>>;
+  /** Last-land ISO times by page id for this job (`page.fog` on the sitemap). */
+  pageFog?: Readonly<Record<string, string>>;
   /** Last mode ISO times keyed `page/mode`. */
-  modeLands?: Readonly<Record<string, string>>;
+  modeFog?: Readonly<Record<string, string>>;
   /** map / unleash / nasty. Hunger uses this monkey's clock. */
   job?: WalkerJobName;
   plan?: UiExplorePlan;

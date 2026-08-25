@@ -166,7 +166,6 @@ export type {
 export { extractClickmonkeyFences, isFindingsReport } from "./reports/fences.js";
 export {
   renderFindingsReport,
-  renderQualitySection,
   enrichWithBrain,
   writeRunsReport,
 } from "./reports/findings-report.js";
@@ -187,7 +186,17 @@ export {
   listPresences,
 } from "./persist/presence.js";
 export { collectFindingCases, listRuns } from "./persist/runs.js";
-export { loadLands, touchLand, recordLand, recordMode, landsPath, shouldStampLand } from "./persist/lands.js";
+export {
+  loadMapPages,
+  stampFog,
+  recordFog,
+  recordMode,
+  resetFog,
+  leftoverFogPath,
+  shouldStampFog,
+  formatFogStatus,
+  absorbLeftoverFog,
+} from "./persist/fog.js";
 export {
   unleashBrain,
   mapBrain,
@@ -244,7 +253,16 @@ export {
   shouldStampMode,
   lineMatchesMode,
 } from "./brains/walker-mode.js";
-export { jobOfBrain, monkeyOfBrain, landTimes, jobLandTimes, jobLandsOf, modeLandTimes } from "./schema/fog.js";
+export {
+  jobOfBrain,
+  monkeyOfBrain,
+  pageFogTimes,
+  jobFogTimes,
+  jobFogOf,
+  modeFogTimes,
+  modeFogKey,
+  mergePageFog,
+} from "./schema/fog.js";
 export type { WalkerJobName, WalkerModeName, MonkeyName } from "./schema/fog.js";
 export {
   floodNpc,

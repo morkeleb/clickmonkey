@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PageFog, type Page } from "./page-model.js";
 
 /** Breakpoints: 2 days (light haze) and 40 days (full fog). */
 export const FOG_FRESH_MS = 2 * 24 * 60 * 60 * 1000;
@@ -9,47 +10,6 @@ export type WalkerJobName = z.infer<typeof WalkerJobName>;
 
 export const WalkerModeName = z.enum(["wizard", "form", "list", "tab", "dialog", "empty", "nav"]);
 export type WalkerModeName = z.infer<typeof WalkerModeName>;
-
-export const PageLand = z
-  .object({
-    at: z.string().min(1),
-    jobs: z.record(z.string().min(1), z.string().min(1)).default({}),
-    modes: z.record(z.string().min(1), z.string().min(1)).default({}),
-  })
-  .strict();
-export type PageLand = z.infer<typeof PageLand>;
-
-export const LandsLedgerV1 = z
-  .object({
-    schemaVersion: z.literal(1),
-    pages: z.record(z.string().min(1), z.string().min(1)),
-  })
-  .strict();
-export type LandsLedgerV1 = z.infer<typeof LandsLedgerV1>;
-
-export const LandsLedger = z
-  .object({
-    schemaVersion: z.literal(2),
-    pages: z.record(z.string().min(1), PageLand),
-  })
-  .strict();
-export type LandsLedger = z.infer<typeof LandsLedger>;
-
-export function emptyLands(): LandsLedger {
-  return { schemaVersion: 2, pages: {} };
-}
-
-export function migrateLands(raw: unknown): LandsLedger {
-  if (raw && typeof raw === "object" && (raw as { schemaVersion?: unknown }).schemaVersion === 1) {
-    const v1 = LandsLedgerV1.parse(raw);
-    const pages: Record<string, PageLand> = {};
-    for (const [id, at] of Object.entries(v1.pages)) {
-      pages[id] = { at, jobs: {}, modes: {} };
-    }
-    return { schemaVersion: 2, pages };
-  }
-  return LandsLedger.parse(raw);
-}
 
 export function jobOfBrain(brain?: string): WalkerJobName | undefined {
   if (brain === "map") return "map";
@@ -68,41 +28,74 @@ export function monkeyOfBrain(brain?: string): MonkeyName | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-export function landTimes(ledger: LandsLedger): Record<string, string> {
+export function laterClock(a?: string, b?: string): string | undefined {
+  const ta = a ? Date.parse(a) : Number.NaN;
+  const tb = b ? Date.parse(b) : Number.NaN;
+  const aOk = Number.isFinite(ta);
+  const bOk = Number.isFinite(tb);
+  if (!aOk) return bOk ? b : undefined;
+  if (!bOk) return a;
+  return tb > ta ? b : a;
+}
+
+/** Union two fog blobs; later ISO wins per clock. Missing side is not a wipe. */
+export function mergePageFog(keep?: PageFog, other?: PageFog): PageFog | undefined {
+  if (!keep) return other ? structuredClone(other) : undefined;
+  if (!other) return keep;
+  const jobs = { ...keep.jobs };
+  for (const [key, at] of Object.entries(other.jobs)) {
+    const next = laterClock(jobs[key], at);
+    if (next) jobs[key] = next;
+  }
+  const modes = { ...keep.modes };
+  for (const [key, at] of Object.entries(other.modes)) {
+    const next = laterClock(modes[key], at);
+    if (next) modes[key] = next;
+  }
+  const at = laterClock(keep.at, other.at) ?? keep.at;
+  return { at, jobs, modes };
+}
+
+export function pageFogTimes(pages: readonly Pick<Page, "id" | "fog">[]): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [id, page] of Object.entries(ledger.pages)) out[id] = page.at;
+  for (const page of pages) {
+    if (page.fog?.at) out[page.id] = page.fog.at;
+  }
   return out;
 }
 
-export function jobLandTimes(ledger: LandsLedger, job: WalkerJobName): Record<string, string> {
+export function jobFogTimes(
+  pages: readonly Pick<Page, "id" | "fog">[],
+  job: WalkerJobName,
+): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [id, page] of Object.entries(ledger.pages)) {
-    const at = page.jobs[job];
-    if (at) out[id] = at;
+  for (const page of pages) {
+    const at = page.fog?.jobs[job];
+    if (at) out[page.id] = at;
   }
   return out;
 }
 
 /** Per-page job clocks for the sitemap heat pips. Missing job = full fog. */
-export function jobLandsOf(page: PageLand | undefined): Partial<Record<WalkerJobName, string>> | undefined {
-  if (!page) return undefined;
+export function jobFogOf(fog: PageFog | undefined): Partial<Record<WalkerJobName, string>> | undefined {
+  if (!fog) return undefined;
   const out: Partial<Record<WalkerJobName, string>> = {};
   for (const job of WalkerJobName.options) {
-    const at = page.jobs[job];
+    const at = fog.jobs[job];
     if (at) out[job] = at;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-export function modeLandKey(pageId: string, mode: WalkerModeName): string {
+export function modeFogKey(pageId: string, mode: WalkerModeName): string {
   return `${pageId}/${mode}`;
 }
 
-export function modeLandTimes(ledger: LandsLedger): Record<string, string> {
+export function modeFogTimes(pages: readonly Pick<Page, "id" | "fog">[]): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [id, page] of Object.entries(ledger.pages)) {
-    for (const [mode, at] of Object.entries(page.modes)) {
-      out[`${id}/${mode}`] = at;
+  for (const page of pages) {
+    for (const [mode, at] of Object.entries(page.fog?.modes ?? {})) {
+      out[`${page.id}/${mode}`] = at;
     }
   }
   return out;
@@ -117,11 +110,11 @@ export function fogHunger(staleMs: number): number {
 
 /** Missing/invalid last land = full fog. */
 export function staleMsForPage(
-  pageLands: Readonly<Record<string, string>> | undefined,
+  clocks: Readonly<Record<string, string>> | undefined,
   pageId: string,
   now = Date.now(),
 ): number {
-  const at = pageLands?.[pageId];
+  const at = clocks?.[pageId];
   if (!at) return FOG_OLD_MS;
   const t = Date.parse(at);
   if (!Number.isFinite(t)) return FOG_OLD_MS;

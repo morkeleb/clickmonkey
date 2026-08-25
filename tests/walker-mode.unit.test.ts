@@ -390,8 +390,8 @@ describe("walker modes", () => {
     const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow" };
     assert.equal(detectWalkerMode(ctx).name, "form");
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    assert.equal(detectWalkerMode({ ...ctx, modeLands: { "home/form": hourAgo } }).name, "list");
-    assert.equal(detectWalkerMode({ ...ctx, modeLands: { "home/list": hourAgo } }).name, "form");
+    assert.equal(detectWalkerMode({ ...ctx, modeFog: { "home/form": hourAgo } }).name, "list");
+    assert.equal(detectWalkerMode({ ...ctx, modeFog: { "home/list": hourAgo } }).name, "form");
   });
 
   it("does not lock wizard on Continue shopping", () => {
@@ -418,7 +418,7 @@ describe("walker modes", () => {
         view,
         stepsUsed: 0,
         writePolicy: "allow",
-        modeLands: { "home/wizard": hourAgo },
+        modeFog: { "home/wizard": hourAgo },
       }).name,
       "wizard",
     );

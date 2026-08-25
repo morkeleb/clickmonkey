@@ -34,7 +34,7 @@ import {
   type FillFn,
 } from "./unleash.js";
 import { decideFormHunt, FORM_HUNT_STAY_RATE } from "./form-hunt.js";
-import { fogHunger, modeLandKey, staleMsForPage, type WalkerModeName } from "../schema/fog.js";
+import { fogHunger, modeFogKey, staleMsForPage, type WalkerModeName } from "../schema/fog.js";
 
 export type { WalkerModeName };
 
@@ -308,7 +308,7 @@ export const UNLEASH_MODES: WalkerMode[] = [
 ];
 
 function modeHunger(ctx: BrainContext, name: WalkerModeName): number {
-  return fogHunger(staleMsForPage(ctx.modeLands, modeLandKey(ctx.view.page, name)));
+  return fogHunger(staleMsForPage(ctx.modeFog, modeFogKey(ctx.view.page, name)));
 }
 
 export function detectWalkerMode(ctx: BrainContext): WalkerMode {

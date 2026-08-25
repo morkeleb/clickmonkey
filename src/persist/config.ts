@@ -5,6 +5,7 @@ import { applyMissingPageDescriptions } from "../surveyor/describe.js";
 import { mergeTrees } from "../surveyor/merge.js";
 import { withFileLock } from "./lock.js";
 import { applyDevOrigin, readDevOrigin } from "./dev-origin.js";
+import { absorbLeftoverFog, dropLeftoverFog } from "./fog.js";
 import { ensureWorkspace, mapPath } from "./workspace.js";
 
 function writeJson(path: string, value: unknown): void {
@@ -51,6 +52,7 @@ export function loadConfig(path: string, opts?: { lenientMap?: boolean }): Confi
     map = emptyDraft();
   }
   applyMissingPageDescriptions(map.pages);
+  map = absorbLeftoverFog(path, map);
   const url = applyDevOrigin(leash.url, readDevOrigin(path));
   return Config.parse({ ...leash, url, map });
 }
@@ -77,12 +79,16 @@ export function saveConfig(
   const shared = mapPath(path);
   withFileLock(shared, () => {
     if (!existsSync(shared)) {
-      writeJson(shared, config.map);
+      writeJson(shared, absorbLeftoverFog(path, config.map));
+      dropLeftoverFog(path);
       return;
     }
     if (config.map.pages.length === 0) return;
     const disk = readMapFile(shared);
-    if (disk.pages.length === 0) writeJson(shared, config.map);
+    if (disk.pages.length === 0) {
+      writeJson(shared, absorbLeftoverFog(path, config.map));
+      dropLeftoverFog(path);
+    }
   });
 }
 
@@ -98,9 +104,10 @@ export function persistSharedMap(path: string, map: PageModelDraft): Config {
   const shared = mapPath(path);
   return withFileLock(shared, () => {
     const disk = loadConfig(path);
-    const merged = mergeTrees(disk.map, map);
+    const merged = absorbLeftoverFog(path, mergeTrees(disk.map, map));
     applyMissingPageDescriptions(merged.pages);
     writeJson(shared, merged);
+    dropLeftoverFog(path);
     return Config.parse({ ...disk, map: merged });
   });
 }

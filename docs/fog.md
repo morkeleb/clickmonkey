@@ -10,35 +10,48 @@ Monkeys and modes: [walkers.md](walkers.md).
 Inspect (HTML, axe, layout, testability) still runs on whoever lands. Quality
 `foundAt` is first seen; fog uses **last land**.
 
-## Ledger
+## On the page
 
-`clickmonkey/lands.json` (gitignored, local to this workspace):
+Fog is a field on the sitemap page (`clickmonkey/map.json`). There is not a
+second map. Missing `fog` = full hunger.
 
 ```json
 {
-  "schemaVersion": 2,
-  "pages": {
-    "home": {
-      "at": "2026-08-20T12:00:00.000Z",
-      "jobs": { "map": "…", "unleash": "…", "nasty": "…" },
-      "modes": { "form": "…", "list": "…" }
-    }
-  }
+  "id": "home",
+  "path": "/",
+  "description": "Invoices dashboard",
+  "fog": {
+    "at": "2026-08-20T12:00:00.000Z",
+    "jobs": { "map": "…", "unleash": "…", "nasty": "…" },
+    "modes": { "form": "…", "list": "…" }
+  },
+  "surfaces": []
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `at` | Last land by **any** job. Dashboard haze. Vision skip uses this snapshot at boot. |
-| `jobs.map` / `jobs.unleash` / `jobs.nasty` | Last land for **that** job only |
-| `modes.*` | Last time that mode did its work on this page |
-| missing clock | Full fog (40 days) |
+| `fog.at` | Last land by **any** job. Dashboard haze. Vision skip uses this snapshot at boot. |
+| `fog.jobs.map` / `unleash` / `nasty` | Last land for **that** job only |
+| `fog.modes.*` | Last time that mode did its work on this page |
+| missing `fog` / missing clock | Full fog (40 days) |
 
-v1 `{ "pages": { "home": "<iso>" } }` upgrades on read (`at` only, empty jobs/modes). A corrupt file is left unread and not overwritten.
+A leftover `clickmonkey/lands.json` (the old sidecar) is absorbed onto matching
+pages on load and deleted on the next map write. Inspect merges keep the later
+clock; they do not wipe fog when the incoming tree has none.
 
-A **fresh clone or CI job without this file is full fog** — every room looks
-hungry. That is the default. Cache `lands.json` across pipelines only if you
-want hunger to carry over.
+Clocks on a committed map travel with the rooms. A page with no `fog` is hungry.
+To force a full retest (CI, after a big deploy):
+
+```bash
+clickmonkey fog                     # print clocks on each sitemap page
+clickmonkey fog --reset             # drop `fog` on every page — rooms stay
+clickmonkey fog --reset --job nasty # drop only the nasty clock; `at` stays
+```
+
+`--job` leaves `at` and the other job/mode clocks, so vision skip and dashboard
+haze can still look fresh. Full `--reset` is the “force a full retest” path.
+The dashboard paints haze / heat pips from `page.fog`. It stays read-only.
 
 ## Clocks do not share
 
@@ -55,12 +68,12 @@ still old, so the next decide on that tile is list.
 | **mcp** | **none** | same as explore |
 | Spec / replay | none | none |
 
-Land is stamped **once per page stay** (`recordLand`, skipped on replay and
+Land is stamped **once per page stay** (`recordFog`, skipped on replay and
 404). Mode is stamped **every exercise** (`recordMode`). Brain names that
 stamp a job: `map`, `unleash`, `unleash-nasty`. `explore` and `mcp` do not
 (they are different live units on the map: **e** vs **c**).
 
-Code: `src/schema/fog.ts`, `src/persist/lands.ts`.
+Code: `src/schema/fog.ts`, `src/persist/fog.ts`.
 
 ## Hunger
 
@@ -134,10 +147,10 @@ the previous DOM row.
 
 | Path | Role |
 |---|---|
-| `clickmonkey/lands.json` | clocks (gitignored) |
-| `clickmonkey/map.json` | rooms and doors the map monkey grows |
+| `clickmonkey/map.json` | rooms, doors, descriptions, and `page.fog` clocks |
+| leftover `clickmonkey/lands.json` | old sidecar; absorbed then deleted |
 | `src/schema/fog.ts` | breakpoints, hunger, job/mode names |
-| `src/persist/lands.ts` | read/migrate/stamp |
+| `src/persist/fog.ts` | stamp/reset `page.fog` |
 | `src/brains/npc.ts` | `npcHunger`, pathfind |
 | `src/brains/map-scout.ts` | unseen doors, then stale rooms |
 | `src/brains/form-hunt.ts` | stale mapped forms |

@@ -74,7 +74,7 @@ export function decideFormHunt(ctx: BrainContext, rng: () => number): BrainDecis
     ctx,
     goals: forms.map((g) => ({
       key: formGoalKey(g),
-      hunger: npcHunger(ctx.formHits?.[formGoalKey(g)] ?? 0, staleMsForPage(ctx.pageLands, g.pageId)),
+      hunger: npcHunger(ctx.formHits?.[formGoalKey(g)] ?? 0, staleMsForPage(ctx.pageFog, g.pageId)),
     })),
     rng,
     committed: ctx.huntTarget,

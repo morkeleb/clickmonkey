@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -42,6 +42,7 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stdout, /^\s+nasty\s/m);
     assert.match(result.stdout, /explore/);
     assert.match(result.stdout, /^\s+mcp\s/m);
+    assert.match(result.stdout, /^\s+fog\s/m);
     assert.match(result.stdout, /report/);
     assert.match(result.stdout, /^\s+prune\s/m);
     assert.match(result.stdout, /^\s+spec\s/m);
@@ -79,6 +80,47 @@ describe("clickmonkey CLI chassis", () => {
     assert.equal(result.status, 2);
     assert.match(result.stderr, /cannot reach the language model/);
     assert.match(result.stderr, /http:\/\/127\.0\.0\.1:9/);
+  });
+
+  it("fog --reset clears clocks on the sitemap", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-fog-reset-"));
+    const cfg = join(dir, "clickmonkey.json");
+    const init = run(["init", "--url", "http://127.0.0.1:4173/", "--config", cfg]);
+    assert.equal(init.status, 0, init.stderr);
+    mkdirSync(join(dir, "clickmonkey"), { recursive: true });
+    writeFileSync(
+      join(dir, "clickmonkey", "map.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        app: "app",
+        generation: 0,
+        pages: [
+          {
+            id: "home",
+            path: "/",
+            params: [],
+            ready: { by: "testId", value: "home" },
+            surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+            fog: { at: "2026-01-01T00:00:00.000Z", jobs: { map: "2026-01-01T00:00:00.000Z" }, modes: {} },
+          },
+        ],
+      })}\n`,
+    );
+    const listed = run(["fog", "--config", cfg]);
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.match(listed.stdout, /1 page/);
+    assert.match(listed.stdout, /home/);
+    assert.match(listed.stdout, /map /);
+    const reset = run(["fog", "--reset", "--config", cfg]);
+    assert.equal(reset.status, 0, reset.stderr);
+    assert.match(reset.stdout, /reset 1 page/);
+    const after = run(["fog", "--config", cfg]);
+    assert.equal(after.status, 0, after.stderr);
+    assert.match(after.stdout, /1 page/);
+    assert.match(after.stdout, /home  at never/);
+    const jobOnly = run(["fog", "--job", "map", "--config", cfg]);
+    assert.equal(jobOnly.status, 2);
+    assert.match(jobOnly.stderr, /--job is only valid with --reset/);
   });
 
   it("init from another cwd writes the leash there", () => {

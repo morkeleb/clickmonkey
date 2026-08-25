@@ -49,8 +49,8 @@ export type GraphNodeData = {
   /** Visual card size when the flow node is a larger bounding box (page + dialog rail). */
   cardWidth?: number;
   cardHeight?: number;
-  lastLandAt?: string;
-  jobLands?: { map?: string; unleash?: string; nasty?: string };
+  fogAt?: string;
+  jobFog?: { map?: string; unleash?: string; nasty?: string };
 };
 
 export type GraphFlowNode = Node<GraphNodeData, "graph" | "section">;
@@ -260,8 +260,8 @@ export function layoutGraph(
         cardHeight: PAGE_NODE.height,
         ...(node.blurb ? { blurb: node.blurb } : {}),
         ...(node.describedBy ? { describedBy: node.describedBy } : {}),
-        ...(node.lastLandAt ? { lastLandAt: node.lastLandAt } : {}),
-        ...(node.jobLands ? { jobLands: node.jobLands } : {}),
+        ...(node.fogAt ? { fogAt: node.fogAt } : {}),
+        ...(node.jobFog ? { jobFog: node.jobFog } : {}),
       },
       style: { width: box.width, height: box.height, opacity: hidden ? 0.18 : 1 },
       zIndex: 2,
@@ -340,8 +340,8 @@ export function layoutGraph(
           cardHeight: NESTED_PAGE.height,
           ...(page.blurb ? { blurb: page.blurb } : {}),
           ...(page.describedBy ? { describedBy: page.describedBy } : {}),
-          ...(page.lastLandAt ? { lastLandAt: page.lastLandAt } : {}),
-          ...(page.jobLands ? { jobLands: page.jobLands } : {}),
+          ...(page.fogAt ? { fogAt: page.fogAt } : {}),
+          ...(page.jobFog ? { jobFog: page.jobFog } : {}),
         },
         style: { width: box.width, height: box.height, opacity: childHidden ? 0.18 : 1 },
         zIndex: 2,

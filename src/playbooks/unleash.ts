@@ -19,8 +19,8 @@ import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
 import { shouldPersistFinding } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
-import { loadLands, recordMode } from "../persist/lands.js";
-import { jobLandTimes, jobOfBrain, landTimes, modeLandKey, modeLandTimes } from "../schema/fog.js";
+import { loadMapPages, recordMode } from "../persist/fog.js";
+import { jobFogTimes, jobOfBrain, modeFogKey, modeFogTimes, pageFogTimes } from "../schema/fog.js";
 import { stopPresence } from "../persist/presence.js";
 import { requireVisionShots, resolveVision, VisionError, type Config } from "../schema/config.js";
 import type { Finding } from "../schema/finding.js";
@@ -115,12 +115,12 @@ export async function runUnleash(opts: {
     const noopsByPage = new Map<string, string[]>();
     const formHits: Record<string, number> = {};
     const pageVisits: Record<string, number> = {};
-    const ledger = loadLands(opts.configPath);
+    const pages = loadMapPages(opts.configPath);
     const job = jobOfBrain(brain.name);
-    const pageLands: Record<string, string> = {
-      ...(job ? jobLandTimes(ledger, job) : landTimes(ledger)),
+    const pageFog: Record<string, string> = {
+      ...(job ? jobFogTimes(pages, job) : pageFogTimes(pages)),
     };
-    const modeLands: Record<string, string> = { ...modeLandTimes(ledger) };
+    const modeFog: Record<string, string> = { ...modeFogTimes(pages) };
     let huntTarget: string | undefined;
     let lootSteps = 0;
     while (stepsUsed < steps) {
@@ -130,7 +130,7 @@ export async function runUnleash(opts: {
       const onPage = view.page;
       const hereKey = `${view.page}/${view.surface}`;
       pageVisits[hereKey] = (pageVisits[hereKey] ?? 0) + 1;
-      pageLands[view.page] = new Date().toISOString();
+      pageFog[view.page] = new Date().toISOString();
       const decision = await brain.decide({
         view,
         stepsUsed,
@@ -141,8 +141,8 @@ export async function runUnleash(opts: {
         noopIds: noopsByPage.get(onPage) ?? [],
         formHits,
         pageVisits,
-        pageLands,
-        modeLands,
+        pageFog,
+        modeFog,
         ...(job ? { job } : {}),
         ...(huntTarget ? { huntTarget } : {}),
         ...(lootSteps > 0 ? { lootSteps } : {}),
@@ -203,7 +203,7 @@ export async function runUnleash(opts: {
       }
       if (formOk && shouldStampMode(decision) && decision.mode) {
         const at = new Date().toISOString();
-        modeLands[modeLandKey(onPage, decision.mode)] = at;
+        modeFog[modeFogKey(onPage, decision.mode)] = at;
         recordMode(state, onPage, decision.mode);
       }
       if (filledForm && formOk) formHits[formKey] = (formHits[formKey] ?? 0) + 1;

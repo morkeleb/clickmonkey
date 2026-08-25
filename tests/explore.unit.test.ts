@@ -35,7 +35,7 @@ import { formatExplorePlanItemLine } from "../src/schema/ui.js";
 import { PageModel } from "../src/schema/page-model.js";
 import type { ChatMessage } from "../src/brains/chat.js";
 import { saveConfig } from "../src/persist/config.js";
-import { loadLands } from "../src/persist/lands.js";
+import { loadMapPages } from "../src/persist/fog.js";
 import { loadPresence, startPresence } from "../src/persist/presence.js";
 import { Config, emptyConfig } from "../src/schema/config.js";
 import type { View } from "../src/schema/view.js";
@@ -1309,7 +1309,7 @@ describe("applyExploreStep", () => {
     try {
       const result = await applyExploreStep(ctx, 'fill page.name "Ada"');
       assert.equal(result.ok, true);
-      assert.ok(loadLands(configPath).pages.home?.modes.form);
+      assert.ok(loadMapPages(configPath).find((p) => p.id === "home")?.fog?.modes.form);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

@@ -12,7 +12,7 @@ import {
   usefulExploreNote,
 } from "../brains/explore.js";
 import { detectWalkerMode, lineMatchesMode } from "../brains/walker-mode.js";
-import { recordMode } from "../persist/lands.js";
+import { recordMode } from "../persist/fog.js";
 import { bootRun } from "../executor/boot.js";
 import { logBrainDecide } from "../executor/nav-log.js";
 import { createExecutor, type RunState, type StepResult } from "../executor/run.js";

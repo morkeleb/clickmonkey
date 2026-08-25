@@ -48,7 +48,7 @@ function mapRoomGoals(ctx: BrainContext): { key: string; hunger: number }[] {
     const pageId = key.split("/")[0] ?? key;
     goals.push({
       key,
-      hunger: npcHunger(visitsOf(ctx.pageVisits, key), staleMsForPage(ctx.pageLands, pageId)),
+      hunger: npcHunger(visitsOf(ctx.pageVisits, key), staleMsForPage(ctx.pageFog, pageId)),
     });
   };
   for (const page of pages) {

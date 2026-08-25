@@ -5,6 +5,7 @@ import {
   cmdBundle,
   cmdCompact,
   cmdExplore,
+  cmdFog,
   cmdInit,
   cmdInspect,
   cmdMap,
@@ -49,6 +50,8 @@ try {
       check: { type: "boolean" },
       "fail-on-findings": { type: "boolean" },
       ids: { type: "string" },
+      reset: { type: "boolean" },
+      job: { type: "string" },
     },
   });
 
@@ -84,6 +87,8 @@ try {
     check: Boolean(values.check),
     failOnFindings: Boolean(values["fail-on-findings"]),
     ids: typeof values.ids === "string" ? values.ids : undefined,
+    reset: Boolean(values.reset),
+    job: typeof values.job === "string" ? values.job : undefined,
   };
 
   const run = async (): Promise<number> => {
@@ -108,6 +113,8 @@ try {
         return cmdExplore(flags);
       case "mcp":
         return cmdMcp(flags);
+      case "fog":
+        return cmdFog(flags);
       case "report":
         return cmdReport(flags);
       case "prune":

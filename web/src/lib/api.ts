@@ -16,16 +16,16 @@ function readRuns(raw: unknown): UiRun[] | undefined {
   return Array.isArray(runs) ? runs : undefined;
 }
 
-type LandPatch = NonNullable<UiEvent["lastLands"]>[string];
+type FogPatch = NonNullable<UiEvent["lastFog"]>[string];
 
-function readLastLands(raw: unknown): Record<string, LandPatch> | undefined {
+function readLastFog(raw: unknown): Record<string, FogPatch> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const lands = (raw as UiEvent).lastLands;
-  if (!lands || typeof lands !== "object" || Array.isArray(lands)) return undefined;
-  return lands;
+  const fog = (raw as UiEvent).lastFog;
+  if (!fog || typeof fog !== "object" || Array.isArray(fog)) return undefined;
+  return fog;
 }
 
-function jobLandsFromPatch(patch: LandPatch): UiSnapshot["graph"]["nodes"][number]["jobLands"] {
+function jobFogFromPatch(patch: FogPatch): UiSnapshot["graph"]["nodes"][number]["jobFog"] {
   const jobs = {
     ...(patch.map ? { map: patch.map } : {}),
     ...(patch.unleash ? { unleash: patch.unleash } : {}),
@@ -34,24 +34,24 @@ function jobLandsFromPatch(patch: LandPatch): UiSnapshot["graph"]["nodes"][numbe
   return Object.keys(jobs).length > 0 ? jobs : undefined;
 }
 
-/** Full last-land map: stamp present pages, drop times the server no longer has. */
-export function applyLastLands(
+/** Full fog map: stamp present pages, drop times the server no longer has. */
+export function applyLastFog(
   snapshot: UiSnapshot,
-  lastLands: Record<string, LandPatch>,
+  lastFog: Record<string, FogPatch>,
 ): UiSnapshot {
   return {
     ...snapshot,
     graph: {
       ...snapshot.graph,
       nodes: snapshot.graph.nodes.map((node) => {
-        const patch = lastLands[node.pageId];
-        const { lastLandAt: _at, jobLands: _jobs, ...rest } = node;
+        const patch = lastFog[node.pageId];
+        const { fogAt: _at, jobFog: _jobs, ...rest } = node;
         if (!patch) return rest;
-        const jobLands = jobLandsFromPatch(patch);
+        const jobFog = jobFogFromPatch(patch);
         return {
           ...rest,
-          ...(patch.at ? { lastLandAt: patch.at } : {}),
-          ...(jobLands ? { jobLands } : {}),
+          ...(patch.at ? { fogAt: patch.at } : {}),
+          ...(jobFog ? { jobFog } : {}),
         };
       }),
     },
@@ -106,11 +106,11 @@ export function useSnapshot(): {
           return;
         }
         const runs = readRuns(parsed);
-        const lastLands = readLastLands(parsed);
-        if ((runs || lastLands) && !cancelled) {
+        const lastFog = readLastFog(parsed);
+        if ((runs || lastFog) && !cancelled) {
           setSnapshot((prev) => {
             if (!prev) return prev;
-            const next = lastLands ? applyLastLands(prev, lastLands) : prev;
+            const next = lastFog ? applyLastFog(prev, lastFog) : prev;
             return runs ? { ...next, runs } : next;
           });
         }

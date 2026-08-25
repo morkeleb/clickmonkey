@@ -12,6 +12,7 @@ _clickmonkey() {
     'unleash:NPC: hunt mapped forms, fill and submit [--nasty]'
     'explore:Paladin: charter-driven LLM walk'
     'mcp:Exploratory testing over MCP (stdio)'
+    'fog:Print or reset fog clocks on the sitemap'
     'report:Markdown findings report from selected runs'
     'replay:Replay a log or a findings-report markdown file'
     'spec:Markdown specs under clickmonkey/specs/ [--check] [--fail-on-findings]'
@@ -42,6 +43,8 @@ _clickmonkey() {
     '--no-open[Do not open a browser]' \
     '--check[Validate spec ids against the map (no browser)]' \
     '--fail-on-findings[Exit 1 when a spec run finds a bug]' \
+    '--reset[Wipe lands.json fog clocks (fog)]' \
+    '--job[Reset one job clock]:job:(map unleash nasty)' \
     '1:command:->cmds' \
     '*::arg:->args'
 

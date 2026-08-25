@@ -4,8 +4,8 @@ import { hopsFromNavLog } from "./graph.js";
 import { loadConfig } from "../persist/config.js";
 import { isPresenceLive, listPresences } from "../persist/presence.js";
 import { loadCombinedQuality } from "../persist/quality.js";
-import { loadLands } from "../persist/lands.js";
-import { jobLandsOf, type LandsLedger } from "../schema/fog.js";
+import { jobFogOf } from "../schema/fog.js";
+import type { PageFog } from "../schema/page-model.js";
 import { listReports } from "../persist/reports.js";
 import { collectFindingCases, listRuns } from "../persist/runs.js";
 import { loadCombinedTestability } from "../persist/testability.js";
@@ -76,18 +76,19 @@ function hopsOf(listed: ReturnType<typeof listRuns>) {
 
 export type SnapshotPatch = "runs" | "quality" | "testability" | "findings";
 
-function withLands(graph: UiGraph, ledger: LandsLedger): UiGraph {
+function withFog(graph: UiGraph, pages: { id: string; fog?: PageFog }[]): UiGraph {
+  const byId = new Map(pages.map((p) => [p.id, p.fog] as const));
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
-      const page = ledger.pages[node.pageId];
-      const lastLandAt = page?.at;
-      const jobLands = jobLandsOf(page);
-      const { lastLandAt: _at, jobLands: _jobs, ...rest } = node;
+      const fog = byId.get(node.pageId);
+      const fogAt = fog?.at;
+      const jobFog = jobFogOf(fog);
+      const { fogAt: _at, jobFog: _jobs, ...rest } = node;
       return {
         ...rest,
-        ...(lastLandAt ? { lastLandAt } : {}),
-        ...(jobLands ? { jobLands } : {}),
+        ...(fogAt ? { fogAt } : {}),
+        ...(jobFog ? { jobFog } : {}),
       };
     }),
   };
@@ -100,10 +101,12 @@ export function refreshUiSnapshot(
   part: SnapshotPatch,
 ): UiSnapshot {
   if (part === "runs") {
+    const map = loadConfig(configPath, { lenientMap: true }).map;
     return {
       ...snapshot,
+      map,
       runs: collectUiRuns(configPath),
-      graph: withLands(snapshot.graph, loadLands(configPath)),
+      graph: withFog(snapshot.graph, map.pages),
     };
   }
   const listed = listRuns(configPath);
@@ -125,7 +128,7 @@ export function refreshUiSnapshot(
   });
   return {
     ...snapshot,
-    graph: withLands(graph, loadLands(configPath)),
+    graph: withFog(graph, snapshot.map.pages),
     findings: mapFindingsOf(findings),
     runs: collectUiRuns(configPath),
     reports: listReports(configPath).map((r) => ({
@@ -185,7 +188,7 @@ export function buildUiSnapshot(configPath: string): UiSnapshot {
     appOrigin: originOfHref(config.url),
   });
   const mapFindings = mapFindingsOf(findings);
-  const graph = withLands(buildUiGraph(config.map, { findings, hops }), loadLands(configPath));
+  const graph = withFog(buildUiGraph(config.map, { findings, hops }), config.map.pages);
   if (shots.size > 0) {
     graph.nodes = graph.nodes.map((node) => {
       if (node.kind !== "page") return node;

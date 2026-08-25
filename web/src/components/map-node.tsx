@@ -6,14 +6,14 @@ import { cn, runHue } from "@/lib/utils";
 type GraphNode = Node<GraphNodeData, "graph">;
 
 function JobHeat({ data }: { data: GraphNodeData }) {
-  const tip = FOG_JOBS.map((job) => `${job}: ${landAgeLabel(data.jobLands?.[job])}`).join(" · ");
+  const tip = FOG_JOBS.map((job) => `${job}: ${landAgeLabel(data.jobFog?.[job])}`).join(" · ");
   return (
     <div className="flex gap-0.5" title={tip} aria-label={tip}>
       {FOG_JOBS.map((job) => (
         <span
           key={job}
           className="flex size-3 items-center justify-center rounded-full text-[7px] leading-none font-bold text-white uppercase"
-          style={{ backgroundColor: fogHeatColor(data.jobLands?.[job]) }}
+          style={{ backgroundColor: fogHeatColor(data.jobFog?.[job]) }}
         >
           {FOG_JOB_MARK[job]}
         </span>
@@ -25,10 +25,10 @@ function JobHeat({ data }: { data: GraphNodeData }) {
 export function MapNode({ data, selected }: NodeProps<GraphNode>) {
   const dialog = data.kind === "dialog";
   const sized = data.cardWidth != null && data.cardHeight != null;
-  const fog = dialog ? 0 : fogOf(data.lastLandAt);
+  const fog = dialog ? 0 : fogOf(data.fogAt);
   const haze = fog >= 0.4 ? fog * 0.55 : 0;
   const heatTip = !dialog
-    ? [landAgeLabel(data.lastLandAt), ...FOG_JOBS.map((job) => `${job}: ${landAgeLabel(data.jobLands?.[job])}`)].join(
+    ? [landAgeLabel(data.fogAt), ...FOG_JOBS.map((job) => `${job}: ${landAgeLabel(data.jobFog?.[job])}`)].join(
         " · ",
       )
     : undefined;

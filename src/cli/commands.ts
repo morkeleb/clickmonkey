@@ -5,18 +5,20 @@ import { attachOracles, createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView, formatView } from "../executor/view.js";
 import { saveConfig } from "../persist/config.js";
+import { formatFogStatus, resetFog } from "../persist/fog.js";
 import { writeLog, readLog } from "../persist/log.js";
 import { stopPresence } from "../persist/presence.js";
 import { appendDismissed } from "../persist/dismissed.js";
 import { listReports, readReport, reportMarkdownPath, rewriteReportMarkdown } from "../persist/reports.js";
 import { collectFindingCases, listRuns, resolveRunDirs } from "../persist/runs.js";
 import { newRunId } from "../persist/run-id.js";
-import { replaysDir, workspaceDir } from "../persist/workspace.js";
+import { mapPath, replaysDir, workspaceDir } from "../persist/workspace.js";
 import { writeBundle } from "../ui/bundle.js";
 import { isFindingsReport } from "../reports/fences.js";
 import { findingFingerprint, renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
 import { dropReportFindings, parseReportFindings, suggestFalsePositives } from "../reports/prune.js";
 import { emptyConfig, requirePageModel, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
+import { WalkerJobName } from "../schema/fog.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
 import { inspectAndSaveConfig } from "../surveyor/inspect.js";
@@ -704,6 +706,32 @@ export async function cmdBundle(opts: { config?: string; out?: string }): Promis
 
 export async function cmdMcp(opts: { config?: string }): Promise<number> {
   await runMcp({ config: opts.config });
+  return EXIT_OK;
+}
+
+export async function cmdFog(opts: {
+  config?: string;
+  reset?: boolean;
+  job?: string;
+}): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  const config = loadConfigOrExit(configPath);
+  let job: WalkerJobName | undefined;
+  if (opts.job !== undefined) {
+    const parsed = WalkerJobName.safeParse(opts.job);
+    if (!parsed.success) fail(EXIT_USAGE, `invalid --job ${opts.job} (map|unleash|nasty)`);
+    job = parsed.data;
+  }
+  if (job && !opts.reset) fail(EXIT_USAGE, "--job is only valid with --reset");
+  if (opts.reset) {
+    const n = config.map.pages.length;
+    resetFog(configPath, job);
+    const noun = n === 1 ? "page" : "pages";
+    const who = job ? `${job} on ${n} ${noun}` : `${n} ${noun}`;
+    process.stdout.write(`reset ${who} in ${mapPath(configPath)}\n`);
+    return EXIT_OK;
+  }
+  process.stdout.write(formatFogStatus(config.map, mapPath(configPath)));
   return EXIT_OK;
 }
 

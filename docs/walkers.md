@@ -58,5 +58,7 @@ Not modes: empty-required (a playbook), replay, prune, inspect.
 ## Fog
 
 Fog is hunger: who goes to a room, and which mode they run once there.
-Unexplored doors, stale job clocks, and stale modes. Ledger, formula,
-vision skip, and how to schedule jobs: [fog.md](fog.md).
+Unexplored doors, stale job clocks, and stale modes. Clocks live on the
+sitemap page (`page.fog` in `map.json`) — wipe them with
+`clickmonkey fog --reset` without losing rooms. Formula, vision skip,
+and how to schedule jobs: [fog.md](fog.md).

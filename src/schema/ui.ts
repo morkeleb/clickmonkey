@@ -22,9 +22,9 @@ export const UiGraphNode = z
     /** Latest still taken while on this page (`/files/runs/.../shots/pages/{pageId}.png`). */
     screenshotUrl: z.string().min(1).optional(),
     /** Last land on this page (any job). Missing = full fog. */
-    lastLandAt: z.string().min(1).optional(),
+    fogAt: z.string().min(1).optional(),
     /** Last land per job clock. Missing job = that job has never stood here. */
-    jobLands: z
+    jobFog: z
       .object({
         map: z.string().min(1).optional(),
         unleash: z.string().min(1).optional(),
@@ -296,7 +296,7 @@ export const UiEvent = z
     /** Cheap live patch: walker pageId / presence without rebuilding the map. */
     runs: z.array(UiRun).optional(),
     /** Cheap live patch: last land (`at`) and job clocks by page id. */
-    lastLands: z
+    lastFog: z
       .record(
         z.string().min(1),
         z

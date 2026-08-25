@@ -94,7 +94,7 @@ function eventTypeOf(filename: string | null): UiEventType | undefined {
   if (base === "findings.md" || base === "report.json" || base === "finding.json" || base === "replay.log") {
     return "run";
   }
-  if (base === "nav.jsonl" || base === "presence.json" || base === "log.txt" || base === "lands.json") {
+  if (base === "nav.jsonl" || base === "presence.json" || base === "log.txt") {
     return "nav";
   }
   return undefined;
@@ -190,11 +190,11 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
           const event: UiEvent = {
             type,
             runs: lastSnapshot.runs,
-            lastLands: Object.fromEntries(
+            lastFog: Object.fromEntries(
               lastSnapshot.graph.nodes.flatMap((n) => {
                 const patch = {
-                  ...(n.lastLandAt ? { at: n.lastLandAt } : {}),
-                  ...n.jobLands,
+                  ...(n.fogAt ? { at: n.fogAt } : {}),
+                  ...n.jobFog,
                 };
                 return Object.keys(patch).length > 0 ? ([[n.pageId, patch]] as const) : [];
               }),

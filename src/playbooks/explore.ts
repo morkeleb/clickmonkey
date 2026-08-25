@@ -15,8 +15,8 @@ import { formatLiveLine } from "../executor/nav-log.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { persistSharedMap } from "../persist/config.js";
-import { loadLands } from "../persist/lands.js";
-import { modeLandKey, modeLandTimes } from "../schema/fog.js";
+import { loadMapPages } from "../persist/fog.js";
+import { modeFogKey, modeFogTimes } from "../schema/fog.js";
 import { lineMatchesMode } from "../brains/walker-mode.js";
 import { appendEvent } from "../persist/events.js";
 import { exploreOutlineOf, setPresenceOutline, stopPresence } from "../persist/presence.js";
@@ -256,7 +256,7 @@ export async function runExplore(opts: {
 
     let consecutiveRefusals = 0;
     let itemSteps = 0;
-    const modeLands: Record<string, string> = { ...modeLandTimes(loadLands(opts.configPath)) };
+    const modeFog: Record<string, string> = { ...modeFogTimes(loadMapPages(opts.configPath)) };
     while (session.stepsUsed < steps && Date.now() < deadline) {
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
@@ -271,7 +271,7 @@ export async function runExplore(opts: {
         recent: session.recent,
         pages: state.model.pages,
         sight: state.lastSight,
-        modeLands,
+        modeFog,
         ...(session.plan ? { plan: session.plan } : {}),
       });
       const line = decision.line.trim();
@@ -297,7 +297,7 @@ export async function runExplore(opts: {
         decision.mode !== "nav" &&
         lineMatchesMode(line, decision.mode, view, state.model.pages)
       ) {
-        modeLands[modeLandKey(onPage, decision.mode)] = new Date().toISOString();
+        modeFog[modeFogKey(onPage, decision.mode)] = new Date().toISOString();
       }
       view = stepped.visit.view;
       itemSteps += 1;
