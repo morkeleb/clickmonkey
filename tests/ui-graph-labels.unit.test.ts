@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { prettyPageLabel, sectionKey } from "../src/ui/graph-labels.js";
+import { prettyIdent, prettyLeadingIdent, prettyPageLabel, sectionKey } from "../src/ui/graph-labels.js";
 
 describe("graph labels", () => {
   it("uses the last path segment as the title and the first as a kicker", () => {
@@ -15,6 +15,18 @@ describe("graph labels", () => {
       title: "Migrations",
       kicker: "Customers",
     });
+  });
+
+  it("splits camelCase and kebab-case ids into words", () => {
+    assert.equal(prettyIdent("visualIssue"), "Visual Issue");
+    assert.equal(prettyIdent("expectFailed"), "Expect Failed");
+    assert.equal(prettyIdent("implicitSubmit"), "Implicit Submit");
+    assert.equal(prettyIdent("nested-interactive"), "Nested Interactive");
+    assert.equal(prettyIdent("uiIssue"), "UI Issue");
+    assert.equal(prettyIdent("httpError"), "HTTP Error");
+    assert.equal(prettyIdent("overlap"), "Overlap");
+    assert.equal(prettyLeadingIdent("implicitSubmit: Button Cancel has no type"), "Implicit Submit: Button Cancel has no type");
+    assert.equal(prettyLeadingIdent("overlap: two controls collide"), "overlap: two controls collide");
   });
 
   it("clusters by the first path segment", () => {

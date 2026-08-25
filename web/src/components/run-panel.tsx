@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Shot, ShotSkeleton } from "@/components/shot";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { prettyIdent, prettyLeadingIdent } from "@ui/graph-labels";
 import { clockOf, shortHref, useRunDetail } from "@/lib/run-detail";
 import { cn, runHue } from "@/lib/utils";
 
@@ -61,12 +62,14 @@ function StepRow({ step }: { step: UiRunStep }) {
       {step.findingMessage && !bounced ? (
         <div className="mt-2 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={severityVariant(step.findingSeverity)}>{step.finding ?? "finding"}</Badge>
+            <Badge variant={severityVariant(step.findingSeverity)} title={step.finding}>
+              {step.finding ? prettyIdent(step.finding) : "Finding"}
+            </Badge>
             {step.findingSeverity ? (
               <span className="text-[11px] text-muted-foreground">{step.findingSeverity}</span>
             ) : null}
           </div>
-          <p className="mt-1 text-xs break-all text-zinc-300">{step.findingMessage}</p>
+          <p className="mt-1 text-xs break-all text-zinc-300">{prettyLeadingIdent(step.findingMessage)}</p>
           {step.screenshotUrl ? <Shot url={step.screenshotUrl} alt={step.findingMessage} fit="thumb" /> : null}
         </div>
       ) : step.screenshotUrl ? (
@@ -93,14 +96,16 @@ function FindingCard({ finding }: { finding: UiRunFinding }) {
   return (
     <li className="min-w-0 max-w-full rounded-lg border border-border bg-card/40 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={severityVariant(finding.severity)}>{finding.kind}</Badge>
+        <Badge variant={severityVariant(finding.severity)} title={finding.kind}>
+          {prettyIdent(finding.kind)}
+        </Badge>
         <span className="text-[11px] text-muted-foreground">step {finding.stepIndex}</span>
         <span className="font-mono text-[11px] text-zinc-400">{findingPageLabel(finding)}</span>
         {finding.widgetRef ? (
           <code className="font-mono text-[11px] text-zinc-400">{finding.widgetRef}</code>
         ) : null}
       </div>
-      <p className="mt-2 text-sm break-all">{finding.message}</p>
+      <p className="mt-2 text-sm break-all">{prettyLeadingIdent(finding.message)}</p>
       {finding.url ? <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">{shortHref(finding.url)}</p> : null}
       {finding.screenshotUrl ? (
         <Shot url={finding.screenshotUrl} alt={finding.message} fit="contain" frameClassName="h-72" />

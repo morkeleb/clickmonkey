@@ -6,6 +6,35 @@ export function titleCaseSegment(seg: string): string {
     .join(" ");
 }
 
+const ACRONYMS = new Set(["ui", "http", "html", "id", "url", "seo", "wcag", "dom", "aria"]);
+
+/** `visualIssue` / `nested-interactive` → `Visual Issue` / `Nested Interactive`. */
+export function prettyIdent(raw: string): string {
+  const spaced = raw
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/[-_]+/g, " ")
+    .trim();
+  if (!spaced) return raw;
+  return spaced
+    .split(/\s+/)
+    .map((w) => {
+      const lower = w.toLowerCase();
+      if (ACRONYMS.has(lower)) return lower.toUpperCase();
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
+/** `implicitSubmit: Button Cancel…` → `Implicit Submit: Button Cancel…`. */
+export function prettyLeadingIdent(text: string): string {
+  const m = /^([A-Za-z][A-Za-z0-9_-]*)(:\s*)([\s\S]*)$/.exec(text);
+  if (!m) return text;
+  const ident = m[1]!;
+  if (!/[A-Z]/.test(ident.slice(1)) && !/[-_]/.test(ident)) return text;
+  return `${prettyIdent(ident)}${m[2]}${m[3]}`;
+}
+
 export function pathSegments(path: string): string[] {
   return path.replace(/\/+$/, "").split("/").filter(Boolean);
 }
