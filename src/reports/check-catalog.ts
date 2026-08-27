@@ -18,8 +18,9 @@ export type CheckDef = {
 };
 
 /**
- * ClickMonkey-owned checks (not every axe rule). Axe/HTML-validate keep their
- * spec URLs; these ids stay fixed so reports and GitHub Pages never shuffle.
+ * ClickMonkey-owned checks (not every axe rule). Rows with `sc` are WCAG
+ * detectors: reports and catalog pages link the official Understanding doc.
+ * Axe/html-validate keep their spec URLs. T/V/Q ids stay fixed so pages never shuffle.
  */
 export const CHECKS = [
   {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { catalogIdFor, catalogPageHref, CHECKS, checkByRule, FINDINGS_SITE } from "../src/reports/check-catalog.js";
+import { specLink } from "../src/reports/spec-links.js";
 import { DOCS_MAP, DOCS_SITE } from "../src/schema/site.js";
 
 describe("check catalog", () => {
@@ -10,6 +11,15 @@ describe("check catalog", () => {
     for (const c of CHECKS) {
       assert.match(c.id, /^(T|V|A|Q)-\S+$/);
       assert.ok(c.summary.length > 20, c.id);
+    }
+  });
+
+  it("points every catalog row with a WCAG SC at a W3C Understanding URL", () => {
+    for (const c of CHECKS) {
+      if (!c.sc) continue;
+      const spec = specLink(c.rule);
+      assert.ok(spec, c.id);
+      assert.match(spec!.href, /^https:\/\/www\.w3\.org\/WAI\/WCAG22\/Understanding\//, c.id);
     }
   });
 

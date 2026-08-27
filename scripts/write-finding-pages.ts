@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CHECKS, FINDINGS_SITE } from "../src/reports/check-catalog.js";
 import { QA_LEFT } from "../src/reports/qa-left.js";
-import { specLink } from "../src/reports/spec-links.js";
+import { specLink, wcagUnderstandingHref } from "../src/reports/spec-links.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "docs", "findings");
@@ -11,7 +11,18 @@ mkdirSync(outDir, { recursive: true });
 
 function pageMarkdown(check: (typeof CHECKS)[number]): string {
   const spec = specLink(check.rule);
-  const specLine = spec ? `[${spec.label}](${spec.href})` : "ClickMonkey catalog (no WCAG/HTML spec URL).";
+  const wcagHref = check.sc ? wcagUnderstandingHref(check.sc) : undefined;
+  if (check.sc && !wcagHref) {
+    throw new Error(`${check.id} (${check.rule}) has SC ${check.sc} but no WCAG Understanding URL`);
+  }
+  const specLine = wcagHref
+    ? `**WCAG:** [${spec?.label ?? `WCAG ${check.sc}`}](${wcagHref}) — official. ClickMonkey detects this SC as \`${check.rule}\`.`
+    : spec
+      ? `**Spec:** [${spec.label}](${spec.href})`
+      : "**Spec:** ClickMonkey catalog (no WCAG/HTML spec URL).";
+  const footer = wcagHref
+    ? `${check.id} is only a handle for “we found ${check.sc}.” The requirement is the W3C page, not this catalog.`
+    : "This id is **stable**. Reports link here so T/V/Q classes do not shuffle when a soak ranks differently.";
   return `---
 title: "${check.id} ${check.title}"
 permalink: /findings/${check.id}/
@@ -21,13 +32,13 @@ permalink: /findings/${check.id}/
 
 **Chapter:** ${check.chapter}${check.sc ? ` · WCAG ${check.sc} ${check.level ?? ""}`.trimEnd() : ""}  
 **Rule:** \`${check.rule}\`  
-**Spec:** ${specLine}
+${specLine}
 
 ${check.summary}
 
 ${check.detail}
 
-This id is **stable**. Reports link here so T/V/Q classes (and A-2.1.1) do not shuffle when a soak ranks differently.
+${footer}
 `;
 }
 
@@ -66,13 +77,17 @@ permalink: /findings/
 
 # Finding catalog
 
-Stable ids for ClickMonkey-owned checks. Accessibility axe hits use **A-{SC}** (WCAG Understanding). HTML-validate keeps its own rule URLs. These pages cover testability, visual, quality, and keyboard extras (2.1.1, 2.1.2, 2.4.3).
+What ClickMonkey detects. Ids that start with A- are WCAG success criteria — the official requirement is the W3C Understanding page. HTML-validate and the HTML spec keep their own URLs. T/V/Q pages are ClickMonkey-owned classes with no official catalog.
 
 **Human leftover:** [What a person still tests](qa-left/) — WCAG 2.2 A/AA the walker does not run.
 
-| Id | Rule | Chapter |
-|---|---|---|
-${CHECKS.map((c) => `| [${c.id}](${c.id}/) | \`${c.rule}\` | ${c.chapter} |`).join("\n")}
+| Id | Rule | Chapter | Spec |
+|---|---|---|---|
+${CHECKS.map((c) => {
+  const spec = specLink(c.rule);
+  const specCell = spec ? `[${spec.label}](${spec.href})` : "";
+  return `| [${c.id}](${c.id}/) | \`${c.rule}\` | ${c.chapter} | ${specCell} |`;
+}).join("\n")}
 
 Site: ${FINDINGS_SITE}/findings/
 `;

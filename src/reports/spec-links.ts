@@ -62,6 +62,12 @@ const AXE_EXTRA_SET = new Set<string>(AXE_EXTRA_RULES);
 
 export type SpecLink = { label: string; href: string };
 
+/** Official WCAG 2.2 Understanding URL, or undefined if we have no slug for that SC. */
+export function wcagUnderstandingHref(sc: string): string | undefined {
+  const slug = SC_SLUG[sc];
+  return slug ? `${WCAG22}/${slug}.html` : undefined;
+}
+
 export function specLink(rule: string, extras?: ChapterExtras): SpecLink | undefined {
   if (rule === "implicitSubmit") {
     return { label: "HTML button type", href: `${HTML}/form-elements.html#attr-button-type` };
@@ -77,10 +83,10 @@ export function specLink(rule: string, extras?: ChapterExtras): SpecLink | undef
   }
   const wcag = wcagOf(rule, extras);
   if (wcag.sc) {
-    const slug = SC_SLUG[wcag.sc];
-    if (slug) {
+    const href = wcagUnderstandingHref(wcag.sc);
+    if (href) {
       const title = wcag.title && wcag.title !== "Best practice" ? ` ${wcag.title}` : "";
-      return { label: `WCAG ${wcag.sc}${title}`, href: `${WCAG22}/${slug}.html` };
+      return { label: `WCAG ${wcag.sc}${title}`, href };
     }
   }
   const local = catalogLink(rule, extras);

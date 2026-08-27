@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { classLabelFor } from "../src/reports/labels.js";
-import { specLink, specLinkMarkdown } from "../src/reports/spec-links.js";
+import { specLink, specLinkMarkdown, wcagUnderstandingHref } from "../src/reports/spec-links.js";
 
 describe("spec links", () => {
   it("points axe/WCAG rules at Understanding docs", () => {
@@ -15,6 +15,18 @@ describe("spec links", () => {
     assert.match(specLink("clickableNonWidget")?.href ?? "", /Understanding\/keyboard/);
     assert.match(specLink("keyboardTrap")?.href ?? "", /no-keyboard-trap/);
     assert.match(specLink("focusOrder")?.href ?? "", /focus-order/);
+    assert.equal(
+      wcagUnderstandingHref("2.1.1"),
+      "https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html",
+    );
+    assert.equal(
+      wcagUnderstandingHref("2.1.2"),
+      "https://www.w3.org/WAI/WCAG22/Understanding/no-keyboard-trap.html",
+    );
+    assert.equal(
+      wcagUnderstandingHref("2.4.3"),
+      "https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html",
+    );
   });
 
   it("points html-validate and HTML authoring rules at their specs", () => {
