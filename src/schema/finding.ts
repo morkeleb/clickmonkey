@@ -5,16 +5,21 @@ export const FindingKind = z.enum([
   "httpError",
   "notFound",
   "pageError",
-  "fenceViolation",
   "unresolvedId",
   "unknownId",
   "driftId",
-  "writePolicyBlocked",
   "locatorAmbiguous",
-  "uiIssue",
   "visualIssue",
 ]);
 export type FindingKind = z.infer<typeof FindingKind>;
+
+/** Step outcomes that are leash/operator control, not product findings. */
+export const RunControlKind = z.enum(["fenceViolation", "writePolicyBlocked", "uiIssue"]);
+export type RunControlKind = z.infer<typeof RunControlKind>;
+
+export function isFindingKind(kind: string): kind is FindingKind {
+  return FindingKind.safeParse(kind).success;
+}
 
 export const FindingSeverity = z.enum(["critical", "major", "minor", "suggestion"]);
 export type FindingSeverity = z.infer<typeof FindingSeverity>;
@@ -26,16 +31,12 @@ export function severityForKind(kind: FindingKind): FindingSeverity {
     case "notFound":
       return "critical";
     case "expectFailed":
-    case "fenceViolation":
-    case "writePolicyBlocked":
       return "major";
     case "unresolvedId":
     case "unknownId":
     case "driftId":
     case "locatorAmbiguous":
       return "minor";
-    case "uiIssue":
-      return "suggestion";
     case "visualIssue":
       return "minor";
   }

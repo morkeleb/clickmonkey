@@ -17,9 +17,9 @@ function typeaheadFormConfig(url: string): Config {
       app: "typeahead-form",
       pages: [
         {
-          id: "home",
-          path: "/",
-          ready: { by: "testId", value: "home" },
+          id: "create_html",
+          path: "/create.html",
+          ready: { by: "testId", value: "create" },
           surfaces: [
             {
               id: "page",
@@ -28,7 +28,7 @@ function typeaheadFormConfig(url: string): Config {
                 {
                   id: "country",
                   required: true,
-                  type: "text",
+                  type: "combobox",
                   by: "testId",
                   value: "country",
                   status: "ok",
@@ -37,6 +37,12 @@ function typeaheadFormConfig(url: string): Config {
               actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
             },
           ],
+        },
+        {
+          id: "ok_html",
+          path: "/ok.html",
+          ready: { by: "testId", value: "ok" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
         },
       ],
     },
@@ -51,21 +57,23 @@ describe("unleash --form loop", () => {
     const outDir = join(tmp, "out");
     const echo: string[] = [];
     try {
-      const config = typeaheadFormConfig(baseUrl);
+      const config = typeaheadFormConfig(`${baseUrl.replace(/\/$/, "")}/create.html`);
       saveConfig(configPath, config);
       const result = await runUnleash({
         config,
         configPath,
         outDir,
         steps: 20,
-        form: "home",
+        form: "create_html",
         timeout: 20_000,
         echo: { write: (chunk) => echo.push(String(chunk)) },
       });
-      assert.equal(result.lockForm, "home");
+      assert.equal(result.lockForm, "create_html");
       assert.ok(result.submitted, echo.join(""));
-      assert.equal(result.submitted?.from, "home");
-      assert.match(echo.join(""), /form-loop submitted/);
+      assert.equal(result.submitted?.from, "create_html");
+      assert.notEqual(result.submitted?.to, "create_html");
+      assert.match(echo.join(""), /form-loop submitted create_html → /);
+      assert.match(echo.join(""), /ok\.html/);
       assert.ok(result.ok);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

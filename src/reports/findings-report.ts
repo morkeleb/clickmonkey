@@ -23,7 +23,7 @@ import type { QualityReport } from "../schema/quality.js";
 import { joinWheres, qualityLedgerItems } from "../schema/quality.js";
 import type { TestabilityReport } from "../schema/testability.js";
 import { wrapClickmonkeyFence } from "./fences.js";
-import { labelLegendLines } from "./labels.js";
+import { FINDINGS_SITE } from "./check-catalog.js";
 import {
   chapterOf,
   compareSc,
@@ -716,29 +716,6 @@ function pageLabels(catalog: Catalog, page: string): string[] {
     .sort(compareLabel);
 }
 
-/** Ranked spec-name list — most pages first, so a chrome class reads as the biggest fix. */
-function renderLabelCounts(catalog: Catalog): string[] {
-  const byLabel = new Map<string, { rule: string; pages: Set<string>; row: DigestRow }>();
-  for (const r of catalog.rows) {
-    if (!r.label) continue;
-    const cur = byLabel.get(r.label);
-    if (!cur) {
-      byLabel.set(r.label, { rule: r.rule, pages: new Set(r.pageSet), row: r });
-      continue;
-    }
-    for (const page of r.pageSet) cur.pages.add(page);
-  }
-  const sorted = [...byLabel.entries()].sort((a, b) => {
-    if (b[1].pages.size !== a[1].pages.size) return b[1].pages.size - a[1].pages.size;
-    return compareLabel(a[0], b[0]);
-  });
-  return sorted.map(([label, { rule, pages, row }]) => {
-    const check = row.check ?? checkOf(rule, rowExtras(row));
-    const tag = check ? checkLink(check) : label;
-    return `- **${tag}** \`${rule}\` — ${pageCountTrail({ pages: pages.size })}`;
-  });
-}
-
 function pagesByIssueCount(pages: readonly string[], catalog: Catalog): string[] {
   return [...pages].sort((a, b) => {
     const nb = pageLabels(catalog, b).length;
@@ -748,19 +725,68 @@ function pagesByIssueCount(pages: readonly string[], catalog: Catalog): string[]
   });
 }
 
-function labelIndexLines(catalog: Catalog): string[] {
-  return [...labelLegendLines(), "", ...renderLabelCounts(catalog)];
+type ChapterIssue = { label: string; rule: string; pages: Set<string>; row: DigestRow };
+
+function chapterIssues(catalog: Catalog): Map<ReportChapter, ChapterIssue[]> {
+  const byKey = new Map<string, ChapterIssue & { chapter: ReportChapter }>();
+  for (const r of catalog.rows) {
+    if (!r.label) continue;
+    const key = `${r.chapter}\0${r.label}`;
+    const cur = byKey.get(key);
+    if (!cur) {
+      byKey.set(key, { chapter: r.chapter, label: r.label, rule: r.rule, pages: new Set(r.pageSet), row: r });
+      continue;
+    }
+    for (const page of r.pageSet) cur.pages.add(page);
+  }
+  const grouped = new Map<ReportChapter, ChapterIssue[]>();
+  for (const item of byKey.values()) {
+    const list = grouped.get(item.chapter) ?? [];
+    list.push(item);
+    grouped.set(item.chapter, list);
+  }
+  for (const list of grouped.values()) {
+    list.sort((a, b) => b.pages.size - a.pages.size || compareLabel(a.label, b.label));
+  }
+  return grouped;
 }
 
-/** Put the spec-name key before Start here (or after an LLM paragraph). */
-function withLabelLegend(summaryLines: string[], catalog: Catalog): string[] {
-  if (!hasClassLabels(catalog)) return summaryLines;
-  const legend = labelIndexLines(catalog);
+/**
+ * Category → issue → pages. Compact enough for one printed page.
+ * Page counts are the ledger, not collapsed finding cards.
+ */
+function renderChapterIssueIndex(catalog: Catalog): string[] {
+  const grouped = chapterIssues(catalog);
+  const body: string[] = [];
+  for (const ch of ["testability", "accessibility", "visual", "quality"] as const) {
+    const items = grouped.get(ch);
+    if (!items?.length) continue;
+    body.push(`- **${CHAPTER_HEADING[ch]}**`);
+    for (const item of items) {
+      const check = item.row.check ?? checkOf(item.rule, rowExtras(item.row));
+      const tag = check ? checkLink(check) : item.label;
+      body.push(`  - ${tag} — ${pageCountTrail({ pages: item.pages.size })}`);
+    }
+  }
+  if (body.length === 0) return [];
+  return [
+    "### By chapter",
+    "",
+    `Pages affected per class. [Catalog](${FINDINGS_SITE}/findings/).`,
+    "",
+    ...body,
+  ];
+}
+
+/** Issue index before Start here (or after an LLM paragraph). */
+function withChapterIndex(summaryLines: string[], catalog: Catalog): string[] {
+  const index = renderChapterIssueIndex(catalog);
+  if (index.length === 0) return summaryLines;
   const startIdx = summaryLines.findIndex((l) => l === "### Start here");
   if (startIdx >= 0) {
-    return [...summaryLines.slice(0, startIdx), ...legend, "", ...summaryLines.slice(startIdx)];
+    return [...summaryLines.slice(0, startIdx), ...index, "", ...summaryLines.slice(startIdx)];
   }
-  return [...summaryLines, "", ...legend];
+  return [...summaryLines, "", ...index];
 }
 
 function renderByPage(catalog: Catalog, qualityFull?: boolean): string[] {
@@ -772,7 +798,7 @@ function renderByPage(catalog: Catalog, qualityFull?: boolean): string[] {
   const lines = ["## By page", ""];
   if (hasClassLabels(catalog)) {
     lines.push(
-      "Same spec tags as in Summary — jump to that class in the chapters above. Worst pages first.",
+      "Same spec tags as in By chapter — jump to that class in the chapters above. Worst pages first.",
       "",
     );
   }
@@ -841,7 +867,7 @@ function renderCatalogChapters(catalog: Catalog, includeStartHere: boolean): str
   if (catalog.rows.length === 0) return [];
   const lines: string[] = [];
   if (hasClassLabels(catalog)) {
-    lines.push(...labelIndexLines(catalog), "");
+    lines.push(...renderChapterIssueIndex(catalog), "");
   }
   if (includeStartHere && catalog.start.length > 0) {
     lines.push("### Start here", "");
@@ -910,7 +936,7 @@ export function renderFindingsReport(
   const clusters = collapseFindingCases(cases);
   const leftoverCap = meta.qualityFull ? Number.POSITIVE_INFINITY : LEFTOVER_PAGE_CAP;
   const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap, cases);
-  const summaryLines = withLabelLegend(
+  const summaryLines = withChapterIndex(
     summary?.trim() ? [summary.trim()] : fallbackSummary(clusters, catalog, meta),
     catalog,
   );

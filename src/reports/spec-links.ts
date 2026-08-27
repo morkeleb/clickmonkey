@@ -1,6 +1,6 @@
 import { catalogLink } from "./check-catalog.js";
 import type { ChapterExtras } from "./wcag.js";
-import { wcagOf } from "./wcag.js";
+import { isAxeRule, wcagOf } from "./wcag.js";
 
 const WCAG22 = "https://www.w3.org/WAI/WCAG22/Understanding";
 const HTMLVALIDATE = "https://html-validate.org/rules";
@@ -58,7 +58,6 @@ const HTMLVALIDATE_SET = new Set<string>(HTMLVALIDATE_RULES);
 /** axe extras with no WCAG SC — Deque rule pages stand in for Understanding docs. */
 export const AXE_EXTRA_RULES = ["tabindex", "heading-order", "empty-heading", "label-title-only"] as const;
 export type AxeExtraRule = (typeof AXE_EXTRA_RULES)[number];
-const AXE_EXTRA_SET = new Set<string>(AXE_EXTRA_RULES);
 
 export type SpecLink = { label: string; href: string };
 
@@ -78,8 +77,8 @@ export function specLink(rule: string, extras?: ChapterExtras): SpecLink | undef
   if (HTMLVALIDATE_SET.has(rule)) {
     return { label: `html-validate ${rule}`, href: `${HTMLVALIDATE}/${rule}.html` };
   }
-  if (AXE_EXTRA_SET.has(rule)) {
-    return { label: `axe ${rule}`, href: `${AXE}/${rule}` };
+  if (isAxeRule(rule)) {
+    return { label: `AXE ${rule}`, href: `${AXE}/${rule}` };
   }
   const wcag = wcagOf(rule, extras);
   if (wcag.sc) {

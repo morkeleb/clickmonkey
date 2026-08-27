@@ -41,6 +41,15 @@ describe("liveLooksLikePick", () => {
     assert.equal(liveLooksLikePick("Denmark", denmark), true);
     assert.equal(liveLooksLikePick("Great Basin", { value: "1", label: "Great Basin Logistics" }), true);
   });
+
+  it("accepts a truncated Filevine chip of the harvested title+subtitle row", () => {
+    const basin = { value: "1", label: "Great Basin logistics Great Basin Logistics Inc" };
+    assert.equal(liveLooksLikePick("Grea...", basin), true);
+    assert.equal(liveLooksLikePick("Grea... Great Basin Logistics Inc", basin), true);
+    assert.equal(liveLooksLikePick("Select a matter", basin), false);
+    assert.equal(liveLooksLikePick("a", basin), false);
+    assert.equal(liveLooksLikePick("aveho eos", basin), false);
+  });
 });
 
 describe("listedValueIsCommitted", () => {
@@ -55,6 +64,7 @@ describe("listedValueIsCommitted", () => {
     assert.equal(isListedSearchProbe("Acme"), false);
     assert.equal(listedValueIsCommitted("Select a party"), false);
     assert.equal(listedValueIsCommitted("a"), false);
+    assert.equal(listedValueIsCommitted("Grea..."), true);
     assert.equal(listedValueIsCommitted("Acme Inc"), true);
   });
 });

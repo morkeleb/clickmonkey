@@ -6,7 +6,7 @@
   </head>
   <body>
     <main data-testid="home">
-      <form id="create">
+      <form id="create" novalidate>
         <label for="country">Country</label>
         <input
           id="country"
@@ -88,16 +88,24 @@
         <input type="hidden" name="vendorId" id="vendorId" />
 
         <label for="matter">Matter</label>
-        <input
-          id="matter"
-          name="matter"
-          data-testid="matter"
+        <div
+          id="matter-wrap"
           role="combobox"
-          aria-autocomplete="list"
           aria-expanded="false"
+          aria-haspopup="listbox"
           aria-controls="matter-list"
-          autocomplete="off"
-        />
+        >
+          <input
+            id="matter"
+            name="matter"
+            data-testid="matter"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls="matter-list"
+            autocomplete="off"
+          />
+          <span id="matter-chip"></span>
+        </div>
         <div id="matter-list" role="listbox" hidden></div>
         <input type="hidden" name="matterId" id="matterId" />
 
@@ -224,21 +232,40 @@
         const input = document.getElementById("matter");
         const list = document.getElementById("matter-list");
         const hid = document.getElementById("matterId");
-        const names = ["Alpha Matter", "Beta Matter", "Gamma Matter"];
-        names.forEach((name) => {
+        const wrap = document.getElementById("matter-wrap");
+        const chip = document.getElementById("matter-chip");
+        const header = document.createElement("div");
+        header.textContent = "Recently used";
+        header.setAttribute("role", "presentation");
+        header.style.pointerEvents = "none";
+        list.appendChild(header);
+        const rows = [
+          { title: "Alpha Matter", sub: "Alpha LLC" },
+          { title: "Beta Matter", sub: "Beta LLC" },
+          { title: "Gamma Matter", sub: "Gamma LLC" },
+        ];
+        rows.forEach(({ title, sub }) => {
           const row = document.createElement("div");
-          row.textContent = name;
+          const t = document.createElement("div");
+          t.textContent = title;
+          const s = document.createElement("div");
+          s.textContent = sub;
+          row.appendChild(t);
+          row.appendChild(s);
           row.addEventListener("click", () => {
-            input.value = name;
-            hid.value = name;
+            input.value = "";
+            hid.value = title;
+            chip.textContent = `${title.slice(0, 4)}...`;
             list.hidden = true;
             input.setAttribute("aria-expanded", "false");
+            wrap?.setAttribute("aria-expanded", "false");
           });
           list.appendChild(row);
         });
         function open() {
           list.hidden = false;
           input.setAttribute("aria-expanded", "true");
+          wrap?.setAttribute("aria-expanded", "true");
         }
         input.addEventListener("focus", open);
         input.addEventListener("input", open);

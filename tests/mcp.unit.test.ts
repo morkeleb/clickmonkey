@@ -496,8 +496,8 @@ describe("mcp tools", () => {
               view: visit.view,
               finding: {
                 schemaVersion: 1,
-                id: "fnd_0_uiIssue",
-                kind: "uiIssue",
+                id: "fnd_0_visualIssue",
+                kind: "visualIssue",
                 severity: "major",
                 message: "overlap",
                 tapePath: "t",
@@ -513,7 +513,7 @@ describe("mcp tools", () => {
     };
     const result = await handleExploreFinding(host, { message: "cards overlap" });
     assert.equal(result.isError, undefined);
-    assert.match(textOf(result), /finding: fnd_0_uiIssue/);
+    assert.match(textOf(result), /finding: fnd_0_visualIssue/);
     assert.match(seen.line ?? "", /screenshot ui/);
     assert.equal(seen.opts?.hostFinding, true);
     assert.equal(seen.opts?.severity, "major");

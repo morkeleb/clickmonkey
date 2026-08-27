@@ -11,6 +11,11 @@ export type ListRowSnap = LiveSelectOption & {
   pointerEvents: string;
   tabIndex: number;
   hasOwnClick: boolean;
+  /** Viewport box. Missing means “unknown — treat as painted” (unit snaps). */
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
 };
 
 const NON_ACTABLE_ROLES = new Set(["presentation", "none", "group", "heading", "separator", "label"]);
@@ -35,6 +40,47 @@ export function listRowIsActable(row: ListRowSnap): boolean {
   return Boolean(row.hasOwnClick);
 }
 
+/** Hidden / zero-box nodes are not painted. Unit snaps omit the box — those count. */
+export function listRowIsPainted(row: Pick<ListRowSnap, "width" | "height">): boolean {
+  if (row.width === undefined && row.height === undefined) return true;
+  return (row.width ?? 0) > 0 && (row.height ?? 0) > 0;
+}
+
+/** Locator indexes of actable painted rows — skip group chrome, not a name list. */
+export function actablePaintedIndexes(snaps: readonly ListRowSnap[]): number[] {
+  return snaps.flatMap((s, i) =>
+    listRowIsPainted(s) && (s.label || s.value).trim() !== "" && listRowIsActable(s) ? [i] : [],
+  );
+}
+
+/**
+ * Group labels / headings / pointer-events-none chrome. Not a name list.
+ * Painted generic divs (addEventListener-only rows) are not chrome.
+ */
+export function listRowIsGroupChrome(row: ListRowSnap): boolean {
+  const role = (row.role ?? "").toLowerCase();
+  const tag = (row.tag ?? "").toLowerCase();
+  if (NON_ACTABLE_ROLES.has(role)) return true;
+  if (/^h[1-6]$/.test(tag) || tag === "hr" || tag === "legend" || tag === "label") return true;
+  const standard =
+    role === "option" || role === "menuitem" || tag === "option" || tag === "button" || tag === "a";
+  if (!standard && (row.pointerEvents ?? "").toLowerCase() === "none") return true;
+  return false;
+}
+
+/**
+ * Painted rows to click: skip group chrome. Includes addEventListener-only
+ * divs that `listRowIsActable` cannot see from Node (no `hasOwnClick`).
+ */
+export function clickablePaintedIndexes(snaps: readonly ListRowSnap[]): number[] {
+  return snaps.flatMap((s, i) => {
+    if (!listRowIsPainted(s) || !(s.label || s.value).trim()) return [];
+    if (s.disabled || s.ariaDisabled) return [];
+    if (listRowIsGroupChrome(s)) return [];
+    return [i];
+  });
+}
+
 export function liveOptionsFromSnaps(snaps: readonly ListRowSnap[]): LiveSelectOption[] {
   return snaps
     .filter((s) => (s.label || s.value).trim() !== "" && listRowIsActable(s))
@@ -46,23 +92,29 @@ export function isListedControl(field: { type?: string; options?: readonly unkno
   return field.type === "select" || Boolean(field.options && field.options.length > 0);
 }
 
+/**
+ * Page-side: `locator("option")` yields HTMLElement | SVGElement.
+ * Read attributes both share — do not assert HTMLOptionElement.
+ */
+export function liveOptionsFromOptionEls(
+  els: ReadonlyArray<{
+    getAttribute(name: string): string | null;
+    textContent: string | null;
+  }>,
+): LiveSelectOption[] {
+  return els.flatMap((el) => {
+    if (el.getAttribute("disabled") !== null) return [];
+    const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    const value = (el.getAttribute("value") || text).trim();
+    const label = (el.getAttribute("label") || text).trim();
+    if (!value && !label) return [];
+    return [{ value: value || label, label: label || value }];
+  });
+}
+
 /** Enabled `<option>`s on a native select. Empty when the locator is not a `<select>`. */
 export async function readSelectOptions(loc: PwLocator): Promise<LiveSelectOption[]> {
-  return loc
-    .locator("option")
-    .evaluateAll((els) =>
-      els.flatMap((el) => {
-        const o = el as unknown as {
-          disabled: boolean;
-          value: string;
-          label: string;
-          textContent: string | null;
-        };
-        if (o.disabled) return [];
-        return [{ value: o.value, label: (o.label || o.textContent || "").trim() }];
-      }),
-    )
-    .catch(() => []);
+  return loc.locator("option").evaluateAll(liveOptionsFromOptionEls).catch(() => []);
 }
 
 export function matchSelectOption(

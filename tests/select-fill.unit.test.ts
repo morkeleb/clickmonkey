@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   formatSelectOptionList,
+  actablePaintedIndexes,
+  clickablePaintedIndexes,
   listRowIsActable,
+  listRowIsGroupChrome,
+  listRowIsPainted,
+  liveOptionsFromOptionEls,
   liveOptionsFromSnaps,
   matchListedOption,
   matchSelectOption,
@@ -18,6 +23,28 @@ const OPTIONS = [
   { value: "remittance", label: "Remittance" },
   { value: "physical", label: "Physical" },
 ];
+
+describe("liveOptionsFromOptionEls", () => {
+  function el(attrs: Record<string, string | null>, text = ""): {
+    getAttribute(name: string): string | null;
+    textContent: string | null;
+  } {
+    return {
+      getAttribute(name) {
+        return Object.hasOwn(attrs, name) ? attrs[name]! : null;
+      },
+      textContent: text,
+    };
+  }
+
+  it("reads value and label from attributes both HTMLElement and SVGElement share", () => {
+    assert.deepEqual(liveOptionsFromOptionEls([el({ value: "no", label: "Norway" }, "Norway")]), [
+      { value: "no", label: "Norway" },
+    ]);
+    assert.deepEqual(liveOptionsFromOptionEls([el({}, "Sweden")]), [{ value: "Sweden", label: "Sweden" }]);
+    assert.deepEqual(liveOptionsFromOptionEls([el({ disabled: "" }, "Hidden")]), []);
+  });
+});
 
 describe("select option match", () => {
   it("matches value or label and lists labels for errors", () => {
@@ -134,5 +161,21 @@ describe("list row actable", () => {
       harvested.map((o) => o.value),
       ["1"],
     );
+    const mixed = [
+      snap({ value: "recent", label: "Recently used", tag: "div", role: "presentation", width: 120, height: 16 }),
+      snap({ value: "1", label: "Great Basin", tag: "div", role: "option", width: 120, height: 40 }),
+      snap({ value: "2", label: "Holloway", tag: "div", role: "option", width: 120, height: 40 }),
+      snap({ value: "hid", label: "Template", tag: "li", role: "option", width: 0, height: 0 }),
+    ];
+    assert.deepEqual(actablePaintedIndexes(mixed), [1, 2]);
+    assert.equal(listRowIsPainted(mixed[3]!), false);
+    assert.equal(listRowIsPainted(snap({ value: "1", label: "Row", tag: "div", role: "option" })), true);
+    assert.equal(listRowIsGroupChrome(mixed[0]!), true);
+    const listenerOnly = [
+      snap({ value: "recent", label: "Recently used", tag: "div", role: "presentation", width: 120, height: 16 }),
+      snap({ value: "1", label: "Alpha Matter Alpha LLC", tag: "div", width: 120, height: 40 }),
+    ];
+    assert.deepEqual(actablePaintedIndexes(listenerOnly), []);
+    assert.deepEqual(clickablePaintedIndexes(listenerOnly), [1]);
   });
 });

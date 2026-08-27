@@ -248,8 +248,8 @@ export function writeSpecFromLogFile(opts: {
   });
 }
 
-/** visualIssue / uiIssue persist but do not fail the fence. Any other kind does. */
-export const SPEC_SOFT_KINDS: ReadonlySet<FindingKindName> = new Set(["uiIssue", "visualIssue"]);
+/** visualIssue persist but do not fail the fence. Any other kind does. */
+export const SPEC_SOFT_KINDS: ReadonlySet<FindingKindName> = new Set(["visualIssue"]);
 
 export type SpecRunCase = {
   file: string;

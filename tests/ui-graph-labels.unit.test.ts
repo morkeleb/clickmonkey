@@ -34,7 +34,6 @@ describe("graph labels", () => {
     assert.equal(prettyIdent("expectFailed"), "Expect Failed");
     assert.equal(prettyIdent("implicitSubmit"), "Implicit Submit");
     assert.equal(prettyIdent("nested-interactive"), "Nested Interactive");
-    assert.equal(prettyIdent("uiIssue"), "UI Issue");
     assert.equal(prettyIdent("httpError"), "HTTP Error");
     assert.equal(prettyIdent("overlap"), "Overlap");
     assert.equal(prettyLeadingIdent("implicitSubmit: Button Cancel has no type"), "Implicit Submit: Button Cancel has no type");

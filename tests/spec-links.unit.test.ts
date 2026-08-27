@@ -4,10 +4,14 @@ import { classLabelFor } from "../src/reports/labels.js";
 import { specLink, specLinkMarkdown, wcagUnderstandingHref } from "../src/reports/spec-links.js";
 
 describe("spec links", () => {
-  it("points axe/WCAG rules at Understanding docs", () => {
+  it("points axe rules at Deque and DOM WCAG detectors at Understanding docs", () => {
     const contrast = specLink("color-contrast");
-    assert.equal(contrast?.label, "WCAG 1.4.3 Contrast");
-    assert.equal(contrast?.href, "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html");
+    assert.equal(contrast?.label, "AXE color-contrast");
+    assert.equal(contrast?.href, "https://dequeuniversity.com/rules/axe/4.13/color-contrast");
+    assert.equal(specLink("button-name")?.label, "AXE button-name");
+    assert.equal(specLink("skip-link")?.label, "AXE skip-link");
+    assert.equal(specLink("aria-dialog-name")?.label, "AXE aria-dialog-name");
+    assert.equal(specLink("label-content-name-mismatch")?.label, "AXE label-content-name-mismatch");
     assert.match(specLinkMarkdown("focusVisible") ?? "", /2\.4\.7/);
     assert.match(specLinkMarkdown("silentSubmit") ?? "", /3\.3\.1/);
     assert.match(specLink("targetSize")?.href ?? "", /target-size-minimum/);
@@ -53,6 +57,7 @@ describe("spec links", () => {
 
   it("points axe extras without WCAG SC at Deque University", () => {
     for (const rule of ["tabindex", "heading-order", "empty-heading", "label-title-only"] as const) {
+      assert.equal(specLink(rule)?.label, `AXE ${rule}`);
       const href = specLink(rule)?.href ?? "";
       assert.match(href, new RegExp(rule));
       assert.match(href, /dequeuniversity/i);
@@ -69,7 +74,9 @@ describe("spec links", () => {
     });
     assert.equal(classLabelFor(row("missingStableId", "testability")), "Missing stable id");
     assert.equal(classLabelFor(row("overlap", "visual")), "Overlap");
-    assert.equal(classLabelFor(row("color-contrast", "accessibility")), "WCAG 1.4.3 Contrast");
+    assert.equal(classLabelFor(row("color-contrast", "accessibility")), "AXE color-contrast");
+    assert.equal(classLabelFor(row("tabindex", "accessibility")), "AXE tabindex");
+    assert.equal(classLabelFor(row("clickableNonWidget", "accessibility")), "WCAG 2.1.1 Keyboard");
     assert.equal(classLabelFor(row("no-dup-id", "quality")), "html-validate no-dup-id");
     assert.equal(classLabelFor(row("implicitSubmit", "visual")), "HTML button type");
     assert.equal(classLabelFor(row("serverRefusedSubmit", "quality")), "Server refused submit");

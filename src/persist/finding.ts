@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { cannedReport } from "../reports/canned.js";
+import { redactEnvInText } from "../executor/secrets.js";
 import { Finding, findingId, severityForKind, type FindingKind, type FindingSeverity } from "../schema/finding.js";
 import type { QualityIssue } from "../schema/quality.js";
 
@@ -20,7 +21,7 @@ export function shouldPersistFinding(kind: FindingKind): boolean {
 }
 
 export function writeFinding(path: string, finding: Finding): void {
-  writeFileSync(path, `${JSON.stringify(finding, null, 2)}\n`, "utf8");
+  writeFileSync(path, `${redactEnvInText(JSON.stringify(finding, null, 2))}\n`, "utf8");
 }
 
 function outsideFindings(outDir: string, path: string): boolean {
@@ -150,11 +151,18 @@ export function visualIssueMessage(issue: Pick<QualityIssue, "rule" | "message" 
   return `${issue.rule}: ${issue.message}${loc}`;
 }
 
-/** Rule + scanner message. Drops the ` — where` suffix so joined examples do not mint a new finding. */
+/**
+ * Rule + scanner message + first where token.
+ * Joined ` · ` examples after the first token do not mint a new finding.
+ * Different widgets (`Close Fee entries` vs `Close Clients`) stay distinct.
+ */
 export function visualFindingKey(f: Pick<Finding, "widgetRef" | "message">): string {
   const raw = (f.message ?? "").replace(/\s+/g, " ").trim();
-  const core = raw.split(" — ")[0]!.trim();
-  return `${f.widgetRef ?? ""}\t${core}`;
+  const idx = raw.indexOf(" — ");
+  const core = (idx < 0 ? raw : raw.slice(0, idx)).trim();
+  const where = idx < 0 ? "" : raw.slice(idx + 3).trim();
+  const firstWhere = where.split(" · ")[0]!.trim();
+  return `${f.widgetRef ?? ""}\t${core}\t${firstWhere}`;
 }
 
 export function severityForVisualIssue(issue: Pick<QualityIssue, "severity">): FindingSeverity {

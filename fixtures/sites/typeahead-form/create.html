@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Create</title>
+  </head>
+  <body>
+    <main data-testid="create">
+      <form id="create" novalidate>
+        <label for="country">Country</label>
+        <input
+          id="country"
+          name="country"
+          data-testid="country"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="country-list"
+          autocomplete="off"
+          required
+        />
+        <ul id="country-list" role="listbox" hidden>
+          <li role="option">Norway</li>
+          <li role="option">Sweden</li>
+          <li role="option">Denmark</li>
+        </ul>
+        <input type="hidden" name="countryId" id="countryId" />
+        <button type="submit" data-testid="submit">Create</button>
+      </form>
+    </main>
+    <script>
+      (function bindCountry() {
+        const input = document.getElementById("country");
+        const list = document.getElementById("country-list");
+        const hid = document.getElementById("countryId");
+        const all = [...list.querySelectorAll("[role=option]")];
+        let timer;
+        function open(filter) {
+          const q = (filter || "").trim().toLowerCase();
+          let n = 0;
+          for (const o of all) {
+            const show = q.length > 0 && o.textContent.toLowerCase().includes(q);
+            o.hidden = !show;
+            if (show) n++;
+          }
+          list.hidden = n === 0;
+          input.setAttribute("aria-expanded", String(n > 0));
+        }
+        input.addEventListener("focus", () => open(input.value));
+        input.addEventListener("input", () => {
+          hid.value = "";
+          clearTimeout(timer);
+          timer = setTimeout(() => open(input.value), 200);
+        });
+        list.addEventListener("mousedown", (e) => {
+          const o = e.target.closest("[role=option]");
+          if (!o) return;
+          e.preventDefault();
+          input.value = o.textContent.trim();
+          hid.value = o.textContent.trim();
+          list.hidden = true;
+          input.setAttribute("aria-expanded", "false");
+        });
+      })();
+
+      document.getElementById("create").addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (!document.getElementById("countryId").value) {
+          document.getElementById("country").setAttribute("aria-invalid", "true");
+          return;
+        }
+        location.href = "/ok.html";
+      });
+    </script>
+  </body>
+</html>

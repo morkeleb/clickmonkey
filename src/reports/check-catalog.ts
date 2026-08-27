@@ -1,6 +1,6 @@
 import { DOCS_SITE } from "../schema/site.js";
 import type { ChapterExtras, ReportChapter, WcagLevel } from "./wcag.js";
-import { isOverflowAt320, wcagOf } from "./wcag.js";
+import { isAxeRule, isOverflowAt320, wcagOf } from "./wcag.js";
 
 /** Published catalog explainers. Stable path: /findings/{id}/ */
 export const FINDINGS_SITE = DOCS_SITE;
@@ -227,7 +227,7 @@ export const CHECKS = [
     chapter: "visual",
     title: "Unreadable contrast (pixels)",
     summary: "Text is unreadable on its background in the screenshot, not only in the WCAG math.",
-    detail: "Axe color-contrast is A-1.4.3. This id is a pixel-only miss the ratio check did not fire on.",
+    detail: "AXE color-contrast is the ratio check (Deque). This id is a pixel-only miss that check did not fire on.",
   },
   {
     id: "V-09",
@@ -466,34 +466,6 @@ export const CHECKS = [
       "Generic HTTP 4xx/5xx on a request the UI made. Not this: a write that returned 400, 409, or 422 after Save (Q-01); HTTP 404 or an in-app 404 page (Q-17).",
   },
   {
-    id: "Q-19",
-    rule: "fenceViolation",
-    chapter: "quality",
-    title: "Fence violation",
-    summary:
-      "The walker left the allowed app. That is leash control, not a product bug — unless a real user can follow the same link out.",
-    detail:
-      "The fence blocked a hop or redirect off the allowed origin or path. Treat it as a product bug only when a person can take the same exit. Not this: a 404 inside the app (Q-17).",
-  },
-  {
-    id: "Q-20",
-    rule: "writePolicyBlocked",
-    chapter: "quality",
-    title: "Write policy blocked",
-    summary: "ClickMonkey refused a write because required fields were already filled. That is policy, not a user-facing defect.",
-    detail:
-      "writePolicy=validationOnly (or equivalent) skipped a fill or submit. Not this: the product rejected a write (Q-01); Save did nothing (silent Save).",
-  },
-  {
-    id: "Q-21",
-    rule: "uiIssue",
-    chapter: "quality",
-    title: "Host UI issue",
-    summary: "A human or charter marked this screenshot as a UI problem. Confirm it is still what users see.",
-    detail:
-      "Filed with screenshot ui / explore_finding, not a scanner rule. Re-check the shot. Not this: a measured visual class (V-*) or a form/runtime Q-id.",
-  },
-  {
     id: "Q-22",
     rule: "expectFailed",
     chapter: "quality",
@@ -517,10 +489,11 @@ export function checkById(id: string): CheckDef | undefined {
   return CHECKS.find((c) => c.id === id);
 }
 
-/** Stable report label: catalog id, else A-{SC} for axe, else undefined (ranked fallback). */
+/** Stable report label: catalog id, else A-{SC} for DOM WCAG, else undefined (axe uses `AXE {id}`). */
 export function catalogIdFor(rule: string, extras?: ChapterExtras): string | undefined {
   const owned = checkByRule(rule, extras);
   if (owned) return owned.id;
+  if (isAxeRule(rule)) return undefined;
   const wcag = wcagOf(rule, extras);
   if (wcag.chapter === "accessibility" && wcag.sc) return `A-${wcag.sc}`;
   return undefined;

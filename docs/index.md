@@ -7,7 +7,7 @@ permalink: /
 
 QA walker. Point it at a URL, let it drive the UI, keep a tape.
 
-- [Finding catalog](findings/) — stable ids (T/V/A/Q)
+- [Finding catalog](findings/) — ClickMonkey, AXE, WCAG, html-validate, HTML
 - [What a person still tests](findings/qa-left/) — leftover WCAG
 - [Reading the map](map/) — haze, m/u/n pips, live letters
 - [Walkers](walkers/) — monkeys and modes

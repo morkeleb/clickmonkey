@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   chapterOf,
   coverageLines,
+  isAxeRule,
+  isEnabledAxeRule,
   isOverflowAt320,
   isAcceptedInvalidFinding,
   isServerRefusedSubmitFinding,
@@ -14,6 +16,16 @@ import {
 
 describe("wcag map", () => {
   it("buckets axe, DOM, and layout rules into chapters", () => {
+    assert.equal(isAxeRule("color-contrast"), true);
+    assert.equal(isAxeRule("tabindex"), true);
+    assert.equal(isAxeRule("skip-link"), true);
+    assert.equal(isEnabledAxeRule("color-contrast"), true);
+    assert.equal(isEnabledAxeRule("label-content-name-mismatch"), true);
+    assert.equal(isEnabledAxeRule("css-orientation-lock"), false);
+    assert.equal(isEnabledAxeRule("audio-caption"), false);
+    assert.equal(isAxeRule("clickableNonWidget"), false);
+    assert.equal(isAxeRule("focusVisible"), false);
+    assert.equal(isAxeRule("overlap"), false);
     assert.equal(chapterOf("color-contrast"), "accessibility");
     assert.equal(wcagOf("color-contrast").sc, "1.4.3");
     assert.equal(wcagOf("color-contrast").level, "AA");

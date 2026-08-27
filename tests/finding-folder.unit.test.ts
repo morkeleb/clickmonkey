@@ -58,8 +58,8 @@ describe("finding folder", () => {
     const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-keep-"));
     const first: Finding = {
       schemaVersion: 1,
-      id: findingId(1, "uiIssue"),
-      kind: "uiIssue",
+      id: findingId(1, "expectFailed"),
+      kind: "expectFailed",
       message: "overlap",
       tapePath: join(outDir, "replay.log"),
       stepIndex: 1,
@@ -86,8 +86,8 @@ describe("finding folder", () => {
     const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-append-"));
     const finding: Finding = {
       schemaVersion: 1,
-      id: findingId(1, "uiIssue"),
-      kind: "uiIssue",
+      id: findingId(1, "expectFailed"),
+      kind: "expectFailed",
       message: "overlap",
       tapePath: join(outDir, "replay.log"),
       stepIndex: 1,
@@ -95,7 +95,7 @@ describe("finding folder", () => {
     persistFinding(outDir, finding);
     appendFindingReport(outDir, finding.id, "What happened: buttons overlap.");
     const report = readFileSync(join(outDir, "findings", finding.id, "report.md"), "utf8");
-    assert.match(report, /UI issue captured from an explicit screenshot step/);
+    assert.match(report, /Expected validation \/ expect failed/);
     assert.match(report, /What happened: buttons overlap/);
   });
 
@@ -365,7 +365,7 @@ describe("finding folder", () => {
     assert.equal(second[0]?.created, false);
   });
 
-  it("dedups 18×18 close buttons that only differ by tab name", () => {
+  it("keeps 18×18 close buttons that name different tabs", () => {
     const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-target-"));
     const issue = (where: string): QualityIssue => ({
       source: "visual",
@@ -387,7 +387,8 @@ describe("finding folder", () => {
       tapePath: join(outDir, "replay.log"),
     });
     assert.equal(first[0]?.created, true);
-    assert.equal(second[0]?.created, false);
+    assert.equal(second[0]?.created, true);
+    assert.notEqual(second[0]?.finding.id, first[0]?.finding.id);
   });
 
   it("keeps different overlap messages even on the same page", () => {

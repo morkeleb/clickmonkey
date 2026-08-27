@@ -81,8 +81,8 @@ describe("wrapReportPrintBlocks", () => {
     const html = wrapReportPrintBlocks(
       [
         "<h2>Summary</h2>",
-        "<h3>Labels</h3>",
-        "<p>T testability, A accessibility, V visual, Q quality.</p>",
+        "<h3>By chapter</h3>",
+        "<ul><li>Quality: 1 finding</li></ul>",
         "<h3>Start here</h3>",
         "<ul><li>Fix color-contrast</li></ul>",
         "<h2>Findings</h2>",
@@ -108,7 +108,7 @@ describe("wrapReportPrintBlocks", () => {
       ].join(""),
     );
     assert.doesNotMatch(html, /report-card"><h2>/);
-    assert.doesNotMatch(html, /report-card"><h3>Labels/);
+    assert.doesNotMatch(html, /report-card"><h3>By chapter/);
     assert.doesNotMatch(html, /report-card"><h3>Start here/);
     assert.doesNotMatch(html, /report-card"><h3>Chrome/);
     assert.doesNotMatch(html, /report-card"><h3>On several pages/);

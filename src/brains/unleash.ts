@@ -379,6 +379,11 @@ export function emptyBodyFields(view: Pick<View, "shown">): ShownField[] {
   return view.shown.filter((f) => isBodyField(f) && looksLikeEmptyValue(f));
 }
 
+/** Body fields that already have a real value (not a Select… chip). */
+export function filledBodyFields(view: Pick<View, "shown">): ShownField[] {
+  return view.shown.filter((f) => isBodyField(f) && !looksLikeEmptyValue(f));
+}
+
 /** Create-style pages often disable Save until dirty; still treat them as a form. */
 export const UNFINISHED_FORM_EMPTY = 4;
 
@@ -388,8 +393,20 @@ export function looksLikeUnfinishedForm(view: Pick<View, "shown">): boolean {
 
 /** Started filling (some body values) and still has empties — do not hop tabs. */
 export function looksLikeMidForm(view: Pick<View, "shown">): boolean {
-  const filled = view.shown.filter((f) => isBodyField(f) && f.value.trim() && f.value !== "••••");
-  return filled.length > 0 && emptyBodyFields(view).length > 0;
+  return filledBodyFields(view).length > 0 && emptyBodyFields(view).length > 0;
+}
+
+/**
+ * Keep a form burst going after a listed/typeahead fill miss so later fills and
+ * Save still run. Crash and fence bounce still abort.
+ */
+export function continueFormBurst(
+  kind: string | undefined,
+  result: { ok: boolean; bounced?: boolean; findingKind?: string },
+): boolean {
+  if (result.bounced || result.findingKind === "pageError") return false;
+  if (kind === "fill") return true;
+  return result.ok;
 }
 
 /** Empty-list CTA (“Create your first …”). Hidden once a filter/search has a value. */

@@ -12,11 +12,9 @@ const MECHANICAL: ReadonlySet<FindingKind> = new Set([
   "httpError",
   "notFound",
   "pageError",
-  "fenceViolation",
   "unresolvedId",
   "unknownId",
   "driftId",
-  "writePolicyBlocked",
   "locatorAmbiguous",
 ]);
 
@@ -58,7 +56,7 @@ function classify(opts: {
   if (mechanical.length > 0) return "still";
   if (
     tapeWantsEyes(opts.log) ||
-    opts.findings.some((f) => f.kind === "uiIssue" || f.kind === "visualIssue")
+    opts.findings.some((f) => f.kind === "visualIssue")
   ) {
     return "look";
   }

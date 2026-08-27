@@ -25,6 +25,8 @@ import {
   alreadyPickedListedOption,
   looksLikeEmptyValue,
   looksLikeListedPicker,
+  looksLikeMidForm,
+  continueFormBurst,
   formFieldsToFill,
   FORM_COMMIT_RETRIES,
   stayActions,
@@ -477,6 +479,115 @@ describe("formSubmitAction", () => {
     assert.doesNotMatch(text, /^open /);
   });
 
+  it("treats some filled body fields plus empties as mid-form", () => {
+    assert.equal(
+      looksLikeMidForm(
+        viewOf({
+          shown: [
+            { id: "vendor", value: "Acme", type: "text" },
+            { id: "gl", value: "6000", type: "text" },
+            { id: "office", value: "Oslo", type: "text" },
+            { id: "row_0_account", value: "", type: "text" },
+          ],
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      looksLikeMidForm(
+        viewOf({
+          shown: [
+            { id: "vendor", value: "Acme", type: "text" },
+            { id: "office", value: "Select office", type: "text" },
+          ],
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      looksLikeMidForm(viewOf({ shown: [{ id: "vendor", value: "Acme", type: "text" }] })),
+      false,
+    );
+    assert.equal(
+      looksLikeMidForm(viewOf({ shown: [{ id: "vendor", value: "", type: "text" }] })),
+      false,
+    );
+  });
+
+  it("clicks Save after a listed fill miss instead of opening another page", () => {
+    const view = viewOf({
+      page: "invoices_new",
+      pages: ["home", "invoices_new", "settings"],
+      shown: [
+        { id: "vendor", value: "Acme", type: "text" },
+        { id: "gl", value: "6000", type: "text" },
+        { id: "office", value: "Oslo", type: "text" },
+        { id: "row_0_account", value: "Select account", type: "text" },
+      ],
+      actions: [
+        { id: "button_save", label: "Save" },
+        { id: "link_settings", nav: true, opens: "settings" },
+      ],
+      last: { step: "fill page.row_0_account Acme", ok: false },
+    });
+    const pages = [
+      {
+        id: "invoices_new",
+        path: "/invoices/new",
+        ready: { by: "testId", value: "invoices_new" },
+        surfaces: [
+          {
+            id: "page",
+            kind: "page" as const,
+            fields: [],
+            actions: [],
+          },
+        ],
+      },
+      {
+        id: "settings",
+        path: "/settings",
+        ready: { by: "testId", value: "settings" },
+        surfaces: [
+          {
+            id: "page",
+            kind: "page" as const,
+            fields: [{ id: "name", required: false, type: "text" as const, by: "name" as const, value: "name", status: "ok" as const }],
+            actions: [{ id: "submit", by: "testId" as const, value: "submit", status: "ok" as const }],
+          },
+        ],
+      },
+    ] as unknown as Page[];
+    const d = decideUnleash(
+      { view, stepsUsed: 4, writePolicy: "allow", pages, last: { ok: false } },
+      () => 0.5,
+    );
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.equal(d.mode, "form");
+    assert.equal(looksLikeMidForm(view), true);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /^open /);
+    assert.notEqual(d.note, "form hunt");
+  });
+
+  it("keeps Save as the last burst line even when an earlier listed fill is in the burst", () => {
+    const view = viewOf({
+      shown: [
+        { id: "vendor", value: "", type: "text", required: true },
+        { id: "gl", value: "", type: "text" },
+        { id: "office", value: "", type: "text" },
+        { id: "row_0_account", value: "", type: "text" },
+      ],
+      actions: [{ id: "button_save", label: "Save" }],
+    });
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    const lines = d.lines ?? [d.line];
+    assert.ok(lines.some((l) => l.startsWith("fill page.vendor ")));
+    assert.ok(lines.some((l) => l.startsWith("fill page.row_0_account ")));
+    assert.equal(lines.at(-1), "click page.button_save");
+    assert.doesNotMatch(lines.join("\n"), /^open /m);
+  });
+
   it("treats a Select… chip as empty", () => {
     assert.equal(looksLikeEmptyValue({ id: "attorney", value: "Select attorney", type: "text" }), true);
     assert.equal(
@@ -590,6 +701,18 @@ describe("formSubmitAction", () => {
     assert.match(text, /fill page\.legalname /);
     assert.match(text, /click page\.button_save/);
     assert.doesNotMatch(text, /tab_dashboard/);
+  });
+});
+
+describe("continueFormBurst", () => {
+  it("keeps a form burst going after a listed fill miss, but aborts on crash or bounce", () => {
+    assert.equal(continueFormBurst("fill", { ok: false, findingKind: "expectFailed" }), true);
+    assert.equal(continueFormBurst("fill", { ok: true }), true);
+    assert.equal(continueFormBurst("click", { ok: true }), true);
+    assert.equal(continueFormBurst("click", { ok: false, findingKind: "expectFailed" }), false);
+    assert.equal(continueFormBurst("fill", { ok: false, findingKind: "pageError" }), false);
+    assert.equal(continueFormBurst("fill", { ok: false, bounced: true }), false);
+    assert.equal(continueFormBurst("open", { ok: true }), true);
   });
 });
 

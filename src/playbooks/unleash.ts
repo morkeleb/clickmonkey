@@ -5,6 +5,7 @@ import { LOOT_EXPLORE_STEPS, parseFormLock } from "../brains/form-hunt.js";
 import { formatLiveLine } from "../executor/nav-log.js";
 import {
   clickWasNoop,
+  continueFormBurst,
   FORM_COMMIT_RETRIES,
   formSubmitActions,
   isPrimaryFormCommit,
@@ -20,6 +21,7 @@ import { bootRun } from "../executor/boot.js";
 import { createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
 import { buildView } from "../executor/view.js";
+import { isSilentSubmitMessage } from "../executor/field-validity.js";
 import { shouldPersistFinding } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
 import { loadMapPages, recordMode } from "../persist/fog.js";
@@ -187,6 +189,7 @@ export async function runUnleash(opts: {
       if (filledForm && !lockForm) huntTarget = undefined;
       let formOk = false;
       let saveLine: string | undefined;
+      let urlBeforeSave: string | undefined;
       for (const line of decisionLines(decision)) {
         if (stepsUsed >= steps) break;
         const parsed = parseLine(line);
@@ -203,7 +206,10 @@ export async function runUnleash(opts: {
         stepsUsed += 1;
         if (parsed && !("comment" in parsed) && parsed.kind === "click") {
           clicksByPage.set(onPage, rememberClick(clicksByPage.get(onPage) ?? [], parsed.id));
-          if (submitIds?.has(parsed.id) && isPrimaryFormCommit(parsed)) saveLine = line;
+          if (isPrimaryFormCommit(parsed) && (submitIds?.has(parsed.id) || Boolean(lockForm))) {
+            saveLine = line;
+            urlBeforeSave = beforeClick?.url ?? urlAtStart;
+          }
           if (
             beforeClick &&
             result.ok &&
@@ -216,18 +222,26 @@ export async function runUnleash(opts: {
             if (decision.note === "form hunt" && !lockForm) huntTarget = undefined;
           }
         }
+        const lineKind = parsed && !("comment" in parsed) ? parsed.kind : undefined;
+        const keepGoing = continueFormBurst(lineKind, {
+          ok: result.ok,
+          ...(result.bounced ? { bounced: true } : {}),
+          ...(result.finding ? { findingKind: result.finding.kind } : {}),
+        });
         if (result.finding && shouldPersistFinding(result.finding.kind)) {
           findings.push(result.finding);
-          const crash = result.finding.kind === "pageError";
-          if (!lockForm || crash) {
-            view = await resetToSeed(exec, state, seedPageId);
-            huntTarget = lockForm ? `${lockForm}/page` : undefined;
-            lootSteps = 0;
+          if (!keepGoing) {
+            const crash = result.finding.kind === "pageError";
+            if (!lockForm || crash) {
+              view = await resetToSeed(exec, state, seedPageId);
+              huntTarget = lockForm ? `${lockForm}/page` : undefined;
+              lootSteps = 0;
+            }
+            formOk = false;
+            break;
           }
-          formOk = false;
-          break;
         }
-        if (result.bounced || !result.ok) {
+        if (!keepGoing && (result.bounced || !result.ok)) {
           if (result.bounced || !lockForm) {
             if (result.bounced) view = await resetToSeed(exec, state, seedPageId);
             huntTarget = lockForm ? `${lockForm}/page` : undefined;
@@ -236,7 +250,7 @@ export async function runUnleash(opts: {
           formOk = false;
           break;
         }
-        formOk = true;
+        if (result.ok) formOk = true;
       }
       if (formOk && shouldStampMode(decision) && decision.mode) {
         const at = new Date().toISOString();
@@ -244,23 +258,31 @@ export async function runUnleash(opts: {
         recordMode(state, onPage, decision.mode);
       }
       if (filledForm && formOk) formHits[formKey] = (formHits[formKey] ?? 0) + 1;
+      const urlNow = state.page.url();
       const leftForm =
         Boolean(lockForm && saveLine) &&
-        (view.page !== onPage || state.page.url() !== urlAtStart);
+        (view.page !== onPage || Boolean(urlBeforeSave && urlNow !== urlBeforeSave));
       if (leftForm) {
         submitted = { from: onPage, to: view.page };
         opts.echo?.write(
-          `${formatLiveLine(`form-loop submitted ${onPage} → ${view.page} (${state.page.url()})`)}\n`,
+          `${formatLiveLine(`form-loop submitted ${onPage} → ${view.page} (${urlNow})`)}\n`,
         );
         break;
       }
       if (lockForm && saveLine && !leftForm) {
         stayedSaves += 1;
-        const why = view.last?.finding ?? (view.last?.ok === false ? "failed" : "stayed");
+        const silent = findings.some((f) => isSilentSubmitMessage(f.message));
+        const why = silent
+          ? "silentSubmit"
+          : (view.last?.finding ?? (view.last?.ok === false ? "failed" : "stayed"));
         opts.echo?.write(`${formatLiveLine(`form-loop still ${lockForm} after ${saveLine} (${why})`)}\n`);
-        if (stayedSaves > FORM_COMMIT_RETRIES) {
+        if (silent || stayedSaves > FORM_COMMIT_RETRIES) {
           opts.echo?.write(
-            `${formatLiveLine(`form-loop gave up after ${stayedSaves} Saves still on ${lockForm}`)}\n`,
+            `${formatLiveLine(
+              silent
+                ? `form-loop silentSubmit on ${lockForm}`
+                : `form-loop gave up after ${stayedSaves} Saves still on ${lockForm}`,
+            )}\n`,
           );
           break;
         }

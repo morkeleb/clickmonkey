@@ -1,11 +1,14 @@
 import type { Locator as PwLocator, Page } from "playwright";
 import { textContainsNastyPayload } from "../brains/nasty.js";
 import {
+  clickablePaintedIndexes,
   formatSelectOptionList,
+  liveOptionsFromOptionEls,
   liveOptionsFromSnaps,
   matchListedOption,
   pickListedOption,
   rankListedOptions,
+  listRowIsPainted,
   type ListRowSnap,
   type LiveSelectOption,
 } from "./select-options.js";
@@ -111,74 +114,54 @@ async function boundRoot(loc: PwLocator, page: Page): Promise<PwLocator> {
 }
 
 async function readNativeListOptions(root: PwLocator): Promise<LiveSelectOption[]> {
-  return root
-    .locator("option")
-    .evaluateAll((els) =>
-      els.flatMap((el) => {
-        const o = el as unknown as { disabled: boolean; value: string; label: string; textContent: string | null };
-        if (o.disabled) return [];
-        const value = (o.value || "").trim();
-        const label = (o.label || o.textContent || value).trim();
-        if (!value && !label) return [];
-        return [{ value, label: label || value }];
-      }),
-    )
-    .catch(() => [] as LiveSelectOption[]);
+  return root.locator("option").evaluateAll(liveOptionsFromOptionEls).catch(() => [] as LiveSelectOption[]);
 }
 
 /** Snapshot painted nodes so Node can drop non-actable chrome (group labels, headings). */
 async function snapListRows(loc: PwLocator): Promise<ListRowSnap[]> {
   return loc
-    .evaluateAll((els) => {
-      return els.flatMap((el) => {
-        const node = el as {
-          disabled?: boolean;
-          onclick?: unknown;
-          onmousedown?: unknown;
-          onpointerdown?: unknown;
-          tabIndex: number;
-          tagName: string;
-          innerText?: string;
-          textContent: string | null;
-          getAttribute(name: string): string | null;
-          ownerDocument: {
-            defaultView: { getComputedStyle(elt: unknown): { pointerEvents: string } } | null;
-          };
-        };
-        const type = (node.getAttribute("type") || "").toLowerCase();
+    .evaluateAll((els) =>
+      els.flatMap((el) => {
+        const type = (el.getAttribute("type") || "").toLowerCase();
         if (type === "submit" || type === "reset") return [];
-        const text = (node.getAttribute("aria-label") || node.innerText || node.textContent || "")
-          .replace(/\s+/g, " ")
-          .trim();
+        const painted = "innerText" in el && typeof el.innerText === "string" ? el.innerText : el.textContent || "";
+        const text = (el.getAttribute("aria-label") || painted).replace(/\s+/g, " ").trim();
         if (!text) return [];
-        const style = node.ownerDocument.defaultView?.getComputedStyle(node);
-        let hasOwnClick = Boolean(node.onclick || node.onmousedown || node.onpointerdown);
-        if (node.getAttribute("onclick") || node.getAttribute("onmousedown")) hasOwnClick = true;
+        const style = el.ownerDocument.defaultView?.getComputedStyle(el);
+        let hasOwnClick = Boolean(el.onclick || el.onmousedown || el.onpointerdown);
+        if (el.getAttribute("onclick") || el.getAttribute("onmousedown")) hasOwnClick = true;
         if (!hasOwnClick) {
-          for (const k of Object.keys(node)) {
+          for (const k of Object.keys(el)) {
             if (!k.startsWith("__reactProps") && !k.startsWith("__reactEventHandlers")) continue;
-            const p = (node as unknown as Record<string, { onClick?: unknown; onMouseDown?: unknown; onPointerDown?: unknown }>)[k];
-            if (p && (p.onClick || p.onMouseDown || p.onPointerDown)) {
+            const raw: unknown = Object.getOwnPropertyDescriptor(el, k)?.value;
+            if (!raw || typeof raw !== "object") continue;
+            if ("onClick" in raw || "onMouseDown" in raw || "onPointerDown" in raw) {
               hasOwnClick = true;
               break;
             }
           }
         }
+        const tab = el.getAttribute("tabindex");
+        const rect = el.getBoundingClientRect();
         return [
           {
-            value: node.getAttribute("data-value") || node.getAttribute("value") || text,
+            value: el.getAttribute("data-value") || el.getAttribute("value") || text,
             label: text,
-            tag: node.tagName.toLowerCase(),
-            role: (node.getAttribute("role") || "").toLowerCase(),
-            disabled: Boolean(node.disabled),
-            ariaDisabled: node.getAttribute("aria-disabled") === "true",
+            tag: el.tagName.toLowerCase(),
+            role: (el.getAttribute("role") || "").toLowerCase(),
+            disabled: el.getAttribute("disabled") !== null,
+            ariaDisabled: el.getAttribute("aria-disabled") === "true",
             pointerEvents: style?.pointerEvents ?? "",
-            tabIndex: node.tabIndex,
+            tabIndex: tab === null || tab === "" ? -1 : Number(tab),
             hasOwnClick,
+            width: rect.width,
+            height: rect.height,
+            x: rect.left,
+            y: rect.top,
           },
         ];
-      });
-    })
+      }),
+    )
     .catch(() => [] as ListRowSnap[]);
 }
 
@@ -222,7 +205,9 @@ function dropCompositeRows(rows: LiveSelectOption[]): LiveSelectOption[] {
 
 /** onclick / React onClick / onMouseDown on a node (not delegated addEventListener). */
 async function readOwnPointerRows(root: PwLocator): Promise<LiveSelectOption[]> {
-  const snaps = (await snapListRows(root.locator("*"))).filter((s) => s.hasOwnClick && s.label.length <= 80);
+  const snaps = (await snapListRows(root.locator("*"))).filter(
+    (s) => s.hasOwnClick && s.label.length <= 80 && listRowIsPainted(s),
+  );
   return dropCompositeRows(liveOptionsFromSnaps(snaps));
 }
 
@@ -259,6 +244,10 @@ async function readCdpListenerRows(page: Page, root: PwLocator): Promise<LiveSel
           if (node.getAttribute("aria-disabled") === "true") continue;
           var type = (node.getAttribute("type") || "").toLowerCase();
           if (type === "submit" || type === "reset") continue;
+          var box = node.getBoundingClientRect();
+          if (!box.width || !box.height) continue;
+          var st = node.ownerDocument.defaultView && node.ownerDocument.defaultView.getComputedStyle(node);
+          if (st && (st.display === "none" || st.visibility === "hidden")) continue;
           var text = (node.getAttribute("aria-label") || node.innerText || "").replace(/\\s+/g, " ").trim();
           if (!text || text.length > 80 || seen[text]) continue;
           seen[text] = true;
@@ -470,6 +459,27 @@ export async function harvestTypeaheadOptions(loc: PwLocator, page: Page): Promi
   return opts;
 }
 
+/** Title line + full harvested label. Exact `getByText` of title+subtitle often misses. */
+function listedClickNames(pick: LiveSelectOption, wanted?: string): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw?: string) => {
+    const s = (raw ?? "").replace(/\s+/g, " ").trim();
+    if (!s || s.length > 80) return;
+    const k = s.toLowerCase();
+    if (seen.has(k)) return;
+    seen.add(k);
+    ordered.push(s);
+  };
+  const label = (pick.label || "").replace(/\s+/g, " ").trim();
+  push(label);
+  const title = label.split(" ").slice(0, 2).join(" ");
+  if (title && title !== label) push(title);
+  push(pick.value);
+  push(wanted);
+  return ordered;
+}
+
 async function clickNamedOption(root: PwLocator, name: string, timeoutMs: number): Promise<boolean> {
   if (!name || name.length > 80) return false;
   const deadline = Date.now() + Math.max(0, timeoutMs);
@@ -500,7 +510,7 @@ async function clickTypeaheadOption(
   wanted?: string,
 ): Promise<boolean> {
   const root = await boundRoot(loc, page);
-  const names = [match.label, match.value, wanted].filter((s): s is string => Boolean(s?.trim()));
+  const names = listedClickNames(match, wanted);
   const seen = new Set<string>();
   const deadline = Date.now() + Math.max(0, timeoutMs);
   for (const name of names) {
@@ -514,7 +524,7 @@ async function clickTypeaheadOption(
   return false;
 }
 
-/** Click a painted row by index. Visible first; `force` for virtual lists that are not “visible”. */
+/** Click the Nth actable painted row. Hidden nodes and group chrome are not rows. */
 async function clickOptionAt(root: PwLocator, index: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + Math.max(0, timeoutMs);
   const tries = [
@@ -522,21 +532,17 @@ async function clickOptionAt(root: PwLocator, index: number, timeoutMs: number):
     root.locator('[role="menuitem"]:visible'),
     root.locator('[role="listbox"] button:visible, [role="menu"] button:visible'),
     root.locator(":scope > *:visible"),
-    root.locator('[role="option"]'),
-    root.locator('[role="menuitem"]'),
-    root.locator('[role="listbox"] button, [role="menu"] button'),
-    root.locator(":scope > *"),
   ];
   for (const loc of tries) {
     const left = sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS, attempts: LISTED_CLICK_LOCATOR_COUNT });
     if (left <= 0) return false;
-    const n = await loc.count().catch(() => 0);
-    if (n === 0) continue;
-    const i = Math.min(Math.max(index, 0), n - 1);
+    const snaps = await snapListRows(loc);
+    const clickable = clickablePaintedIndexes(snaps);
+    if (clickable.length === 0) continue;
+    const i = clickable[Math.min(Math.max(index, 0), clickable.length - 1)]!;
     const row = loc.nth(i);
-    // Options with pointer-events:none still paint a child span as the hit target.
     const inner = row.locator(":scope *").first();
-    const targets = (await inner.count().catch(() => 0)) > 0 ? [inner, row] : [row];
+    const targets = (await inner.count().catch(() => 0)) > 0 ? [row, inner] : [row];
     for (const hit of targets) {
       const ok = await hit
         .click({ timeout: left, force: true })
@@ -573,11 +579,36 @@ export function listedValueIsCommitted(live: string, placeholder?: string | null
 export function liveLooksLikePick(live: string, pick: LiveSelectOption): boolean {
   const a = live.replace(/\s+/g, " ").trim().toLowerCase();
   if (!a) return false;
+  if (LISTED_CHIP_PROMPT.test(a) || isListedSearchProbe(a)) return false;
   const b = (pick.label || pick.value).replace(/\s+/g, " ").trim().toLowerCase();
   if (!b) return false;
   if (a === b) return true;
   if (a.includes(b) || b.includes(a)) return a.length >= 3 && b.length >= 3;
+  // Truncated chip: "Grea..." / "Grea... Great Basin Logistics Inc"
+  const ellipsis = /^(.*?)[.…]+(.*)$/.exec(a);
+  if (ellipsis) {
+    const prefix = (ellipsis[1] ?? "").trim();
+    const rest = (ellipsis[2] ?? "").trim();
+    if (prefix.length >= 3 && b.startsWith(prefix)) return true;
+    if (rest.length >= 3 && (b.includes(rest) || rest.includes(b))) return true;
+  }
   return false;
+}
+
+/** After a painted-row click: this pick, any shown row, or a truncated chip that is not the typed query. */
+function listedCommittedPick(
+  live: string,
+  shown: readonly LiveSelectOption[],
+  pick: LiveSelectOption,
+  wanted?: string,
+): LiveSelectOption | undefined {
+  if (liveLooksLikePick(live, pick)) return pick;
+  const any = shown.find((o) => liveLooksLikePick(live, o));
+  if (any) return any;
+  if (!listedValueIsCommitted(live)) return undefined;
+  const typed = (wanted ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (typed && live.replace(/\s+/g, " ").trim().toLowerCase() === typed) return undefined;
+  return pick;
 }
 
 async function liveInput(loc: PwLocator, timeoutMs = PEEK_TIMEOUT_MS): Promise<string> {
@@ -595,22 +626,29 @@ export function typeaheadChipText(raw: string): string {
 
 export async function readTypeaheadValue(loc: PwLocator, timeoutMs = PEEK_TIMEOUT_MS): Promise<string> {
   const input = await liveInput(loc, timeoutMs);
-  if (input) return input;
-  const host = await loc
-    .evaluate((el) => {
-      const n = el as {
-        closest(sel: string): { innerText?: string } | null;
-        parentElement: { innerText?: string } | null;
-        getAttribute(name: string): string | null;
-      };
-      const ph = (n.getAttribute("placeholder") || "").trim();
-      const host = n.closest('[role="combobox"]') || n.parentElement;
-      const t = (host?.innerText || "").replace(/\s+/g, " ").trim();
-      if (ph && t === ph) return "";
-      return t;
-    }, undefined, { timeout: timeoutMs })
-    .catch(() => "");
-  return typeaheadChipText(host);
+  const host = typeaheadChipText(
+    await loc
+      .evaluate((el) => {
+        const n = el as {
+          closest(sel: string): { innerText?: string } | null;
+          parentElement: { innerText?: string } | null;
+          getAttribute(name: string): string | null;
+        };
+        const ph = (n.getAttribute("placeholder") || "").trim();
+        const host = n.closest('[role="combobox"]') || n.parentElement;
+        const t = (host?.innerText || "").replace(/\s+/g, " ").trim();
+        if (ph && t === ph) return "";
+        return t;
+      }, undefined, { timeout: timeoutMs })
+      .catch(() => ""),
+  );
+  // Chip/token UIs keep a leftover probe in `input.value` after the row is chosen.
+  if (listedValueIsCommitted(host) && (!listedValueIsCommitted(input) || isListedSearchProbe(input))) {
+    return host;
+  }
+  if (listedValueIsCommitted(input)) return input;
+  if (listedValueIsCommitted(host)) return host;
+  return input || host;
 }
 
 async function selectWithKeyboard(loc: PwLocator, timeoutMs: number): Promise<string | undefined> {
@@ -656,28 +694,34 @@ async function chooseListedOption(
     // Painted row first — name matching on a virtual list can sit for minutes
     // after the chip is already selected (input.value is empty).
     const peek = listedPeekMs(page);
+    const commitMs = () => sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS });
     if (await clickOptionAt(root, at, ms)) {
       const live = await readTypeaheadValue(loc, peek);
-      if (liveLooksLikePick(live, pick)) return commitListed(loc, pick, live, sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS }));
+      const hit = listedCommittedPick(live, shown, pick, wanted);
+      if (hit) return commitListed(loc, hit, live, commitMs());
     }
     const afterPaint = await readTypeaheadValue(loc, peek);
-    if (liveLooksLikePick(afterPaint, pick)) {
-      return commitListed(loc, pick, afterPaint, sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS }));
-    }
+    const paintedHit = listedCommittedPick(afterPaint, shown, pick, wanted);
+    if (paintedHit) return commitListed(loc, paintedHit, afterPaint, commitMs());
     const namedMs = sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS });
     if (namedMs <= 0) break;
     if (await clickTypeaheadOption(loc, page, pick, namedMs, matched ? wanted : pick.label)) {
       const named = await readTypeaheadValue(loc, peek);
-      if (liveLooksLikePick(named, pick)) return commitListed(loc, pick, named, sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS }));
+      const namedHit = listedCommittedPick(named, shown, pick, wanted);
+      if (namedHit) return commitListed(loc, namedHit, named, commitMs());
     }
     const live = await readTypeaheadValue(loc, peek);
-    if (liveLooksLikePick(live, pick)) return commitListed(loc, pick, live, sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS }));
+    const liveHit = listedCommittedPick(live, shown, pick, wanted);
+    if (liveHit) return commitListed(loc, liveHit, live, commitMs());
   }
   const keyedMs = sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS });
   if (keyedMs > 0) {
     const keyed = await selectWithKeyboard(loc, keyedMs);
     const last = picks[0]!;
-    if (keyed && liveLooksLikePick(keyed, last)) return commitListed(loc, last, keyed, keyedMs);
+    if (keyed) {
+      const keyedHit = listedCommittedPick(keyed, shown, last, wanted);
+      if (keyedHit) return commitListed(loc, keyedHit, keyed, keyedMs);
+    }
   }
   return undefined;
 }
@@ -728,9 +772,11 @@ export async function fillTypeahead(
   }
 
   const already = await readTypeaheadValue(loc, listedPeekMs(page));
+  // Leftover Faker/catalog in the chip is not a listed pick — open and click a row.
   if (
     listedValueIsCommitted(already) &&
-    already.toLowerCase().includes(wanted.trim().toLowerCase())
+    already.toLowerCase().includes(wanted.trim().toLowerCase()) &&
+    !(opts?.force && already.replace(/\s+/g, " ").trim().toLowerCase() === wanted.trim().toLowerCase())
   ) {
     const escMs = act();
     if (escMs > 0) await loc.press("Escape", { timeout: escMs }).catch(() => undefined);

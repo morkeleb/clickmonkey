@@ -510,7 +510,7 @@ describe("buildRunDetail", () => {
         line: "click page.go",
         ok: false,
         ms: 200,
-        finding: "fenceViolation",
+        finding: "expectFailed",
       })}\n`,
     );
     mkdirSync(join(runDir, "shots"), { recursive: true });
@@ -519,8 +519,8 @@ describe("buildRunDetail", () => {
       runDir,
       {
         schemaVersion: 1,
-        id: "fnd_0_fenceViolation",
-        kind: "fenceViolation",
+        id: "fnd_0_expectFailed",
+        kind: "expectFailed",
         severity: "major",
         message: "left the fence",
         tapePath: join(runDir, "replay.log"),
@@ -542,11 +542,11 @@ describe("buildRunDetail", () => {
     assert.equal(detail.outline?.now, "click page.openCreate");
     assert.equal(detail.pageId, "home");
     assert.equal(detail.steps.length, 1);
-    assert.equal(detail.steps[0]?.findingId, "fnd_0_fenceViolation");
+    assert.equal(detail.steps[0]?.findingId, "fnd_0_expectFailed");
     assert.equal(detail.steps[0]?.findingMessage, "left the fence");
     assert.equal(
       detail.steps[0]?.screenshotUrl,
-      `/files/runs/${runId}/findings/fnd_0_fenceViolation/screenshot.png`,
+      `/files/runs/${runId}/findings/fnd_0_expectFailed/screenshot.png`,
     );
     assert.equal(detail.findings.length, 1);
     assert.equal(detail.findings[0]?.pageId, "home");

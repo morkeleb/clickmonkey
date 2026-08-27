@@ -10,7 +10,7 @@ it in `clickmonkey/`. The log is a line DSL. The view is what a brain
 snapshot, and a `look` block (font palette + hit-tested cover) — not HTML.
 
 What it harvests vs what QA still owns: [docs/issue-classes.md](docs/issue-classes.md).
-Stable finding ids (T/V/A/Q): [docs/findings](docs/findings/index.md) (GitHub Pages: https://morkeleb.github.io/clickmonkey/findings/). Leftover WCAG a person still tests: [qa-left](https://morkeleb.github.io/clickmonkey/findings/qa-left/).
+Finding catalog (ClickMonkey vs AXE / WCAG / html-validate / HTML): [docs/findings](docs/findings/index.md) (GitHub Pages: https://morkeleb.github.io/clickmonkey/findings/). Leftover WCAG a person still tests: [qa-left](https://morkeleb.github.io/clickmonkey/findings/qa-left/).
 Jobs, modes, and fog: [docs/walkers.md](docs/walkers.md).
 Fog ledger and hunger: [docs/fog.md](docs/fog.md).
 How to read the dashboard map (haze, m/u/n pips, live letters): [docs/map.md](docs/map.md) (GitHub Pages: https://morkeleb.github.io/clickmonkey/map/).

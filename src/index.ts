@@ -278,6 +278,8 @@ export {
   looksLikeUnfinishedForm,
   looksLikeMidForm,
   looksLikeEmptyValue,
+  filledBodyFields,
+  continueFormBurst,
   looksLikeListedPicker,
   formFieldsToFill,
   emptyBodyFields,

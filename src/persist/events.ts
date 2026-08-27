@@ -1,4 +1,5 @@
 import { appendFileSync } from "node:fs";
+import { redactEnvInText } from "../executor/secrets.js";
 
 export type PersistEvent = {
   ts: string;
@@ -8,5 +9,5 @@ export type PersistEvent = {
 
 /** JSONL. Callers must not put secrets or HTML on the event. */
 export function appendEvent(path: string, event: PersistEvent): void {
-  appendFileSync(path, `${JSON.stringify(event)}\n`, "utf8");
+  appendFileSync(path, `${redactEnvInText(JSON.stringify(event))}\n`, "utf8");
 }

@@ -38,9 +38,11 @@ describe("field control registry", () => {
     assert.equal(typeahead?.applies({ id: "create_client_billing_splits_attorney_0", type: "text" }, true), true);
     assert.equal(FIELD_CONTROLS.find((c) => c.kind === "select")?.applies({ type: "select" }, true), false);
     assert.equal(isTypedValueField({ id: "lineitems_0__amount", type: "number" }), true);
+    assert.equal(looksLikeListedPicker({ id: "accountid" }), true);
     assert.equal(looksLikeListedPicker({ id: "lineitems_0__amount", type: "number" }), false);
     assert.equal(looksLikeListedPicker({ id: "lineitems_0__amount", type: "text", constraints: { htmlType: "number" } }), false);
     assert.equal(typeahead?.applies({ id: "lineitems_0__amount", type: "number" }, true), false);
+    assert.equal(looksLikeListedPicker({ id: "matter" }), false);
     assert.equal(looksLikeListedPicker({ id: "vendorid", type: "text" }), true);
     assert.equal(looksLikeListedPicker({ id: "party", type: "text", value: "Select a party" }), true);
     assert.equal(
@@ -144,6 +146,16 @@ describe("field control registry", () => {
   });
 
   it("uses the committed listed label, not a leftover prompt", () => {
+    const truncated = listedFillResult({
+      wanted: "beatus bos",
+      live: "Grea...",
+      listed: true,
+      required: true,
+      widgetKey: "page.lineitems_0__matterid",
+      label: "Matter",
+    });
+    assert.equal(truncated.ok, true);
+    if (truncated.ok) assert.equal(truncated.value, "Grea...");
     const hit = listedFillResult({
       wanted: "beatus bos",
       live: "Acme Supplies",

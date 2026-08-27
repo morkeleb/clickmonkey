@@ -58,7 +58,7 @@ On top of `wcag2a` / `wcag2aa` / `wcag21a` / `wcag21aa`, inspect enables these r
 
 WCAG 2.2 `target-size` is **not** taken from axe — the DOM **targetSize** rule owns 2.5.8. **2.1.1 Keyboard** is the DOM **clickableNonWidget** check (click on a non-control, or `role=button` that is not tabbable), not an axe rule. **2.1.2** / **2.4.3** are the form Tab walk (`keyboardTrap`, `focusOrder`).
 
-Reports tag issues by **spec name** (WCAG success criteria, HTML authoring, or catalog titles). Permalinks stay `A-1.4.3` / `T-01` / `T-09` / `V-03` / `V-17` / `Q-01` / `Q-04`… on [the catalog](https://morkeleb.github.io/clickmonkey/findings/).
+Reports tag issues by **spec name**: **AXE** `{rule}` (Deque), **WCAG** `{sc}` `{name}` (DOM detectors), HTML authoring (html-validate or the HTML spec), or catalog titles. The [catalog](https://morkeleb.github.io/clickmonkey/findings/) lists each set separately, with links to the original pages. ClickMonkey permalinks stay `T-01` / `V-03` / `Q-01` / `A-2.1.1`.
 
 ### WCAG 2.2 A/AA a person still tests
 

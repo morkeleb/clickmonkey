@@ -1,5 +1,5 @@
 import type { Locator as PwLocator, Page, Request } from "playwright";
-import { validationMissExplanation, type FindingKind } from "../schema/finding.js";
+import { validationMissExplanation, type FindingKind, type RunControlKind } from "../schema/finding.js";
 import { locatorOf, type Locator } from "../schema/locator.js";
 import { readyKey, widgetKey } from "../schema/refs.js";
 import {
@@ -33,7 +33,7 @@ import {
   widgetLocator,
 } from "./locators.js";
 import type { RunState } from "./run.js";
-import { resolveSecretAsync } from "./secrets.js";
+import { resolveSecretAsync, tapeFillValue } from "./secrets.js";
 import { isPotentialWrite, isPrimaryFormCommit, looksLikeSubmitClick } from "./write-policy.js";
 import { readFieldConstraints } from "./field-constraints.js";
 import {
@@ -54,7 +54,7 @@ import {
 import { applyFieldFill, resolveFieldControl } from "./field-control.js";
 
 export type StepFailure = {
-  kind: FindingKind;
+  kind: FindingKind | RunControlKind;
   message: string;
   widgetRef?: string;
   url?: string;
@@ -497,7 +497,8 @@ async function performFill(
   const { surface: surfaceId, id, value } = step;
   const actable = requireActable(state, surfaceId, id);
   if (!actable.ok) return actable.failure;
-  const resolved = await resolveSecretAsync(value);
+  const planned = value;
+  const resolved = await resolveSecretAsync(planned);
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
   const pw = await pickClickable(state, raw, actable.key);
   if (!pw.ok) return pw.failure;
@@ -508,7 +509,7 @@ async function performFill(
   if (!applied.ok) {
     return { kind: "expectFailed", message: applied.message, widgetRef: actable.key };
   }
-  step.value = applied.value;
+  step.value = tapeFillValue(planned, applied.value, { type: field?.type, id });
   if (!applied.track) return undefined;
   const constraints = await readFieldConstraints(pw.locator);
   const validity = await readFieldValidity(pw.locator, state.page, id);
@@ -749,12 +750,8 @@ async function performScreenshot(
   ui?: boolean,
 ): Promise<StepFailure | undefined> {
   await captureStepShot(state, label ? { label } : undefined);
-  if (!ui) return undefined;
-  return {
-    kind: "uiIssue",
-    message: label?.trim() || "UI issue captured",
-    url: state.page.url(),
-  };
+  void ui;
+  return undefined;
 }
 
 async function performExpectPath(state: RunState, path: string): Promise<StepFailure | undefined> {

@@ -15,9 +15,11 @@ import { lastQualityPage, lastVisualHash, persistQualityRuntime, persistQualityV
 import { normalizeQualityMessage, type QualityIssue } from "../schema/quality.js";
 import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { parseLine, formatLog, formatStep } from "../schema/dsl.js";
+import { redactEnvInText } from "./secrets.js";
 import {
   findingId,
   findingTapeBug,
+  isFindingKind,
   pageErrorExplanation,
   severityForKind,
   type Finding,
@@ -250,6 +252,7 @@ async function screenshotFinding(
 ): Promise<Finding> {
   const stepIndex = state.log.steps.length;
   const kind = partial.kind;
+  if (!isFindingKind(kind)) throw new Error(`not a finding: ${kind}`);
   const id = findingId(stepIndex, kind);
   let screenshotPath: string | undefined;
   if (shouldPersistFinding(kind)) {
@@ -505,7 +508,7 @@ async function scanStepVision(
     if (vision.assist && result.sight) {
       state.lastSightByPage = { ...(state.lastSightByPage ?? {}), [pageKey]: result.sight };
       if (state.navLogPath) {
-        logSight(state.navLogPath, { line: formatStep(step), sight: result.sight });
+        logSight(state.navLogPath, { line: redactEnvInText(formatStep(step)), sight: result.sight });
       }
     }
     applyPageSight(state, pageKey);
@@ -635,7 +638,7 @@ async function finish(
     finding = await captureNotFoundFinding(state, step, href);
   } else {
     runInspect = true;
-    if (stepFailure && stepFailure.kind !== "fenceViolation") {
+    if (stepFailure && isFindingKind(stepFailure.kind)) {
       finding = await screenshotFinding(state, stepFailure, step);
     } else if (state.pendingFindings[0]) {
       finding = await screenshotFinding(state, state.pendingFindings.shift()!, step);
@@ -795,13 +798,13 @@ async function finish(
     inIntro: state.inIntro,
     ...(state.configPath ? { configPath: state.configPath } : {}),
     last: {
-      step: formatStep(step),
+      step: redactEnvInText(formatStep(step)),
       ok: !finding,
       ...(finding ? { finding: finding.kind } : bounced || refusedFence ? { finding: "fenceViolation" } : {}),
     },
   });
 
-  await dumpVerboseState(state, formatStep(step), view);
+  await dumpVerboseState(state, redactEnvInText(formatStep(step)), view);
 
   return {
     ok: !finding,
@@ -820,7 +823,7 @@ export function createExecutor(state: RunState): {
   attachOracles({ ...state, appOrigin: originOfHref(state.config.url) });
 
   async function runStep(step: Step): Promise<StepResult> {
-    const line = formatStep(step);
+    const line = redactEnvInText(formatStep(step));
     const phase = state.inIntro ? "intro" : "walk";
     if (state.navMeta) {
       state.navMeta.step = line;
@@ -850,7 +853,7 @@ export function createExecutor(state: RunState): {
     const result = await finish(state, step, failure, hrefBefore);
     if (state.navLogPath) {
       logStepDone(state.navLogPath, {
-        line: formatStep(step),
+        line: redactEnvInText(formatStep(step)),
         ok: result.ok,
         started,
         pageId: state.pageId,

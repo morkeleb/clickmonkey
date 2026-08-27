@@ -45,19 +45,6 @@ export function cannedReport(finding: Finding): string {
         "",
       ].join("\n");
     }
-    case "fenceViolation":
-      return [`# ${finding.id}`, "", "Left the leash.", "", finding.message, ""].join("\n");
-    case "uiIssue":
-      return [
-        `# ${finding.id}`,
-        "",
-        "UI issue captured from an explicit screenshot step.",
-        "",
-        finding.message,
-        "",
-        finding.screenshotPath ? `Screenshot: ${finding.screenshotPath}` : "",
-        "",
-      ].join("\n");
     case "visualIssue":
       return [
         `# ${finding.id}`,

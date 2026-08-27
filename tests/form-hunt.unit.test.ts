@@ -351,6 +351,42 @@ describe("huntScore", () => {
   });
 });
 
+describe("decideFormHunt mid-form", () => {
+  it("does not hunt off a create form that still has filled and empty body fields", () => {
+    const drafts = pageOf({
+      id: "drafts",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "vendor" }, { id: "notes" }],
+          actions: [{ id: "button_expand" }],
+        },
+      ],
+    });
+    const ctx = {
+      view: viewOf({
+        page: "drafts",
+        pages: ["home", "customers", "invoices", "drafts"],
+        shown: [
+          { id: "vendor", value: "Acme", type: "text" as const },
+          { id: "notes", value: "", type: "text" as const },
+        ],
+        actions: [{ id: "button_save", label: "Save" }],
+      }),
+      stepsUsed: 3,
+      pages: [home, customers, invoices, drafts],
+      writePolicy: "allow" as const,
+    };
+    assert.equal(decideFormHunt(ctx, () => 0), undefined);
+    const d = decideUnleash(ctx, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.notEqual(d.note, "form hunt");
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /^open /);
+  });
+});
+
 describe("decideUnleash form hunt", () => {
   it("opens a mapped form page instead of grinding nav chrome", () => {
     const view = viewOf({

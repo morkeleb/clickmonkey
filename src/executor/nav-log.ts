@@ -1,5 +1,6 @@
 import type { Page, Response } from "playwright";
 import { appendEvent } from "../persist/events.js";
+import { redactEnvInText } from "./secrets.js";
 
 export type NavVia = "redirect" | "document" | "commit" | "sameDocument";
 
@@ -31,7 +32,7 @@ export function formatClock(at: Date = new Date()): string {
 }
 
 export function formatLiveLine(line: string, at: Date = new Date()): string {
-  return `${formatClock(at)} ${line}`;
+  return `${formatClock(at)} ${redactEnvInText(line)}`;
 }
 
 function resolveLocation(base: string, location: string): string {

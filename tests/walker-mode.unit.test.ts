@@ -390,7 +390,11 @@ describe("walker modes", () => {
     const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow" };
     assert.equal(detectWalkerMode(ctx).name, "form");
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    assert.equal(detectWalkerMode({ ...ctx, modeFog: { "home/form": hourAgo } }).name, "list");
+    assert.equal(detectWalkerMode({ ...ctx, modeFog: { "home/form": hourAgo } }).name, "form");
+    assert.equal(
+      detectWalkerMode({ ...ctx, modeFog: { "home/form": hourAgo }, recentClicks: ["submit"] }).name,
+      "list",
+    );
     assert.equal(detectWalkerMode({ ...ctx, modeFog: { "home/list": hourAgo } }).name, "form");
   });
 
@@ -490,6 +494,69 @@ describe("walker modes", () => {
     const text = burstText(ctx, () => 0.5);
     assert.equal(text, "click page.button_save");
     assert.doesNotMatch(text, /tab_dashboard|option_acme/);
+  });
+
+  it("does not hunt or open another page while some body fields are filled and some are empty", () => {
+    const view = viewOf({
+      page: "invoices_new",
+      pages: ["home", "invoices_new", "settings"],
+      shown: [
+        { id: "vendor", value: "Acme", type: "text" },
+        { id: "gl", value: "6000", type: "text" },
+        { id: "office", value: "Oslo", type: "text" },
+        { id: "row_0_account", value: "", type: "text" },
+      ],
+      actions: [
+        { id: "button_save", label: "Save" },
+        { id: "tab_dashboard", role: "tab", label: "Dashboard" },
+        { id: "link_settings", nav: true, opens: "settings" },
+      ],
+    });
+    const pages: Page[] = [
+      {
+        id: "invoices_new",
+        path: "/invoices/new",
+        params: [],
+        ready: { by: "testId", value: "invoices_new" },
+        surfaces: [
+          {
+            id: "page",
+            kind: "page",
+            fields: [
+              { id: "vendor", required: false, type: "text", by: "name", value: "vendor", status: "ok" },
+              { id: "row_0_account", required: false, type: "text", by: "name", value: "account", status: "ok" },
+            ],
+            actions: [],
+          },
+        ],
+      },
+      {
+        id: "settings",
+        path: "/settings",
+        params: [],
+        ready: { by: "testId", value: "settings" },
+        surfaces: [
+          {
+            id: "page",
+            kind: "page",
+            fields: [{ id: "name", required: false, type: "text", by: "name", value: "name", status: "ok" }],
+            actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
+          },
+        ],
+      },
+    ];
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 3,
+      writePolicy: "allow",
+      pages,
+    };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.5);
+    assert.match(text, /fill page\.row_0_account /);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /^open /);
+    assert.doesNotMatch(text, /tab_dashboard|link_settings/);
   });
 
   it("stays in form after some fields are filled even without Save, and does not hop tabs", () => {

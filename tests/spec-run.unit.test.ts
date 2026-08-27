@@ -102,9 +102,9 @@ FAIL  specs/login.md         Test login lands in app  expected path / , got /log
 });
 
 describe("specStepFailed", () => {
-  it("fails every FindingKind except uiIssue and visualIssue", () => {
+  it("fails every FindingKind except visualIssue", () => {
     for (const kind of FindingKind.options) {
-      if (kind === "uiIssue" || kind === "visualIssue") {
+      if (kind === "visualIssue") {
         assert.equal(specStepFailed(kind), false, kind);
       } else {
         assert.equal(specStepFailed(kind), true, kind);
@@ -270,11 +270,10 @@ describe("shouldFailOnFindings", () => {
 });
 
 describe("countHarvestedFindings", () => {
-  it("counts uiIssue/visualIssue folders and ignores blocking kinds", () => {
+  it("counts visualIssue folders and ignores blocking kinds", () => {
     const dir = mkdtempSync(join(tmpdir(), "cm-spec-harvest-"));
     const findings = join(dir, "findings");
     mkdirSync(join(findings, "fnd_1_visualIssue"), { recursive: true });
-    mkdirSync(join(findings, "fnd_2_uiIssue"), { recursive: true });
     mkdirSync(join(findings, "fnd_3_expectFailed"), { recursive: true });
     writeFileSync(
       join(findings, "fnd_1_visualIssue", "finding.json"),
@@ -288,17 +287,6 @@ describe("countHarvestedFindings", () => {
       })}\n`,
     );
     writeFileSync(
-      join(findings, "fnd_2_uiIssue", "finding.json"),
-      `${JSON.stringify({
-        schemaVersion: 1,
-        id: "fnd_2_uiIssue",
-        kind: "uiIssue",
-        message: "awkward",
-        tapePath: "log.txt",
-        stepIndex: 2,
-      })}\n`,
-    );
-    writeFileSync(
       join(findings, "fnd_3_expectFailed", "finding.json"),
       `${JSON.stringify({
         schemaVersion: 1,
@@ -309,7 +297,7 @@ describe("countHarvestedFindings", () => {
         stepIndex: 3,
       })}\n`,
     );
-    assert.equal(countHarvestedFindings(dir), 2);
+    assert.equal(countHarvestedFindings(dir), 1);
     assert.equal(countHarvestedFindings(join(dir, "empty")), 0);
   });
 });

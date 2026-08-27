@@ -105,25 +105,25 @@ describe("explore plan", () => {
       ["home"],
     );
     assert.ok(plan);
-    const stepped = recordPlanStep(recordPlanStep(plan), { findingId: "fnd_2_uiIssue" });
+    const stepped = recordPlanStep(recordPlanStep(plan), { findingId: "fnd_2_visualIssue" });
     assert.equal(stepped.items[0]?.stepCount, 2);
-    assert.deepEqual(stepped.items[0]?.findingIds, ["fnd_2_uiIssue"]);
+    assert.deepEqual(stepped.items[0]?.findingIds, ["fnd_2_visualIssue"]);
     assert.match(formatExplorePlan(stepped), /in progress, 2 steps, 1 finding/);
     assert.equal(stepped.items[1]?.stepCount, 0);
     assert.deepEqual(stepped.items[1]?.findingIds, []);
     const done = completeCurrentPlanItem(stepped, "done");
     assert.equal(done.items[0]?.status, "done");
     assert.equal(done.items[0]?.stepCount, 2);
-    assert.deepEqual(done.items[0]?.findingIds, ["fnd_2_uiIssue"]);
+    assert.deepEqual(done.items[0]?.findingIds, ["fnd_2_visualIssue"]);
     assert.equal(done.items[1]?.status, "now");
     assert.equal(done.items[1]?.stepCount, 0);
   });
 
   it("treats only a newly persisted product finding as new", () => {
-    const finding = { id: "fnd_1_uiIssue", kind: "uiIssue" };
+    const finding = { id: "fnd_1_visualIssue", kind: "visualIssue" };
     assert.equal(isNewProductFinding({ finding, findingCreated: true }), true);
     assert.equal(isNewProductFinding({ finding, findingCreated: false }), false);
-    assert.equal(isNewProductFinding({ finding, findingCreated: true, currentFindingIds: ["fnd_1_uiIssue"] }), false);
+    assert.equal(isNewProductFinding({ finding, findingCreated: true, currentFindingIds: ["fnd_1_visualIssue"] }), false);
     assert.equal(isNewProductFinding({ finding: { id: "fnd_0_unknownId", kind: "unknownId" }, findingCreated: true }), false);
   });
 
@@ -135,9 +135,9 @@ describe("explore plan", () => {
         page: "invoices",
         status: "done",
         stepCount: 3,
-        findingIds: ["fnd_1_uiIssue"],
+        findingIds: ["fnd_1_visualIssue"],
       }),
-      "- [x] Empty name (invoices) — 3 steps, 1 finding: fnd_1_uiIssue",
+      "- [x] Empty name (invoices) — 3 steps, 1 finding: fnd_1_visualIssue",
     );
     assert.equal(
       formatExplorePlanItemLine({
@@ -1270,8 +1270,8 @@ describe("applyExploreStep", () => {
           view: viewOf({ last: { step: 'screenshot ui "bug"', ok: true } }),
           finding: {
             schemaVersion: 1 as const,
-            id: "fnd_0_uiIssue",
-            kind: "uiIssue" as const,
+            id: "fnd_0_visualIssue",
+            kind: "visualIssue" as const,
             severity: "suggestion" as const,
             message: "bug",
             tapePath: "t",

@@ -82,9 +82,6 @@ const QUALITY = new Set([
   "serverRefusedSubmit",
   "acceptedInvalid",
   "throwInsteadOfInvalid",
-  "fenceViolation",
-  "writePolicyBlocked",
-  "uiIssue",
   "expectFailed",
 ]);
 
@@ -179,6 +176,50 @@ export const A11Y = {
   keyboardTrap: { sc: "2.1.2", level: "A", chapter: "accessibility", title: "No keyboard trap" },
   focusOrder: { sc: "2.4.3", level: "A", chapter: "accessibility", title: "Focus order" },
 } as const satisfies Record<string, WcagEntry>;
+
+/**
+ * DOM WCAG detectors we own. Everything else in `A11Y` is an axe-core rule id.
+ * Reports name those `AXE {id}`, not `WCAG {sc}`.
+ */
+export const DOM_WCAG_RULES = [
+  "focusVisible",
+  "focusObscured",
+  "targetSize",
+  "textSpacing",
+  "silentSubmit",
+  "clickableNonWidget",
+  "keyboardTrap",
+  "focusOrder",
+] as const;
+export type DomWcagRule = (typeof DOM_WCAG_RULES)[number];
+const DOM_WCAG_SET = new Set<string>(DOM_WCAG_RULES);
+
+/**
+ * Mapped if they fire, but axe-core keeps these experimental/deprecated off
+ * and we do not enable them.
+ */
+const AXE_OFF = new Set([
+  "css-orientation-lock",
+  "p-as-heading",
+  "table-fake-caption",
+  "td-has-header",
+  "aria-roledescription",
+  "audio-caption",
+]);
+
+/** True for axe-core rule ids we map (including best-practice extras). */
+export function isAxeRule(rule: string): boolean {
+  return Object.hasOwn(A11Y, rule) && !DOM_WCAG_SET.has(rule);
+}
+
+/** Axe rule ids inspect actually runs (wcag2a/aa + 2.1 tags, plus extras). */
+export function isEnabledAxeRule(rule: string): boolean {
+  return isAxeRule(rule) && !AXE_OFF.has(rule);
+}
+
+export function enabledAxeRules(): string[] {
+  return (Object.keys(A11Y) as Array<keyof typeof A11Y>).filter(isEnabledAxeRule) as string[];
+}
 
 const REFLOW_OVERFLOW: WcagEntry = {
   sc: "1.4.10",

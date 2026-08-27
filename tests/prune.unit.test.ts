@@ -236,11 +236,11 @@ why
   it("suggestFalsePositives keeps only known ids", async () => {
     const findings = [
       {
-        id: "fnd_1_uiIssue",
-        ids: ["fnd_1_uiIssue"],
+        id: "fnd_1_visualIssue",
+        ids: ["fnd_1_visualIssue"],
         runIds: ["r"],
-        key: "r/fnd_1_uiIssue",
-        kind: "uiIssue",
+        key: "r/fnd_1_visualIssue",
+        kind: "visualIssue",
         severity: "suggestion",
         title: "overlap",
         heading: "## Suggestion",
@@ -249,7 +249,7 @@ why
     ];
     const suggested = await suggestFalsePositives(
       findings,
-      "## Findings\n\n### overlap\n\n`uiIssue` · suggestion · `fnd_1_uiIssue`\n",
+      "## Findings\n\n### overlap\n\n`visualIssue` · suggestion · `fnd_1_visualIssue`\n",
       {
         url: "http://127.0.0.1:4173/",
         intro: [],
@@ -260,12 +260,12 @@ why
       async () =>
         JSON.stringify({
           drop: [
-            { id: "fnd_1_uiIssue", reason: "walker screenshot note" },
+            { id: "fnd_1_visualIssue", reason: "walker screenshot note" },
             { id: "fnd_99_nope", reason: "invented" },
           ],
         }),
     );
-    assert.equal(suggested.get("r/fnd_1_uiIssue"), "walker screenshot note");
+    assert.equal(suggested.get("r/fnd_1_visualIssue"), "walker screenshot note");
     assert.equal(suggested.has("fnd_99_nope"), false);
   });
 });

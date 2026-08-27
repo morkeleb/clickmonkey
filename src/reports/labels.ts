@@ -31,7 +31,7 @@ export function labelLegendLines(): string[] {
   return [
     "### Labels",
     "",
-    "Issues are tagged by **spec name**: WCAG success criteria, HTML authoring (html-validate or the HTML spec), or ClickMonkey catalog titles ([catalog](https://morkeleb.github.io/clickmonkey/findings/)). The list is pages affected — fixing one class can clear many routes.",
+    "Issues are tagged by **spec name**: WCAG success criteria, AXE rules, HTML authoring (html-validate or the HTML spec), or ClickMonkey catalog titles ([catalog](https://morkeleb.github.io/clickmonkey/findings/)). The list is pages affected — fixing one class can clear many routes.",
   ];
 }
 

@@ -31,6 +31,7 @@ import {
   looksLikeMidForm,
   looksLikeWizard,
   emptyBodyFields,
+  filledBodyFields,
   searchIsActive,
   stayActions,
   usableClicks,
@@ -103,6 +104,10 @@ function hasListedTypeaheadOptions(view: View): boolean {
   return listedTypeaheadOptions(view.actions).length > 0;
 }
 
+function saveNotTried(ctx: BrainContext): boolean {
+  return !(ctx.recentClicks ?? []).some((id) => isPrimaryFormCommit({ id }));
+}
+
 /** Empty body fields plus Save, a still-disabled create form, or we already started filling. */
 function shouldStayOnForm(ctx: BrainContext): boolean {
   if (hasListedTypeaheadOptions(ctx.view) && hasCommit(ctx)) return true;
@@ -110,6 +115,8 @@ function shouldStayOnForm(ctx: BrainContext): boolean {
     if (hasCommit(ctx)) return true;
     return looksLikeUnfinishedForm(ctx.view) || looksLikeMidForm(ctx.view) || filledThisForm(ctx);
   }
+  // Just filled — Save/Create has not run yet. Do not hunt or hop.
+  if (hasCommit(ctx) && saveNotTried(ctx) && filledBodyFields(ctx.view).length > 0) return true;
   return filledThisForm(ctx) && hasCommit(ctx);
 }
 
@@ -128,6 +135,9 @@ function fillEmptyBurst(view: View, fill: FillFn, ctx?: BrainContext): BrainDeci
 }
 
 function hopOrChromeFallback(view: View, rng: () => number, ctx?: BrainContext): BrainDecision {
+  if (ctx && shouldStayOnForm(ctx) && (!ctx.lockForm || isOnFormLock(ctx))) {
+    return { line: formatStep({ kind: "screenshot" }), note: "form stay" };
+  }
   const hunt = ctx ? decideFormHunt(ctx, rng) : undefined;
   if (hunt) return hunt;
   if (ctx?.lockForm && isOnFormLock(ctx)) {
@@ -157,6 +167,7 @@ function huntOrLocal(
     if (pinned) return pinned;
     return local();
   }
+  if (shouldStayOnForm(ctx)) return local();
   if ((ctx.lootSteps ?? 0) > 0) return local();
   const hunt = decideFormHunt(ctx, rng);
   if (hunt && rng() >= FORM_HUNT_STAY_RATE) return hunt;

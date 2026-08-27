@@ -67,6 +67,8 @@ describe("findings report", () => {
     );
     assert.match(md, /^# Findings report/m);
     assert.match(md, /^## Summary/m);
+    assert.doesNotMatch(md.slice(md.indexOf("## Summary"), md.indexOf("## Findings")), /### Labels/);
+    assert.doesNotMatch(md.slice(md.indexOf("## Summary"), md.indexOf("## Findings")), /### By chapter/);
     assert.match(md, /^## Major/m);
     assert.match(md, /!\[screenshot\]\(runs\/20260817T000000Z-abcd\/findings\/fnd_3_expectFailed\/screenshot\.png\)/);
     assert.match(md, /```clickmonkey/);
@@ -187,9 +189,22 @@ describe("findings report", () => {
       "https://demo.f2dev.test/home",
       "overlap: dashboard Dashboard and checklist Action Items close occupy the same pixels — dashboard Dashboard, checklist Action Items close",
     );
+    writeVisual(
+      "run-b",
+      "fnd_10_visualIssue",
+      "https://demo.f2dev.test/clients",
+      'targetSize: Button is 18×18px; WCAG 2.5.8 minimum is 24×24 — button "Close Clients & Matters"',
+    );
+    writeVisual(
+      "run-a",
+      "fnd_11_visualIssue",
+      "https://demo.f2dev.test/fees",
+      'targetSize: Button is 18×18px; WCAG 2.5.8 minimum is 24×24 — button "Close Fee entries"',
+    );
     const cases = collectFindingCases([join(root, "runs", "run-a"), join(root, "runs", "run-b")]);
-    assert.equal(cases.length, 3);
-    assert.equal(collapseFindingCases(cases).length, 2);
+    assert.equal(cases.length, 5);
+    // Growing chrome where stays one card; two named Close buttons stay two.
+    assert.equal(collapseFindingCases(cases).length, 4);
   });
 
   it("renders an Explore outline from selected runs", () => {
@@ -283,7 +298,7 @@ describe("findings report", () => {
                     page: "invoices",
                     status: "done",
                     stepCount: 3,
-                    findingIds: ["fnd_1_uiIssue"],
+                    findingIds: ["fnd_1_visualIssue"],
                   },
                   { id: "2", title: "Period close", status: "skipped", stepCount: 10, findingIds: [] },
                   { id: "3", title: "Credits", status: "now", stepCount: 2, findingIds: [] },
@@ -296,7 +311,7 @@ describe("findings report", () => {
       },
       "/tmp/findings.md",
     );
-    assert.match(md, /\[x\] Empty name \(invoices\) — 3 steps, 1 finding: fnd_1_uiIssue/);
+    assert.match(md, /\[x\] Empty name \(invoices\) — 3 steps, 1 finding: fnd_1_visualIssue/);
     assert.match(md, /\[-\] Period close — skipped, 10 steps/);
     assert.match(md, /\[>\] Credits — in progress, 2 steps/);
     assert.match(md, /\[ \] Reports — never started/);
@@ -802,13 +817,13 @@ describe("findings report", () => {
     const extras = await enrichWithBrain(
       [
         caseOf({
-          id: "fnd_1_uiIssue",
+          id: "fnd_1_visualIssue",
           runId: "r",
           runDir: "/tmp",
           finding: {
             schemaVersion: 1,
-            id: "fnd_1_uiIssue",
-            kind: "uiIssue",
+            id: "fnd_1_visualIssue",
+            kind: "visualIssue",
             message: "overlap",
             tapePath: "/tmp/x",
             stepIndex: 1,
@@ -830,13 +845,13 @@ describe("findings report", () => {
         JSON.stringify({
           summary: "One UI overlap.",
           items: [
-            { id: "r/fnd_1_uiIssue", title: "Create – buttons overlap", why: "Users miss the submit." },
+            { id: "r/fnd_1_visualIssue", title: "Create – buttons overlap", why: "Users miss the submit." },
             { id: "invented", title: "nope" },
           ],
         }),
     );
     assert.equal(extras.summary, "One UI overlap.");
-    assert.equal(extras.extras.get("r/fnd_1_uiIssue")?.title, "Create – buttons overlap");
+    assert.equal(extras.extras.get("r/fnd_1_visualIssue")?.title, "Create – buttons overlap");
     assert.equal(extras.extras.has("invented"), false);
   });
 
@@ -844,13 +859,13 @@ describe("findings report", () => {
     const extras = await enrichWithBrain(
       [
         caseOf({
-          id: "fnd_1_uiIssue",
+          id: "fnd_1_visualIssue",
           runId: "r",
           runDir: "/tmp",
           finding: {
             schemaVersion: 1,
-            id: "fnd_1_uiIssue",
-            kind: "uiIssue",
+            id: "fnd_1_visualIssue",
+            kind: "visualIssue",
             message: "overlap",
             tapePath: "/tmp/x",
             stepIndex: 1,
@@ -868,7 +883,7 @@ describe("findings report", () => {
         map: { schemaVersion: 1, app: "x", generation: 0, pages: [] },
         brain: { baseUrl: "http://127.0.0.1:9", model: "mock" },
       },
-      async () => `{ "summary": "x", "items": [ { "id": "r/fnd_1_uiIssue" `,
+      async () => `{ "summary": "x", "items": [ { "id": "r/fnd_1_visualIssue" `,
     );
     assert.equal(extras.summary, "");
     assert.equal(extras.extras.size, 0);
@@ -950,7 +965,7 @@ describe("findings report", () => {
     };
     const md = renderFindingsReport([], meta, "/tmp/findings.md");
     assert.match(md, /## Accessibility/);
-    assert.match(md, /\*\*WCAG 1\.4\.3 Contrast\*\* · AA · `color-contrast` · error · chrome · 9 pages/);
+    assert.match(md, /\*\*AXE color-contrast\*\* · AA · 1\.4\.3 · `color-contrast` · error · chrome · 9 pages/);
     assert.match(md, /## Quality/);
     assert.equal((md.match(/^#### `/gm) ?? []).length, 8);
     assert.match(md, /#### `\/p0`/);
@@ -988,7 +1003,7 @@ describe("findings report", () => {
     };
     const fullIndex = renderFindingsReport([], withShell, "/tmp/findings.md");
     const byPage = fullIndex.slice(fullIndex.indexOf("## By page"));
-    assert.match(byPage, /`\/shell` — 1 issue · WCAG 1\.4\.3 Contrast/);
+    assert.match(byPage, /`\/shell` — 1 issue · AXE color-contrast/);
     assert.doesNotMatch(fullIndex, /^#### `\/shell`/m);
   });
 
@@ -1030,19 +1045,20 @@ describe("findings report", () => {
     };
     const md = renderFindingsReport([], meta, "/tmp/findings.md");
     const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
-    assert.match(summary, /### Labels/);
-    assert.match(summary, /spec name/);
-    assert.match(summary, /WCAG success criteria/);
-    assert.match(summary, /- \*\*\[WCAG 1\.4\.3 Contrast\]\([^)]+\)\*\* `color-contrast` — 1 page/);
-    assert.match(summary, /- \*\*\[Overlap\]\([^)]+V-03[^)]*\)\*\* `overlap` — 1 page/);
-    assert.ok(summary.indexOf("### Labels") < summary.indexOf("### Start here"));
-    assert.ok(md.indexOf("### Labels") < md.indexOf("WCAG 1.4.3 Contrast"));
-    assert.ok(md.indexOf("### Labels") < md.indexOf("Overlap"));
+    assert.doesNotMatch(summary, /### Labels/);
+    assert.match(summary, /### By chapter/);
+    assert.match(summary, /- \*\*Accessibility\*\*/);
+    assert.match(summary, /- \*\*Visual\*\*/);
+    assert.match(summary, /\[AXE color-contrast\]\([^)]+axe\/4\.13\/color-contrast\) — 1 page/);
+    assert.match(summary, /\[Overlap\]\([^)]+V-03[^)]*\) — 1 page/);
+    assert.ok(summary.indexOf("**Accessibility**") < summary.indexOf("AXE color-contrast"));
+    assert.ok(summary.indexOf("**Visual**") < summary.indexOf("Overlap"));
+    assert.ok(summary.indexOf("### By chapter") < summary.indexOf("### Start here"));
     const byPage = md.slice(md.indexOf("## By page"));
-    assert.match(byPage, /Same spec tags as in Summary/);
+    assert.match(byPage, /Same spec tags as in By chapter/);
     assert.match(byPage, /Worst pages first/);
-    assert.match(byPage, /`\/` — 2 issues · Overlap, WCAG 1\.4\.3 Contrast/);
-    assert.ok(byPage.indexOf("Same spec tags") < byPage.indexOf("WCAG 1.4.3 Contrast"));
+    assert.match(byPage, /`\/` — 2 issues · AXE color-contrast, Overlap/);
+    assert.ok(byPage.indexOf("Same spec tags") < byPage.indexOf("AXE color-contrast"));
     const withLlm = renderFindingsReport(
       [],
       meta,
@@ -1050,13 +1066,15 @@ describe("findings report", () => {
       undefined,
       "Walked the app. Contrast is the worst.",
     );
-    assert.ok(withLlm.indexOf("Walked the app") < withLlm.indexOf("### Labels"));
-    assert.ok(withLlm.indexOf("### Labels") < withLlm.indexOf("WCAG 1.4.3 Contrast"));
+    assert.ok(withLlm.indexOf("Walked the app") < withLlm.indexOf("### By chapter"));
+    const llmIndex = withLlm.slice(withLlm.indexOf("### By chapter"), withLlm.indexOf("## Findings"));
+    assert.match(llmIndex, /AXE color-contrast/);
     const empty = renderFindingsReport(
       [],
       { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: [] },
       "/tmp/findings.md",
     );
+    assert.doesNotMatch(empty, /### By chapter/);
     assert.doesNotMatch(empty, /### Labels/);
   });
 
@@ -1131,17 +1149,22 @@ describe("findings report", () => {
       },
       "/tmp/findings.md",
     );
-    const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
-    const a1 = summary.indexOf("`color-contrast` — 2 pages");
-    const vClip = summary.indexOf("`clip` — 1 page");
-    const qDup = summary.indexOf("`no-dup-id` — 1 page");
-    assert.ok(a1 >= 0, summary);
-    assert.ok(vClip >= 0, summary);
-    assert.ok(qDup >= 0, summary);
-    assert.ok(a1 < vClip, "most pages first");
+    const index = md.slice(md.indexOf("### By chapter"), md.indexOf("## Findings"));
+    const a1 = index.indexOf("AXE color-contrast");
+    const vClip = index.indexOf("Clip");
+    const qDup = index.indexOf("html-validate no-dup-id");
+    assert.ok(a1 >= 0, index);
+    assert.ok(vClip >= 0, index);
+    assert.ok(qDup >= 0, index);
+    const a11yHead = index.indexOf("**Accessibility**");
+    const visualHead = index.indexOf("**Visual**");
+    const qualityHead = index.indexOf("**Quality**");
+    assert.ok(a11yHead >= 0 && visualHead > a11yHead && qualityHead > visualHead, index);
+    assert.ok(a1 < visualHead, "contrast under Accessibility");
+    assert.ok(index.indexOf("2 pages") >= 0 && index.indexOf("2 pages") < visualHead, "most pages first in chapter");
     const byPage = md.slice(md.indexOf("## By page"));
     const messy = byPage.indexOf("`/messy` — 4 issues");
-    const quiet = byPage.indexOf("`/quiet` — 1 issue · WCAG 1.4.3 Contrast");
+    const quiet = byPage.indexOf("`/quiet` — 1 issue · AXE color-contrast");
     assert.ok(messy >= 0, byPage);
     assert.ok(quiet >= 0, byPage);
     assert.ok(messy < quiet, "worst page first");
@@ -1226,7 +1249,7 @@ describe("findings report", () => {
     const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Visual"));
     const visual = md.slice(md.indexOf("## Visual"), md.indexOf("## Quality") === -1 ? md.length : md.indexOf("## Quality"));
     assert.match(a11y, /`color-contrast`/);
-    assert.match(a11y, /\*\*WCAG 1\.4\.3 Contrast\*\*/);
+    assert.match(a11y, /\*\*AXE color-contrast\*\*/);
     assert.match(a11y, /`focusVisible`/);
     assert.match(a11y, /`targetSize`/);
     assert.match(a11y, /1\.4\.10/);
@@ -1301,13 +1324,13 @@ describe("findings report", () => {
   it("uses a brain summary when valid and falls back when JSON is invalid", async () => {
     const cases: Parameters<typeof renderFindingsReport>[0] = [
       caseOf({
-        id: "fnd_1_uiIssue",
+        id: "fnd_1_visualIssue",
         runId: "r",
         runDir: "/tmp",
         finding: {
           schemaVersion: 1,
-          id: "fnd_1_uiIssue",
-          kind: "uiIssue",
+          id: "fnd_1_visualIssue",
+          kind: "visualIssue",
           message: "overlap",
           tapePath: "/tmp/x",
           stepIndex: 1,
@@ -1330,7 +1353,7 @@ describe("findings report", () => {
         summary: "The shell overlap is the thing to fix first.",
         items: [
           {
-            id: "r/fnd_1_uiIssue",
+            id: "r/fnd_1_visualIssue",
             title: "Header buttons sit on top of each other.",
             expected: "Buttons stay apart.",
             actual: "They share pixels.",

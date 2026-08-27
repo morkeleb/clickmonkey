@@ -31,7 +31,7 @@ describe("screenshot step", () => {
     }
   });
 
-  it("screenshot ui files a finding folder", async () => {
+  it("screenshot ui writes a shot without a finding", async () => {
     const { baseUrl, close } = await serveSite("catalog");
     const tmp = mkdtempSync(join(tmpdir(), "cm-shot-ui-"));
     const configPath = join(tmp, "clickmonkey.json");
@@ -41,12 +41,11 @@ describe("screenshot step", () => {
         const state = await bootRun(handle, emptyConfig(baseUrl), tmp, { configPath });
         const exec = createExecutor(state);
         const result = await exec.runLine('screenshot ui "price looks cramped"');
-        assert.equal(result.ok, false);
-        assert.equal(result.finding?.kind, "uiIssue");
-        assert.ok(result.finding?.screenshotPath && existsSync(result.finding.screenshotPath));
+        assert.equal(result.ok, true);
+        assert.equal(result.finding, undefined);
         assert.ok(state.lastScreenshotPath && existsSync(state.lastScreenshotPath));
-        assert.equal(state.lastScreenshotPath, result.finding.screenshotPath);
-        assert.ok(existsSync(join(tmp, "findings", result.finding!.id, "report.md")));
+        assert.match(state.lastScreenshotPath, /shots\/step-000-price_looks_cramped\.png$/);
+        assert.equal(existsSync(join(tmp, "findings")), false);
       });
     } finally {
       rmSync(tmp, { recursive: true, force: true });

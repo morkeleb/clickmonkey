@@ -34,7 +34,7 @@ describe("check catalog", () => {
     assert.equal(catalogIdFor("clickableNonWidget"), "A-2.1.1");
     assert.equal(catalogIdFor("keyboardTrap"), "A-2.1.2");
     assert.equal(catalogIdFor("focusOrder"), "A-2.4.3");
-    assert.equal(catalogIdFor("color-contrast"), "A-1.4.3");
+    assert.equal(catalogIdFor("color-contrast"), undefined);
     assert.equal(catalogIdFor("overlap"), "V-03");
     assert.equal(catalogIdFor("overflow", { viewport: "other" }), "V-01");
     assert.equal(catalogIdFor("overflow", { viewport: "320" }), "A-1.4.10");
@@ -48,7 +48,7 @@ describe("check catalog", () => {
     assert.equal(catalogIdFor("align"), "V-17");
     assert.equal(catalogIdFor("unknownId"), "T-09");
     assert.equal(catalogIdFor("expectFailed"), "Q-22");
-    assert.equal(catalogIdFor("fenceViolation"), "Q-19");
+    assert.equal(catalogIdFor("fenceViolation"), undefined);
     assert.equal(checkByRule("align")?.id, "V-17");
     assert.equal(catalogIdFor("align"), "V-17");
     assert.equal(checkByRule("unknownId")?.id, "T-09");

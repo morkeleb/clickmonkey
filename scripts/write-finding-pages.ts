@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { catalogIndexMarkdown } from "../src/reports/catalog-lists.js";
 import { CHECKS, FINDINGS_SITE } from "../src/reports/check-catalog.js";
 import { QA_LEFT } from "../src/reports/qa-left.js";
 import { specLink, wcagUnderstandingHref } from "../src/reports/spec-links.js";
@@ -75,19 +76,7 @@ title: Finding catalog
 permalink: /findings/
 ---
 
-# Finding catalog
-
-What ClickMonkey detects. Ids that start with A- are WCAG success criteria — the official requirement is the W3C Understanding page. HTML-validate and the HTML spec keep their own URLs. T/V/Q pages are ClickMonkey-owned classes with no official catalog.
-
-**Human leftover:** [What a person still tests](qa-left/) — WCAG 2.2 A/AA the walker does not run.
-
-| Id | Rule | Chapter | Spec |
-|---|---|---|---|
-${CHECKS.map((c) => {
-  const spec = specLink(c.rule);
-  const specCell = spec ? `[${spec.label}](${spec.href})` : "";
-  return `| [${c.id}](${c.id}/) | \`${c.rule}\` | ${c.chapter} | ${specCell} |`;
-}).join("\n")}
+${catalogIndexMarkdown().trim()}
 
 Site: ${FINDINGS_SITE}/findings/
 `;

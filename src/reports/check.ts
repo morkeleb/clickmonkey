@@ -7,6 +7,7 @@ import { AXE_EXTRA_RULES, HTMLVALIDATE_RULES, specLink } from "./spec-links.js";
 import {
   A11Y,
   isAcceptedInvalidFinding,
+  isAxeRule,
   isServerRefusedSubmitFinding,
   isSilentSubmitFinding,
   isThrowInsteadOfInvalidFinding,
@@ -23,7 +24,7 @@ import { FINDING_WHY, instanceCopy, type RuleWhyKey, whyRule } from "./why.js";
  */
 export type Check = {
   rule: string;
-  /** T-01, V-03, A-1.4.3, `html-validate no-dup-id`, `axe tabindex`. */
+  /** T-01, V-03, A-2.1.1, `html-validate no-dup-id`, `AXE color-contrast`. */
   code: string;
   href: string;
   title: string;
@@ -93,7 +94,7 @@ export function checkOf(rule: string, extras?: ChapterExtras): Check | undefined
   const actual = RULE_ACTUAL[rule];
   return {
     rule,
-    code: owned ?? (wcag.sc ? `A-${wcag.sc}` : spec.label),
+    code: owned ?? (isAxeRule(rule) ? spec.label : wcag.sc ? `A-${wcag.sc}` : spec.label),
     href: spec.href,
     title: spec.label,
     chapter: wcag.chapter,

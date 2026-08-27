@@ -23,9 +23,12 @@ describe("check (finding class)", () => {
       assert.equal(specLink(rule)?.href, hit!.href, rule);
     }
     assert.equal(checkOf("overlap")?.code, "V-03");
-    assert.equal(checkOf("color-contrast")?.code, "A-1.4.3");
+    assert.equal(checkOf("color-contrast")?.code, "AXE color-contrast");
+    assert.equal(checkOf("color-contrast")?.title, "AXE color-contrast");
     assert.equal(checkOf("no-dup-id")?.code, "html-validate no-dup-id");
-    assert.equal(checkOf("tabindex")?.code, "axe tabindex");
+    assert.equal(checkOf("tabindex")?.code, "AXE tabindex");
+    assert.equal(checkOf("clickableNonWidget")?.code, "A-2.1.1");
+    assert.equal(checkOf("clickableNonWidget")?.title, "WCAG 2.1.1 Keyboard");
     assert.equal(checkOf("expectFailed")?.code, "Q-22");
   });
 
@@ -47,14 +50,14 @@ describe("check (finding class)", () => {
     );
     const hit = findingHitOf(
       {
-        kind: "uiIssue",
+        kind: "expectFailed",
         message: "Button overlaps the title",
         pageId: "clients_new",
         url: "https://app.example/clients/new",
         screenshotPath: "/tmp/shot.png",
       },
     );
-    assert.equal(hit.check.code, "Q-21");
+    assert.equal(hit.check.code, "Q-22");
     assert.equal(hit.pageId, "clients_new");
     assert.equal(hit.screenshotPath, "/tmp/shot.png");
     assert.equal(hit.message, "Button overlaps the title");

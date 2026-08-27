@@ -55,6 +55,8 @@ export function isTypedValueField(field: FieldRef | undefined): boolean {
 /**
  * Listed picker: native select/combobox, harvested options, FK `*id`, or a
  * Select/Search chip prompt. Not a vocabulary list of product field names.
+ * Pass the full FieldRef — `{ id }` alone treats `accountid` as listed and
+ * misses a Select/Search chip on `matter`.
  */
 export function looksLikeListedPicker(field: FieldRef | undefined): boolean {
   if (!field) return false;

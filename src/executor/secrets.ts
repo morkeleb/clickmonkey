@@ -1,5 +1,68 @@
 const TOKEN = /^\$([A-Za-z_][A-Za-z0-9_]*)$/;
 const BRACED = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
+const SKIP_ENV_VALUES = new Set(["true", "false", "yes", "no", "null", "undefined"]);
+/** OS/path vars. Redacting TMPDIR/HOME smashes finding paths. */
+const SKIP_ENV_NAMES =
+  /^(PATH|HOME|PWD|OLDPWD|TMPDIR|TMP|TEMP|USER|LOGNAME|SHELL|TERM|LANG|LANGUAGE|LC_.*|XDG_.*|SSH_.*|DISPLAY|EDITOR|VISUAL|PAGER|NODE.*|npm_.*|PNPM_.*|COLORTERM|TERM_PROGRAM|ITERM_.*|VSCODE_.*|__CF.*|XPC_.*|COMMAND_MODE|INFOPATH|MANPATH|CDPATH|SHLVL|_)$/i;
+
+/** Env values too short to redact (would smash logs). Names that look like secrets still redact. */
+const ENV_REDACT_MIN = 4;
+const SECRET_ENV_NAME = /password|secret|token|key|auth|credential|clickmonkey/i;
+
+function isFilesystemValue(value: string): boolean {
+  if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) return true;
+  return false;
+}
+
+function envRedactions(env: NodeJS.Dict<string | undefined>): Array<{ name: string; value: string }> {
+  const out: Array<{ name: string; value: string }> = [];
+  for (const [name, raw] of Object.entries(env)) {
+    const value = raw ?? "";
+    if (!value) continue;
+    const secretName = SECRET_ENV_NAME.test(name);
+    if (!secretName && SKIP_ENV_NAMES.test(name)) continue;
+    if (value.length < ENV_REDACT_MIN && !secretName) continue;
+    if (!secretName && SKIP_ENV_VALUES.has(value.toLowerCase())) continue;
+    if (!secretName && isFilesystemValue(value)) continue;
+    out.push({ name, value });
+  }
+  out.sort((a, b) => b.value.length - a.value.length);
+  return out;
+}
+
+/** Replace every process.env value in text with `$NAME`. Longest first. */
+export function redactEnvInText(
+  text: string,
+  env: NodeJS.Dict<string | undefined> = process.env,
+): string {
+  let s = text;
+  for (const { name, value } of envRedactions(env)) {
+    if (!s.includes(value)) continue;
+    s = s.split(value).join(`$${name}`);
+  }
+  return s;
+}
+
+/**
+ * What the tape/live log may record for a fill.
+ * Keep `$TOKEN`. Never persist a value that equals any env var.
+ */
+export function tapeFillValue(
+  planned: string,
+  applied: string,
+  field?: { type?: string; id?: string },
+  env: NodeJS.Dict<string | undefined> = process.env,
+): string {
+  if (isSecretToken(planned)) return planned;
+  const id = (field?.id ?? "").toLowerCase();
+  if ((field?.type ?? "").toLowerCase() === "password" || id === "password" || id.endsWith("_password")) {
+    return "••••";
+  }
+  for (const { name, value } of envRedactions(env)) {
+    if (applied === value || planned === value) return `$${name}`;
+  }
+  return applied;
+}
 
 function secretName(value: string): string | undefined {
   return TOKEN.exec(value)?.[1] ?? BRACED.exec(value)?.[1];

@@ -43,6 +43,12 @@ function typeaheadFormConfig(url: string): Config {
             },
           ],
         },
+        {
+          id: "ok_html",
+          path: "/ok.html",
+          ready: { by: "testId", value: "ok" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+        },
       ],
     },
   });

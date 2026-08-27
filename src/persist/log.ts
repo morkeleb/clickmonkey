@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { formatLog, parseLog } from "../schema/dsl.js";
+import { redactEnvInText } from "../executor/secrets.js";
 import type { Log, UsedLocator } from "../schema/log.js";
 
 export function readLog(path: string): Log {
@@ -8,7 +9,7 @@ export function readLog(path: string): Log {
 }
 
 export function writeLog(path: string, log: Log): void {
-  writeFileSync(path, formatLog(log), "utf8");
+  writeFileSync(path, redactEnvInText(formatLog(log)), "utf8");
 }
 
 export function hashUsedLocators(map: Record<string, UsedLocator>): string {

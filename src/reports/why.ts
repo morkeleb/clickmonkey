@@ -163,8 +163,6 @@ export const FINDING_WHY: Record<FindingKind, string> = {
     "A link, hop, or redirect led to a missing page. Users hit a dead end; the rest of that path is dropped from the map.",
   expectFailed:
     "The screen did not match the step. Either the flow is broken for users, or invalid input was accepted and stored.",
-  fenceViolation:
-    "The walker left the allowed app. That is leash control, not a product bug — unless a real user can follow the same link out.",
   unknownId:
     "The map named a control that is not on this screen. Walks and specs that depend on it fail even when the product still works.",
   unresolvedId:
@@ -173,10 +171,6 @@ export const FINDING_WHY: Record<FindingKind, string> = {
     "The control is still there but its name or locator moved. Old tapes and specs click the wrong widget or none.",
   locatorAmbiguous:
     "Two controls share a locator, so the click hits the first match. The intended action — often a nested nav item — is skipped.",
-  writePolicyBlocked:
-    "ClickMonkey refused a write because required fields were already filled. That is policy, not a user-facing defect.",
-  uiIssue:
-    "A human or charter marked this screenshot as a UI problem. Confirm it is still what users see.",
   visualIssue:
     "The layout is broken in the pixels: text or controls collide, clip, or cannot be read. People bounce or mis-click.",
 };
