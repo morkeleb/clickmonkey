@@ -1,3 +1,8 @@
+---
+title: Fog of war
+permalink: /fog/
+---
+
 # Fog of war
 
 Fog is how ClickMonkey remembers **where a monkey last stood** and **which

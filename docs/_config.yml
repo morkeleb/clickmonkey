@@ -3,3 +3,8 @@ description: QA walker — finding catalog
 url: https://morkeleb.github.io
 baseurl: /clickmonkey
 markdown: kramdown
+plugins:
+  - jekyll-relative-links
+relative_links:
+  enabled: true
+  collections: true

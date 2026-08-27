@@ -1,3 +1,8 @@
+---
+title: Issue classes
+permalink: /issue-classes/
+---
+
 # What ClickMonkey finds vs what QA still owns
 
 ClickMonkey harvests **classes of defects that repeat across pages** so people stop re-walking chrome, locators, and crash paths. It does not replace someone who knows the product.

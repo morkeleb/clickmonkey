@@ -1,3 +1,8 @@
+---
+title: MCP
+permalink: /mcp/
+---
+
 # MCP: host-LLM walk, then freeze a spec
 
 Five monkeys (working names): **map**, **unleash**, **nasty**, **explore**, **mcp**.

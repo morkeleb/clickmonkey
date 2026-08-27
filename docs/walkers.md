@@ -1,3 +1,8 @@
+---
+title: Walkers
+permalink: /walkers/
+---
+
 # Walkers: monkeys, modes, fog
 
 Five monkeys (working names — they may change): **map**, **unleash**,
