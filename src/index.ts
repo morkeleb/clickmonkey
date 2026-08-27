@@ -29,12 +29,16 @@ export {
   clearTrackedFills,
   fieldLooksInvalid,
   fillCtxForPageError,
+  pageHasBlockingInvalid,
   fillShouldLookInvalid,
   fillValueInRequest,
   readFieldValidity,
   rememberTrackedFill,
   requestCarriesFill,
   requestLooksLikeWrite,
+  shouldReportSilentSubmit,
+  SILENT_SUBMIT_MESSAGE,
+  isSilentSubmitMessage,
   upsertTrackedFill,
   validationMissesToReport,
 } from "./executor/field-validity.js";
@@ -64,6 +68,7 @@ export {
   examineScreenshot,
   hashPngFile,
   shouldSkipVision,
+  visionOutcome,
   visionPass,
   parseVisualReply,
   probeVisionChat,
@@ -72,7 +77,7 @@ export {
   VISUAL_BLURB_PROMPT,
   VISUAL_PROMPT,
 } from "./surveyor/vision.js";
-export type { ParsedVisualReply, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
+export type { ParsedVisualReply, VisionSkipReason, VisualRule, VisualScan, VisualScanResult } from "./surveyor/vision.js";
 export { scanTableLayout } from "./surveyor/scanline.js";
 export type { LayoutHit } from "./surveyor/scanline.js";
 export { scanLayout, type LayoutScan } from "./surveyor/layout.js";
@@ -83,9 +88,18 @@ export { scanBroken } from "./surveyor/broken.js";
 export { scanTextClip } from "./surveyor/text-clip.js";
 export { scanOverlap } from "./surveyor/overlap.js";
 export { scanListScanline } from "./surveyor/list-scanline.js";
+export { scanTabScanline } from "./surveyor/tab-scanline.js";
+export { scanFormScanline } from "./surveyor/form-scanline.js";
+export { scanAdornmentClip } from "./surveyor/adornment-clip.js";
 export { scanTargetSize } from "./surveyor/target-size.js";
 export { scanFocusObscured } from "./surveyor/focus-obscured.js";
-export { scanFocusVisible } from "./surveyor/focus-visible.js";
+export { scanFormTab } from "./surveyor/form-tab.js";
+export {
+  scanFocusVisible,
+  type FocusVisibleClip,
+  type FocusVisibleScan,
+  type ShotClip,
+} from "./surveyor/focus-visible.js";
 export { scanTextOcclusion } from "./surveyor/text-occlusion.js";
 export { scanFontSize } from "./surveyor/font-size.js";
 export { scanTextSpacing } from "./surveyor/text-spacing.js";
@@ -170,6 +184,15 @@ export {
   writeRunsReport,
 } from "./reports/findings-report.js";
 export { whyFinding, whyFindingBlock, whyRule } from "./reports/why.js";
+export {
+  checkOf,
+  mustCheck,
+  checkForFinding,
+  ruleForFinding,
+  findingHitOf,
+  type Check,
+  type FindingHit,
+} from "./reports/check.js";
 export { identityFromRunId, pickDistinctHue, HUE_SLOTS } from "./ui/identity.js";
 export { buildUiGraph, badgeCounts, findingOnPage, hopsFromNavLog } from "./ui/graph.js";
 export { buildUiSnapshot } from "./ui/snapshot.js";
@@ -180,6 +203,7 @@ export { writeBundle, freezeSnapshot } from "./ui/bundle.js";
 export type { UiServer, UiServerOpts } from "./ui/server.js";
 export {
   startPresence,
+  reclaimMcpPresence,
   touchPresence,
   stopPresence,
   isPresenceLive,
@@ -216,6 +240,7 @@ export {
   isRecordRowAction,
   looksLikeNavWidget,
   looksLikeSearchField,
+  looksLikePageSearch,
   looksLikeRowSelectCheckbox,
   isEmptyStateAction,
   isTabAction,
@@ -226,6 +251,8 @@ export {
   formSubmitActions,
   formDismissAction,
   decideForm,
+  mappedPrimaryCommits,
+  commitKindRank,
   pickSelectOption,
   plausibleFill,
   formatClick,
@@ -239,8 +266,21 @@ export {
   isListChrome,
   listModeScore,
   LANDMARK_BIAS,
-  FORM_BURST_MAX,
+  FORM_CHILD_ROWS,
   FORM_DISMISS_RATE,
+  repeatingRowIndex,
+  repeatingRowCount,
+  skipRepeatingChildField,
+  isListedTypeaheadOption,
+  listedTypeaheadOptions,
+  alreadyPickedListedOption,
+  isAddRepeatingRowAction,
+  looksLikeUnfinishedForm,
+  looksLikeMidForm,
+  looksLikeEmptyValue,
+  looksLikeListedPicker,
+  formFieldsToFill,
+  emptyBodyFields,
   RECENT_CLICK_WINDOW,
   RECENT_CLICK_LIMIT,
   LIST_CHROME_LIMIT,

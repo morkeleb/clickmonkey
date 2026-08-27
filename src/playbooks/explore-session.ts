@@ -17,6 +17,7 @@ import { bootRun } from "../executor/boot.js";
 import { logBrainDecide } from "../executor/nav-log.js";
 import { createExecutor, type RunState, type StepResult } from "../executor/run.js";
 import { withRun, type RunHandle } from "../executor/session.js";
+import { formatPageState, snapshotPageState } from "../executor/page-state.js";
 import { buildView } from "../executor/view.js";
 import { writeFinding } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
@@ -556,6 +557,13 @@ export class ExploreSession {
     const ctx = this.requireWalk();
     const view = await this.snapshot();
     return exploreVisitOf(ctx.state, view, ctx.plan);
+  }
+
+  /** Mapped widgets including disabled Save. Compact visit stays the default. */
+  async pageState(): Promise<string> {
+    const ctx = this.requireWalk();
+    const view = ctx.view ?? (await this.snapshot());
+    return formatPageState(await snapshotPageState(ctx.state, view));
   }
 
   async step(line: string, opts?: ExploreStepOpts): Promise<ExploreStepResult> {

@@ -34,6 +34,8 @@ import {
   runExplore,
   ExploreError,
   runUnleash,
+  FormLockError,
+  UNLEASH_FORM_STEPS,
   listSpecFiles,
   checkSpecFile,
   formatCheckReport,
@@ -322,6 +324,7 @@ export async function cmdUnleash(opts: {
   steps?: string;
   nasty?: boolean;
   verbose?: boolean;
+  form?: string;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
@@ -334,6 +337,7 @@ export async function cmdUnleash(opts: {
       fail(EXIT_USAGE, errMessage(err));
     }
   }
+  const form = opts.form?.trim() || undefined;
   const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
@@ -343,16 +347,24 @@ export async function cmdUnleash(opts: {
       outDir,
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
-      steps: parseSteps(opts.steps, UNLEASH_CLI_STEPS),
+      steps: parseSteps(opts.steps, form ? UNLEASH_FORM_STEPS : UNLEASH_CLI_STEPS),
       nasty: opts.nasty,
       verbose: opts.verbose,
+      form,
+      echo: process.stdout,
     });
+    if (result.submitted) {
+      process.stdout.write(`submitted ${result.submitted.from} → ${result.submitted.to}\n`);
+    } else if (result.lockForm) {
+      process.stdout.write(`did not submit ${result.lockForm}\n`);
+    }
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
       process.stderr.write(`${result.findings[0].kind}: ${result.findings[0].message}\n`);
     }
     return result.ok ? EXIT_OK : EXIT_FINDINGS;
   } catch (err) {
+    if (err instanceof FormLockError) fail(EXIT_USAGE, err.message);
     if (err instanceof VisionError) {
       process.stderr.write(VISION_HELP);
       fail(EXIT_USAGE, err.message);

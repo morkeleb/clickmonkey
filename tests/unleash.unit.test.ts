@@ -3,17 +3,34 @@ import { describe, it } from "node:test";
 import {
   clickKey,
   clickWasNoop,
+  commitKindRank,
   decideMap,
   decideUnleash,
   formSubmitAction,
+  isPrimaryFormCommit,
   freshClicks,
+  isAddRepeatingRowAction,
   listModeScore,
   looksLikeSearchField,
+  looksLikePageSearch,
+  mappedPrimaryCommits,
   pickSelectOption,
   plausibleFill,
   rememberClick,
+  repeatingRowCount,
+  repeatingRowIndex,
+  skipRepeatingChildField,
+  isListedTypeaheadOption,
+  listedTypeaheadOptions,
+  alreadyPickedListedOption,
+  looksLikeEmptyValue,
+  looksLikeListedPicker,
+  formFieldsToFill,
+  FORM_COMMIT_RETRIES,
+  stayActions,
   viewWidgetSig,
 } from "../src/brains/unleash.js";
+import type { Page } from "../src/schema/page-model.js";
 import { fogHunger, FOG_FRESH_MS, FOG_OLD_MS, npcHunger } from "../src/brains/npc.js";
 import { detectWalkerMode } from "../src/brains/walker-mode.js";
 import type { View } from "../src/schema/view.js";
@@ -138,6 +155,515 @@ describe("formSubmitAction", () => {
     assert.doesNotMatch(text, /fill page\.textbox_search_or_talk_to_lois /);
     assert.match(text, /click page\.button_save/);
     assert.doesNotMatch(text, /add_row/);
+  });
+
+  it("fills every empty field then Save, but only the first repeating child row", () => {
+    const shown = [
+      ...Array.from({ length: 13 }, (_, i) => ({ id: `f${i}`, value: "", type: "text" as const })),
+      { id: "lineitems_0__amount", value: "", type: "text" as const },
+      { id: "lineitems_1__amount", value: "", type: "text" as const },
+    ];
+    const view = viewOf({
+      shown,
+      actions: [
+        { id: "button_add_line", label: "Add Line" },
+        { id: "submit", label: "Save" },
+      ],
+    });
+    const first = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
+    assert.equal(first.mode, "form");
+    const text = (first.lines ?? [first.line]).join("\n");
+    assert.equal(first.lines?.filter((l) => l.startsWith("fill ")).length, 14);
+    assert.match(text, /fill page\.f12 /);
+    assert.match(text, /fill page\.lineitems_0__amount /);
+    assert.doesNotMatch(text, /lineitems_1__/);
+    assert.doesNotMatch(text, /add_line|Add Line/);
+    assert.equal(first.lines?.at(-1), "click page.submit");
+  });
+
+  it("fills an empty typeahead then Save instead of clicking leftover listed rows", () => {
+    assert.equal(isListedTypeaheadOption({ id: "option_acme", role: "option" }), true);
+    assert.equal(isListedTypeaheadOption({ id: "option_expert_witness_vnd_00001" }), true);
+    assert.equal(isListedTypeaheadOption({ id: "button_save", label: "Save" }), false);
+    const view = viewOf({
+      shown: [{ id: "vendorid", value: "", type: "text", required: true }],
+      actions: [
+        { id: "option_acme", role: "option", label: "Acme" },
+        { id: "button_save", label: "Save" },
+      ],
+    });
+    assert.equal(listedTypeaheadOptions(view.actions).length, 1);
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    assert.equal(d.mode, "form");
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.vendorid /);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /option_acme/);
+  });
+
+  it("fills remaining empties then Save instead of walking leftover listed rows", () => {
+    const view = viewOf({
+      shown: [
+        { id: "vendorid", value: "", type: "text", required: true },
+        { id: "legalname", value: "", type: "text" },
+      ],
+      actions: [
+        { id: "option_acme", role: "option", label: "Acme" },
+        { id: "option_beta", role: "option", label: "Beta" },
+        { id: "button_save", label: "Save" },
+      ],
+    });
+    assert.equal(alreadyPickedListedOption(view, ["option_acme"]), true);
+    const d = decideUnleash(
+      {
+        view,
+        stepsUsed: 1,
+        writePolicy: "allow",
+        recentClicks: ["option_acme"],
+        formHits: { "home/page": 1 },
+      },
+      () => 0.5,
+    );
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.vendorid /);
+    assert.match(text, /fill page\.legalname /);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /option_beta|option_acme/);
+  });
+
+  it("fills a new typeahead after the previous list is gone, without clicking leftover options", () => {
+    const afterIndustry = viewOf({
+      shown: [{ id: "create_client_billing_splits_attorney_0", value: "", type: "text" }],
+      actions: [
+        { id: "option_hannah_kim", role: "option", label: "Hannah Kim" },
+        { id: "button_save", label: "Save" },
+      ],
+    });
+    assert.equal(
+      alreadyPickedListedOption(afterIndustry, ["option_id_111130___dry_pea_and_bean_farming"]),
+      false,
+    );
+    const d = decideUnleash(
+      {
+        view: afterIndustry,
+        stepsUsed: 2,
+        writePolicy: "allow",
+        recentClicks: ["option_id_111130___dry_pea_and_bean_farming"],
+        formHits: { "home/page": 1 },
+      },
+      () => 0.5,
+    );
+    assert.equal(d.mode, "form");
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.create_client_billing_splits_attorney_0 /);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /option_hannah_kim/);
+  });
+
+  it("fills optional listed chips on the form, required first, then Save", () => {
+    const view = viewOf({
+      shown: [
+        { id: "vendorid", value: "", type: "text", required: true },
+        { id: "reference", value: "", type: "text", required: true },
+        { id: "lineitems_0__matterid", value: "", type: "text" },
+        { id: "lineitems_0__officeid", value: "", type: "text" },
+      ],
+      actions: [{ id: "button_save", label: "Save" }],
+    });
+    assert.equal(looksLikeListedPicker({ id: "lineitems_0__matterid", value: "", type: "text" }), true);
+    assert.equal(looksLikeListedPicker({ id: "vendorid", value: "", type: "text", required: true }), true);
+    assert.equal(looksLikeListedPicker({ id: "matter", value: "", type: "text" }), false);
+    assert.equal(looksLikeListedPicker({ id: "attorney", value: "", type: "text" }), false);
+    assert.equal(looksLikeListedPicker({ id: "attorney", value: "Select attorney", type: "text" }), true);
+    assert.equal(
+      looksLikeListedPicker({ id: "vendor", value: "", type: "text", constraints: { placeholder: "Search vendors" } }),
+      true,
+    );
+    assert.equal(looksLikeListedPicker({ id: "industry", value: "", type: "text" }), false);
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.vendorid /);
+    assert.match(text, /fill page\.reference /);
+    assert.match(text, /fill page\.lineitems_0__matterid /);
+    assert.match(text, /fill page\.lineitems_0__officeid /);
+    assert.match(text, /click page\.button_save/);
+    const lines = text.split("\n");
+    const req = Math.min(lines.findIndex((l) => /vendorid/.test(l)), lines.findIndex((l) => /reference/.test(l)));
+    const opt = Math.min(lines.findIndex((l) => /matterid/.test(l)), lines.findIndex((l) => /officeid/.test(l)));
+    assert.ok(req >= 0 && opt >= 0 && req < opt);
+  });
+
+  it("fills a required picker search, not Lois", () => {
+    const view = viewOf({
+      shown: [
+        { id: "textbox_search_or_talk_to_lois", value: "", type: "text" },
+        { id: "vendortype_search", value: "", type: "text", required: true },
+        { id: "legalname", value: "", type: "text", required: true },
+      ],
+      actions: [{ id: "button_save", label: "Save" }],
+    });
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.vendortype_search /);
+    assert.match(text, /fill page\.legalname /);
+    assert.doesNotMatch(text, /talk_to_lois/);
+    assert.match(text, /click page\.button_save/);
+  });
+
+  it("fills a form body *_search even when it is not marked required", () => {
+    const view = viewOf({
+      shown: [
+        { id: "textbox_search_or_talk_to_lois", value: "", type: "text", label: "Search or talk to Lois" },
+        { id: "vendor_create_places_search", value: "", type: "text" },
+        { id: "legalname", value: "Ada", type: "text", required: true },
+      ],
+      actions: [{ id: "button_save", label: "Save" }],
+    });
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.vendor_create_places_search /);
+    assert.doesNotMatch(text, /talk_to_lois/);
+    assert.match(text, /click page\.button_save/);
+  });
+
+  it("fills leftover Select chips after Save fails, not add/remove rows", () => {
+    const view = viewOf({
+      shown: [
+        { id: "clientname", value: "Ada", type: "text" },
+        {
+          id: "create_client_billing_splits_attorney_0",
+          value: "Select attorney",
+          type: "text",
+        },
+      ],
+      actions: [
+        { id: "button_save", label: "Save" },
+        { id: "create_client_billing_splits_add_row", label: "Add" },
+        { id: "create_client_billing_splits_remove_0", label: "Remove" },
+      ],
+      last: { step: "click page.button_save", ok: false, finding: "expectFailed" },
+    });
+    const d = decideUnleash(
+      {
+        view,
+        stepsUsed: 4,
+        writePolicy: "allow",
+        recentClicks: ["button_save"],
+        last: { ok: false, finding: "expectFailed" },
+      },
+      () => 0.5,
+    );
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.create_client_billing_splits_attorney_0 /);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /add_row|remove_0/);
+  });
+
+  it("does not treat a mapped Close create opener as Save", () => {
+    assert.equal(isPrimaryFormCommit({ id: "button_close_create_client", label: "Close" }), false);
+    assert.equal(isPrimaryFormCommit({ id: "button_close_create_client" }), false);
+    assert.equal(isPrimaryFormCommit({ id: "button_save", label: "Save" }), true);
+  });
+
+  it("does not treat Close create as a form commit after Save was just clicked", () => {
+    const view = viewOf({
+      shown: [
+        { id: "clientname", value: "Ada", type: "text" },
+        { id: "classificationid", value: "", type: "text", required: true },
+      ],
+      actions: [
+        { id: "button_save", label: "Save" },
+        { id: "button_close_create_client", label: "Close" },
+      ],
+      last: { step: "click page.button_save", ok: false, finding: "expectFailed" },
+    });
+    const d = decideUnleash(
+      {
+        view,
+        stepsUsed: 4,
+        writePolicy: "allow",
+        recentClicks: ["button_save"],
+        last: { ok: false, finding: "expectFailed" },
+        lockForm: "home",
+      },
+      () => 0.5,
+    );
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /close_create/);
+  });
+
+  it("does not Cancel when lockForm pins the page", () => {
+    const view = viewOf({
+      shown: [{ id: "name", value: "x", type: "text" }],
+      actions: [
+        { id: "button_save", label: "Save" },
+        { id: "button_cancel", label: "Cancel" },
+      ],
+    });
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow", lockForm: "home" }, () => 0);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /button_cancel/);
+  });
+
+  it("retries Save after stay, still filling empty form chips", () => {
+    const view = viewOf({
+      shown: [
+        { id: "reference", value: "INV-1", type: "text", required: true },
+        { id: "lineitems_0__matterid", value: "", type: "text" },
+      ],
+      actions: [{ id: "button_save", label: "Save" }],
+      last: { step: "click page.button_save", ok: true },
+    });
+    const d = decideUnleash(
+      {
+        view,
+        stepsUsed: 4,
+        writePolicy: "allow",
+        recentClicks: ["button_save"],
+        last: { ok: true },
+      },
+      () => 0.5,
+    );
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.lineitems_0__matterid /);
+    assert.match(text, /click page\.button_save/);
+  });
+
+  it("stops retrying Save after the hard cap", () => {
+    const view = viewOf({
+      shown: [
+        { id: "reference", value: "INV-1", type: "text", required: true },
+        { id: "lineitems_0__matterid", value: "", type: "text" },
+      ],
+      actions: [{ id: "button_save", label: "Save" }],
+      last: { step: "click page.button_save", ok: true },
+    });
+    const saves = Array.from({ length: 1 + FORM_COMMIT_RETRIES }, () => "button_save");
+    const d = decideUnleash(
+      {
+        view,
+        stepsUsed: 8,
+        writePolicy: "allow",
+        recentClicks: saves,
+        last: { ok: true },
+        lockForm: "home",
+      },
+      () => 0.5,
+    );
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.doesNotMatch(text, /button_save/);
+  });
+
+  it("retries Save after a failed submit instead of hopping", () => {
+    const view = viewOf({
+      shown: [{ id: "reference", value: "INV-1", type: "text", required: true }],
+      actions: [{ id: "button_save", label: "Save" }],
+      last: { step: "click page.button_save", ok: false, finding: "expectFailed" },
+    });
+    const d = decideUnleash(
+      {
+        view,
+        stepsUsed: 4,
+        writePolicy: "allow",
+        recentClicks: ["button_save"],
+        last: { ok: false, finding: "expectFailed" },
+      },
+      () => 0.5,
+    );
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /^open /);
+  });
+
+  it("treats a Select… chip as empty", () => {
+    assert.equal(looksLikeEmptyValue({ id: "attorney", value: "Select attorney", type: "text" }), true);
+    assert.equal(
+      looksLikeEmptyValue({
+        id: "date",
+        value: "MM/DD/YYYY",
+        type: "text",
+        constraints: { placeholder: "MM/DD/YYYY" },
+      }),
+      true,
+    );
+    assert.equal(looksLikeEmptyValue({ id: "name", value: "Ada", type: "text" }), false);
+    const view = viewOf({
+      shown: [{ id: "create_client_responsible_splits_attorney_0", value: "Select attorney", type: "text", required: true }],
+      actions: [{ id: "button_save", label: "Save" }],
+    });
+    assert.equal(formFieldsToFill(view).map((f) => f.id).join(), "create_client_responsible_splits_attorney_0");
+  });
+
+  it("fills listed *id and Select-prompt chips before Save", () => {
+    const view = viewOf({
+      shown: [
+        { id: "party", value: "Select a party", type: "text", required: true },
+        { id: "ownerid", value: "", type: "text" },
+        { id: "notes", value: "ok", type: "text" },
+        {
+          id: "vendor",
+          value: "",
+          type: "text",
+          constraints: { placeholder: "Search vendors" },
+        },
+      ],
+      actions: [{ id: "button_save", label: "Save" }],
+    });
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.party /);
+    assert.match(text, /fill page\.ownerid /);
+    assert.match(text, /fill page\.vendor /);
+    assert.doesNotMatch(text, /fill page\.notes /);
+    assert.match(text, /click page\.button_save/);
+    const lines = text.split("\n");
+    assert.ok(lines.findIndex((l) => /party/.test(l)) < lines.findIndex((l) => /button_save/.test(l)));
+  });
+
+  it("clicks Save when leftover listed rows remain after every shown field is filled", () => {
+    const view = viewOf({
+      shown: [
+        { id: "reference", value: "INV-1", type: "text" },
+        { id: "create_client_responsible_splits_attorney_0", value: "Hannah Kim", type: "text" },
+      ],
+      actions: [
+        { id: "option_hannah_kim", role: "option", label: "Hannah Kim" },
+        { id: "button_save", label: "Save" },
+      ],
+    });
+    const d = decideUnleash(
+      { view, stepsUsed: 3, writePolicy: "allow", formHits: { "home/page": 2 } },
+      () => 0.5,
+    );
+    assert.equal(d.mode, "form");
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.equal(text, "click page.button_save");
+    assert.doesNotMatch(text, /option_/);
+  });
+
+  it("clicks Save before Submit when both are live", () => {
+    assert.equal(commitKindRank({ id: "button_save", label: "Save" }), 0);
+    assert.equal(commitKindRank({ id: "button_submit", label: "Submit" }), 2);
+    const view = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [
+        { id: "button_submit", label: "Submit" },
+        { id: "button_save", label: "Save" },
+      ],
+    });
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.name /);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /button_submit/);
+  });
+
+  it("clicks mapped Save even when the live control is disabled and missing from the view", () => {
+    const view = viewOf({
+      shown: [
+        { id: "legalname", value: "", type: "text" },
+        { id: "notes", value: "", type: "text" },
+      ],
+      actions: [{ id: "tab_dashboard", role: "tab", label: "Dashboard" }],
+    });
+    const pages = [
+      {
+        id: "home",
+        path: "/",
+        ready: { by: "testId", value: "home" },
+        surfaces: [
+          {
+            id: "page",
+            kind: "page" as const,
+            fields: [],
+            actions: [{ id: "button_save", by: "testId" as const, value: "save", status: "ok" as const }],
+          },
+        ],
+      },
+    ] as unknown as Page[];
+    assert.equal(mappedPrimaryCommits(view, pages)[0]?.id, "button_save");
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow", pages }, () => 0.5);
+    assert.equal(d.mode, "form");
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill page\.legalname /);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /tab_dashboard/);
+  });
+});
+
+describe("repeating child rows", () => {
+  it("reads bracket, dunder, and row_N ids and ignores 1099-style numbers", () => {
+    assert.equal(repeatingRowIndex("items[0].name"), 0);
+    assert.equal(repeatingRowIndex("items[2].qty"), 2);
+    assert.equal(repeatingRowIndex("lineitems_0__amount"), 0);
+    assert.equal(repeatingRowIndex("lineitems_1__description"), 1);
+    assert.equal(repeatingRowIndex("row_0_qty"), 0);
+    assert.equal(repeatingRowIndex("split_row-3_amount"), 3);
+    assert.equal(repeatingRowIndex("invoice_1099_tax"), undefined);
+    assert.equal(repeatingRowIndex("f12"), undefined);
+    assert.equal(skipRepeatingChildField("lineitems_0__amount"), false);
+    assert.equal(skipRepeatingChildField("lineitems_1__amount"), true);
+    assert.equal(skipRepeatingChildField("invoice_1099_tax"), false);
+  });
+
+  it("counts existing repeating rows and hides Add Line once one exists", () => {
+    assert.equal(isAddRepeatingRowAction({ id: "button_add_line", label: "Add Line" }), true);
+    assert.equal(isAddRepeatingRowAction({ id: "create_client_billing_splits_add_row" }), true);
+    assert.equal(isAddRepeatingRowAction({ id: "add_bank_account", label: "Add bank account" }), false);
+    assert.equal(
+      repeatingRowCount(
+        viewOf({
+          shown: [
+            { id: "name", value: "", type: "text" },
+            { id: "lineitems_0__amount", value: "", type: "text" },
+            { id: "lineitems_1__amount", value: "", type: "text" },
+          ],
+        }),
+      ),
+      2,
+    );
+    const withRow = viewOf({
+      shown: [{ id: "lineitems_0__amount", value: "", type: "text" }],
+      actions: [
+        { id: "button_add_line", label: "Add Line" },
+        { id: "submit", label: "Save" },
+      ],
+    });
+    assert.deepEqual(
+      stayActions(withRow).map((a) => a.id),
+      ["submit"],
+    );
+    const noRow = viewOf({
+      shown: [{ id: "name", value: "", type: "text" }],
+      actions: [
+        { id: "button_add_line", label: "Add Line" },
+        { id: "submit", label: "Save" },
+      ],
+    });
+    assert.deepEqual(
+      stayActions(noRow).map((a) => a.id).sort(),
+      ["button_add_line", "submit"],
+    );
+  });
+
+  it("hides tab chrome while a create form is still mid-fill", () => {
+    const view = viewOf({
+      shown: [
+        { id: "legalname", value: "Todd Turner", type: "text" },
+        { id: "industry", value: "", type: "text" },
+      ],
+      actions: [
+        { id: "tab_dashboard", role: "tab", label: "Dashboard" },
+        { id: "button_active_tabs__6", label: "Active tabs" },
+        { id: "button_save", label: "Save" },
+      ],
+    });
+    assert.deepEqual(
+      stayActions(view).map((a) => a.id),
+      ["button_save"],
+    );
   });
 });
 
@@ -292,8 +818,19 @@ describe("looksLikeSearchField", () => {
     assert.equal(looksLikeSearchField({ id: "searchInput", value: "", type: "text" }), true);
     assert.equal(looksLikeSearchField({ id: "textbox_search_or_talk_to_lois", value: "", type: "text" }), true);
     assert.equal(looksLikeSearchField({ id: "q", value: "", type: "text" }), true);
+    assert.equal(looksLikeSearchField({ id: "vendortype_search", value: "", type: "text" }), true);
     assert.equal(looksLikeSearchField({ id: "clientname", value: "", type: "text" }), false);
     assert.equal(looksLikeSearchField({ id: "findings", value: "", type: "text" }), false);
+  });
+});
+
+describe("looksLikePageSearch", () => {
+  it("is Lois or a bare search box, not a form body *_search", () => {
+    assert.equal(looksLikePageSearch({ id: "search", value: "", type: "text" }), true);
+    assert.equal(looksLikePageSearch({ id: "q", value: "", type: "text" }), true);
+    assert.equal(looksLikePageSearch({ id: "textbox_search_or_talk_to_lois", value: "", type: "text" }), true);
+    assert.equal(looksLikePageSearch({ id: "vendortype_search", value: "", type: "text" }), false);
+    assert.equal(looksLikePageSearch({ id: "vendor_create_places_search", value: "", type: "text" }), false);
   });
 });
 

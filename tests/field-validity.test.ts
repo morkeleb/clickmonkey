@@ -97,7 +97,7 @@ function acceptsEmptyConfig(url: string): Config {
 }
 
 describe("after-submit validation miss", () => {
-  it("does not flag junk when client-side validation blocks the send", async () => {
+  it("does not flag junk as accepted when client-side validation blocks the send; silent Save is its own finding", async () => {
     const { baseUrl, close } = await serveSite("blocks-send");
     const outDir = mkdtempSync(join(tmpdir(), "cm-block-send-"));
     try {
@@ -112,8 +112,10 @@ describe("after-submit validation miss", () => {
         });
         assert.equal(fill.ok, true, fill.finding?.message);
         const submit = await exec.runStep({ kind: "click", surface: "page", id: "submit" });
-        assert.equal(submit.ok, true, submit.finding?.message);
-        assert.equal(submit.finding, undefined);
+        assert.equal(submit.ok, false);
+        assert.equal(submit.finding?.kind, "expectFailed");
+        assert.match(submit.finding?.message ?? "", /did not submit the form/);
+        assert.doesNotMatch(submit.finding?.message ?? "", /Validation did not catch junk/);
         assert.equal(await handle.page.getByTestId("name").inputValue(), "' OR 'x'='x");
       });
     } finally {

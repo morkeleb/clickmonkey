@@ -1,4 +1,5 @@
 import { Faker, en } from "@faker-js/faker";
+import { dateFillValue, looksLikeDateMask } from "../executor/date-mask.js";
 import type { ShownField, ShownFieldConstraints } from "../schema/view.js";
 
 export type FillCtx = {
@@ -127,7 +128,6 @@ const ALIASES: Record<string, string> = {
   dollar: "amount",
   price: "amount",
   amount: "amount",
-  currency: "amount",
   hash: "hash",
   profession: "jobTitle",
   job: "jobTitle",
@@ -149,6 +149,28 @@ function compactId(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+const TRAILING_FIELD_WORDS = ["datetime", "date", "time"] as const;
+/** Whole ids that end in `date` but are not date fields (`update`, `candidate`). */
+const NOT_DATE_IDS = new Set(["update", "candidate", "validate", "mandate", "predate", "antedate"]);
+
+/** `invoicedate` → date. Skip English words that merely end in those letters. */
+function addTrailingFieldWords(compact: string, tokens: Set<string>): void {
+  for (const suffix of TRAILING_FIELD_WORDS) {
+    if (compact.length <= suffix.length || !compact.endsWith(suffix)) continue;
+    if (suffix === "date" && !compactLooksLikeDateField(compact)) continue;
+    tokens.add(suffix);
+    const head = compact.slice(0, -suffix.length);
+    if (head.length >= 2) tokens.add(head);
+    return;
+  }
+}
+
+function compactLooksLikeDateField(compact: string): boolean {
+  if (!compact.endsWith("date") || compact.endsWith("time")) return false;
+  if (NOT_DATE_IDS.has(compact)) return false;
+  return compact.length - 4 >= 3;
+}
+
 function tokenize(...parts: string[]): Set<string> {
   const tokens = new Set<string>();
   for (const raw of parts) {
@@ -159,6 +181,7 @@ function tokenize(...parts: string[]): Set<string> {
     }
     const compact = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (compact.length >= 2) tokens.add(compact);
+    addTrailingFieldWords(compact, tokens);
   }
   for (const t of [...tokens]) {
     const extra = SYNONYMS[t];
@@ -271,6 +294,15 @@ function fieldType(ctx: FillCtx, ...types: NonNullable<ShownField["type"]>[]): b
   return ctx.type !== undefined && types.includes(ctx.type);
 }
 
+function isNumberInput(ctx: FillCtx): boolean {
+  return html(ctx, "number", "range") || fieldType(ctx, "number") || mode(ctx, "numeric", "decimal");
+}
+
+/** Name says currency. A code/picker is not money unless the control is a number. */
+function looksLikeCurrency(ctx: FillCtx): boolean {
+  return has(ctx, "currency") || ctx.compact.includes("currency");
+}
+
 function parseNum(raw: string | undefined): number | undefined {
   if (raw === undefined || raw === "") return undefined;
   const n = Number(raw);
@@ -317,7 +349,11 @@ function genDate(faker: Faker, ctx: FillCtx, kind: "date" | "datetime" | "month"
       : start;
   if (kind === "month") return d.toISOString().slice(0, 7);
   if (kind === "datetime") return ymdhm(d);
-  return ymd(d);
+  return dateFillValue(ymd(d), {
+    placeholder: ctx.constraints.placeholder,
+    htmlType: ctx.htmlType,
+    fieldType: ctx.type,
+  });
 }
 
 function genEmail(faker: Faker, ctx: FillCtx): string {
@@ -526,9 +562,16 @@ const RULES: FillRule[] = [
     generate: (f, c) => (has(c, "routing") ? f.finance.routingNumber() : f.finance.accountNumber()),
   },
   {
+    id: "currencyCode",
+    score: (c) => (looksLikeCurrency(c) && !isNumberInput(c) ? 86 : 0),
+    generate: (f) => f.finance.currencyCode(),
+  },
+  {
     id: "amount",
     score: (c) =>
-      auto(c, "transaction-amount") || hasAny(c, "price", "cost", "salary", "amount") || has(c, "currency")
+      auto(c, "transaction-amount") ||
+      hasAny(c, "price", "cost", "salary", "amount") ||
+      (looksLikeCurrency(c) && isNumberInput(c))
         ? 75
         : 0,
     generate: (f, c) => {
@@ -551,7 +594,14 @@ const RULES: FillRule[] = [
   },
   {
     id: "date",
-    score: (c) => (html(c, "date") || fieldType(c, "date") || (has(c, "date") && !has(c, "time")) ? 70 : 0),
+    score: (c) =>
+      html(c, "date") ||
+      fieldType(c, "date") ||
+      looksLikeDateMask(c.constraints.placeholder) ||
+      (has(c, "date") && !has(c, "time")) ||
+      compactLooksLikeDateField(c.compact)
+        ? 70
+        : 0,
     generate: (f, c) => genDate(f, c, "date"),
   },
   {

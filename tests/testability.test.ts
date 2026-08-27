@@ -91,10 +91,23 @@ describe("testability audit", () => {
           hits.some((i) => /react-click|React click/i.test(i.where ?? "")),
           `React onClick, got ${blob}`,
         );
+        assert.ok(
+          hits.some((i) => /aria-btn-no-keys|ARIA button no keys/i.test(i.where ?? "")),
+          `unfocusable role=button is 2.1.1, got ${blob}`,
+        );
         assert.equal(
-          hits.some((i) => /real|Save|list-row|Soybean/i.test(`${i.where ?? ""} ${i.tag}`)),
+          hits.some((i) => /aria-btn-ok/i.test(i.where ?? "")),
           false,
-          `real buttons and open-list rows stay off the finding, got ${blob}`,
+          `tabbable role=button is not a finding, got ${blob}`,
+        );
+        assert.equal(
+          hits.some((i) =>
+            /real|Save|list-row|Soybean|material-icon|grid-row|table-row|Client Name|Row chrome|password-wrap|Password|stepper-step/i.test(
+              `${i.where ?? ""} ${i.tag}`,
+            ),
+          ),
+          false,
+          `real buttons, icons, rows, field wrappers, and stepper chrome stay off the finding, got ${blob}`,
         );
       });
     } finally {

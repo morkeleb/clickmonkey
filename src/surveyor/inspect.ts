@@ -21,7 +21,7 @@ import {
 } from "./ready.js";
 import { resolveCount } from "./resolve.js";
 import { applyMissingPageDescriptions } from "./describe.js";
-import { bindSurfaces } from "./surfaces.js";
+import { bindSurfaces, foldActiveTabChrome } from "./surfaces.js";
 
 export interface SurveyorContext {
   model: PageModel | PageModelDraft;
@@ -181,6 +181,9 @@ export async function inspect(page: Page, ctx: SurveyorContext): Promise<Inspect
     model = result.model;
     if (result.appended.length > 0 || result.createdSurface) merged = true;
   }
+
+  const current = model.pages.find((p) => p.id === pageId);
+  if (current && foldActiveTabChrome(current)) merged = true;
 
   const parsed = PageModel.parse(model);
   const title = (await page.title().catch(() => "")).trim();

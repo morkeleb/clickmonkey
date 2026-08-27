@@ -2,7 +2,9 @@ import type { Locator as PwLocator, Page } from "playwright";
 import type { Locator } from "../schema/locator.js";
 import type { Page as ModelPage, Surface } from "../schema/page-model.js";
 import { toPlaywrightLocator } from "../executor/locators.js";
-import { slug, uniqueMint } from "./ids.js";
+import { slug, uniqueMint, stableAccName, isActiveTabsSurfaceId } from "./ids.js";
+
+export { isActiveTabsSurfaceId } from "./ids.js";
 
 const DIALOG_UNION = "dialog, [role='dialog'], [aria-modal='true']";
 
@@ -78,10 +80,41 @@ async function locatorHits(page: Page, loc: Locator, el: PwLocator): Promise<boo
   return (await el.and(pw).count()) === 1;
 }
 
-function mintDialog(
-  info: DialogRead,
+function isActiveTabsName(name: string | undefined): boolean {
+  return Boolean(name && stableAccName(name) === "Active tabs");
+}
+
+function canonicalActiveTabsLocator(): Locator {
+  return { by: "role", value: "dialog", name: "Active tabs", nameExact: false };
+}
+
+export function pickActiveTabsSurface<T extends { id: string; locator?: { name?: string } }>(
+  surfaces: T[],
+  claimed: Set<string>,
+): T | undefined {
+  const open = surfaces.filter((s) => {
+    if (claimed.has(s.id)) return false;
+    if (s.id === "active_tabs" || /^active_tabs_/.test(s.id)) return true;
+    return isActiveTabsName(s.locator?.name);
+  });
+  return (
+    open.find((s) => s.id === "active_tabs") ??
+    open.find((s) => /^active_tabs_/.test(s.id)) ??
+    open[0]
+  );
+}
+
+export function mintDialog(
+  info: { testId: string; accName: string },
   used: Set<string>,
 ): { surfaceId: string; locator: Locator } {
+  if (isActiveTabsName(info.accName)) {
+    used.add("active_tabs");
+    return {
+      surfaceId: "active_tabs",
+      locator: canonicalActiveTabsLocator(),
+    };
+  }
   if (info.accName) {
     return {
       surfaceId: uniqueMint(slug(info.accName), used),
@@ -123,10 +156,13 @@ export async function bindSurfaces(
     const el = visible[i];
     if (!el) continue;
     const isCurrent = i === visible.length - 1;
+    const info = await el.evaluate(readDialog);
 
     if (hintId && isCurrent && !claimed.has(hintId)) {
       const existing = dialogSurfaces.find((s) => s.id === hintId);
-      const info = await el.evaluate(readDialog);
+      if (existing && isActiveTabsName(info.accName)) {
+        existing.locator = canonicalActiveTabsLocator();
+      }
       dialogs.push({
         surfaceId: hintId,
         kind: "dialog",
@@ -144,7 +180,13 @@ export async function bindSurfaces(
         break;
       }
     }
+    if (!matched && isActiveTabsName(info.accName)) {
+      matched = pickActiveTabsSurface(dialogSurfaces, claimed);
+    }
     if (matched) {
+      if (isActiveTabsName(info.accName)) {
+        matched.locator = canonicalActiveTabsLocator();
+      }
       dialogs.push({
         surfaceId: matched.id,
         kind: "dialog",
@@ -154,7 +196,7 @@ export async function bindSurfaces(
       continue;
     }
 
-    const minted = mintDialog(await el.evaluate(readDialog), used);
+    const minted = mintDialog(info, used);
     dialogs.push({ surfaceId: minted.surfaceId, kind: "dialog", locator: minted.locator });
     claimed.add(minted.surfaceId);
   }
@@ -168,4 +210,44 @@ export async function bindSurfaces(
       ...dialogs,
     ],
   };
+}
+
+/** One Active tabs dialog and one opener; drop count-suffixed copies. */
+export function foldActiveTabChrome(page: ModelPage): boolean {
+  let changed = false;
+  const extras = page.surfaces.filter((s) => s.kind === "dialog" && isActiveTabsSurfaceId(s.id));
+  if (extras.length > 0) {
+    const keep = extras.find((s) => s.id === "active_tabs") ?? extras[0]!;
+    if (keep.id !== "active_tabs") {
+      keep.id = "active_tabs";
+      changed = true;
+    }
+    keep.locator = canonicalActiveTabsLocator();
+    const drop = new Set(extras.filter((s) => s !== keep).map((s) => s.id));
+    if (drop.size > 0) {
+      page.surfaces = page.surfaces.filter((s) => !drop.has(s.id));
+      for (const surface of page.surfaces) {
+        for (const action of surface.actions) {
+          if (action.opens && (drop.has(action.opens) || isActiveTabsSurfaceId(action.opens))) {
+            action.opens = "active_tabs";
+          }
+        }
+      }
+      changed = true;
+    }
+  }
+
+  for (const surface of page.surfaces) {
+    const tabBtns = surface.actions.filter((a) => a.id === "button_active_tabs" || /^button_active_tabs_/.test(a.id));
+    if (tabBtns.length <= 1) continue;
+    const keep = tabBtns.find((a) => a.id === "button_active_tabs") ?? tabBtns[0]!;
+    keep.id = "button_active_tabs";
+    keep.name = "Active tabs";
+    keep.nameExact = false;
+    keep.opens = "active_tabs";
+    const drop = new Set(tabBtns.filter((a) => a !== keep).map((a) => a.id));
+    surface.actions = surface.actions.filter((a) => !drop.has(a.id));
+    changed = true;
+  }
+  return changed;
 }

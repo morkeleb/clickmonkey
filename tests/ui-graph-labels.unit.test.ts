@@ -15,6 +15,18 @@ describe("graph labels", () => {
       title: "Migrations",
       kicker: "Customers",
     });
+    assert.deepEqual(prettyPageLabel("/accounts-payable/vendors/new", "accounts_payable_vendors_new"), {
+      title: "Vendors / New",
+      kicker: "Accounts Payable",
+    });
+    assert.deepEqual(prettyPageLabel("/accounts-payable/payments/new", "accounts_payable_payments_new"), {
+      title: "Payments / New",
+      kicker: "Accounts Payable",
+    });
+    assert.deepEqual(prettyPageLabel("/accounts-payable/vouchers/new", "accounts_payable_vouchers_new"), {
+      title: "Vouchers / New",
+      kicker: "Accounts Payable",
+    });
   });
 
   it("splits camelCase and kebab-case ids into words", () => {

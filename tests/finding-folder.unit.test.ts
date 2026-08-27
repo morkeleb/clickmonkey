@@ -451,4 +451,94 @@ describe("finding folder", () => {
       findingId(4, "visualIssue", 1),
     ]);
   });
+
+  it("does not file a focusVisible finding without a focused clip screenshot", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-fv-skip-"));
+    const shot = join(outDir, "shots", "step-003.png");
+    mkdirSync(join(outDir, "shots"), { recursive: true });
+    writeFileSync(shot, "png-page");
+    const issue: QualityIssue = {
+      source: "visual",
+      rule: "focusVisible",
+      severity: "warning",
+      message: "Search or Talk to LOIS has no visible focus indicator (WCAG 2.4.7)",
+      count: 1,
+      confidence: "high",
+      where: 'input "Search or Talk to LOIS"',
+    };
+    const written = persistVisualIssueFindings(outDir, [issue], {
+      stepIndex: 3,
+      screenshotPath: shot,
+      tapePath: join(outDir, "replay.log"),
+    });
+    assert.equal(written.length, 0);
+    assert.deepEqual(findingFolders(outDir), []);
+    assert.ok(existsSync(shot), "step screenshot must stay");
+  });
+
+  it("files a focusVisible finding with the focused clip, not the step shot", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-fv-clip-"));
+    const shot = join(outDir, "shots", "step-003.png");
+    const clipShot = join(outDir, "shots", "step-003-focus-visible-00.png");
+    mkdirSync(join(outDir, "shots"), { recursive: true });
+    writeFileSync(shot, "png-page");
+    writeFileSync(clipShot, "png-clip");
+    const overlap: QualityIssue = {
+      source: "visual",
+      rule: "overlap",
+      severity: "warning",
+      message: "badge covers title",
+      count: 1,
+      confidence: "high",
+    };
+    const fv: QualityIssue = {
+      source: "visual",
+      rule: "focusVisible",
+      severity: "warning",
+      message: "Search or Talk to LOIS has no visible focus indicator (WCAG 2.4.7)",
+      count: 1,
+      confidence: "high",
+      where: 'input "Search or Talk to LOIS"',
+    };
+    const written = persistVisualIssueFindings(outDir, [overlap, fv], {
+      stepIndex: 3,
+      screenshotPath: shot,
+      issueScreenshots: [{ where: fv.where!, screenshotPath: clipShot }],
+      tapePath: join(outDir, "replay.log"),
+    });
+    assert.equal(written.length, 2);
+    const overlapDir = join(outDir, "findings", findingId(3, "visualIssue", 0));
+    const fvDir = join(outDir, "findings", findingId(3, "visualIssue", 1));
+    assert.equal(readFileSync(join(overlapDir, "screenshot.png"), "utf8"), "png-page");
+    assert.equal(readFileSync(join(fvDir, "screenshot.png"), "utf8"), "png-clip");
+    assert.ok(existsSync(shot), "step screenshot must stay");
+  });
+
+  it("does not reuse another control's focused clip for focusVisible", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-fv-mismatch-"));
+    const otherClip = join(outDir, "shots", "step-003-focus-visible-00.png");
+    mkdirSync(join(outDir, "shots"), { recursive: true });
+    writeFileSync(otherClip, "png-other");
+    const written = persistVisualIssueFindings(
+      outDir,
+      [
+        {
+          source: "visual",
+          rule: "focusVisible",
+          severity: "warning",
+          message: "Search or Talk to LOIS has no visible focus indicator (WCAG 2.4.7)",
+          count: 1,
+          confidence: "high",
+          where: 'input "Search or Talk to LOIS"',
+        },
+      ],
+      {
+        stepIndex: 3,
+        issueScreenshots: [{ where: 'button "Ask LOIS"', screenshotPath: otherClip }],
+        tapePath: join(outDir, "replay.log"),
+      },
+    );
+    assert.equal(written.length, 0);
+    assert.deepEqual(findingFolders(outDir), []);
+  });
 });

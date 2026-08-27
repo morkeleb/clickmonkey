@@ -103,10 +103,15 @@ export function normalizeQualityMessage(message: string): string {
   return one.length <= MESSAGE_MAX ? one : `${one.slice(0, MESSAGE_MAX - 1)}…`;
 }
 
-export function qualityIssueKey(i: Pick<QualityIssue, "source" | "rule" | "message">): string {
-  // Visual rules are a closed list; VLM prose is not stable across shots or monkeys.
-  if (i.source === "visual") return `${i.source}\0${i.rule}`;
-  return `${i.source}\0${i.rule}\0${i.message}`;
+export function qualityIssueKey(
+  i: Pick<QualityIssue, "source" | "rule" | "message"> & { via?: QualityIssue["via"] },
+): string {
+  if (i.source !== "visual") return `${i.source}\0${i.rule}\0${i.message}`;
+  // DOM list/form/table scanlines are different defects; VLM prose for one class is not.
+  if (i.rule === "scanline" && i.via === "dom") {
+    return `${i.source}\0${i.rule}\0${normalizeQualityMessage(i.message)}`;
+  }
+  return `${i.source}\0${i.rule}`;
 }
 
 export function qualityIssuesEqual(

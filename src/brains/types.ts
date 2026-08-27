@@ -38,6 +38,8 @@ export interface BrainContext {
   formHits?: Readonly<Record<string, number>>;
   /** Form hunt target (`page/surface`) the walker is walking toward. */
   huntTarget?: string;
+  /** Pin unleash to this map page until submit leaves it (`--form`). */
+  lockForm?: string;
   /** Remaining local steps after a submit that changed page. Hunt waits. */
   lootSteps?: number;
   /** Times this run stood on `page/surface`. map lifts unseen rooms first. */

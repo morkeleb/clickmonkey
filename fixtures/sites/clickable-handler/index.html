@@ -7,18 +7,36 @@
   <body>
     <main data-testid="home">
       <button type="button" data-testid="real">Save</button>
+      <button type="button" data-testid="icon-save">
+        <i data-testid="material-icon" onclick="void 0">close</i> Save
+      </button>
       <div id="html-onclick" onclick="void 0">HTML onclick</div>
       <div id="js-click">Listener click</div>
       <div id="react-click">React click</div>
       <div role="listbox">
         <div id="list-row">Soybean Farming</div>
       </div>
+      <div role="grid">
+        <div role="row" id="grid-row" onclick="void 0">Client Name Client ID</div>
+      </div>
+      <table>
+        <tr id="table-row" onclick="void 0"><td>Row chrome</td></tr>
+      </table>
+      <div id="password-wrap" onclick="void 0">Password *<input type="password" /></div>
+      <div data-testid="stepper-step-0" onclick="void 0">Open</div>
+      <div role="button" id="aria-btn-no-keys">ARIA button no keys</div>
+      <div role="button" tabindex="0" id="aria-btn-ok">ARIA button ok</div>
     </main>
     <script>
       document.getElementById("js-click").addEventListener("click", function () {});
       var react = document.getElementById("react-click");
       react.__reactProps$test = { onClick: function () {} };
       document.getElementById("list-row").addEventListener("click", function () {});
+      document.querySelector('[data-testid="material-icon"]').addEventListener("click", function () {});
+      document.getElementById("grid-row").addEventListener("click", function () {});
+      document.getElementById("table-row").addEventListener("click", function () {});
+      document.getElementById("password-wrap").addEventListener("click", function () {});
+      document.querySelector('[data-testid="stepper-step-0"]').addEventListener("click", function () {});
     </script>
   </body>
 </html>

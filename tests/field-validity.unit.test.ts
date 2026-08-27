@@ -6,12 +6,15 @@ import {
   fillCtxForPageError,
   fillShouldLookInvalid,
   fillValueInRequest,
+  isSilentSubmitMessage,
+  shouldReportSilentSubmit,
+  SILENT_SUBMIT_MESSAGE,
   upsertTrackedFill,
   validationMissesToReport,
   type TrackedFill,
 } from "../src/executor/field-validity.js";
 import { looksLikeRowSelectCheckbox } from "../src/brains/unleash.js";
-import { looksLikeSubmitClick } from "../src/executor/write-policy.js";
+import { isPrimaryFormCommit, looksLikeSubmitClick } from "../src/executor/write-policy.js";
 import { findingReportTitle, findingTapeBug, validationMissExplanation } from "../src/schema/finding.js";
 
 const valid: TrackedFill["validity"] = { ariaInvalid: false, errorVisible: false, nativeInvalid: false };
@@ -244,6 +247,55 @@ describe("validationMissesToReport", () => {
   });
 });
 
+describe("shouldReportSilentSubmit", () => {
+  const stay = {
+    urlChanged: false,
+    submitVisible: true,
+    requests: [] as { url: string; method?: string; postData?: string | null }[],
+    validity: [valid],
+  };
+
+  it("reports when Save stays put with no write and no invalid marks", () => {
+    assert.equal(shouldReportSilentSubmit(stay), true);
+    assert.equal(shouldReportSilentSubmit({ ...stay, validity: [] }), true);
+    assert.equal(isSilentSubmitMessage(SILENT_SUBMIT_MESSAGE), true);
+  });
+
+  it("does not report when validation marked a field, a write fired, or the form left", () => {
+    assert.equal(
+      shouldReportSilentSubmit({
+        ...stay,
+        validity: [{ ariaInvalid: true, errorVisible: false, nativeInvalid: false }],
+      }),
+      false,
+    );
+    assert.equal(
+      shouldReportSilentSubmit({
+        ...stay,
+        validity: [{ ariaInvalid: false, errorVisible: true, nativeInvalid: false }],
+      }),
+      false,
+    );
+    assert.equal(
+      shouldReportSilentSubmit({
+        ...stay,
+        validity: [{ ariaInvalid: false, errorVisible: false, nativeInvalid: true }],
+      }),
+      false,
+    );
+    assert.equal(
+      shouldReportSilentSubmit({ ...stay, requests: [{ url: "/save", method: "POST" }] }),
+      false,
+    );
+    assert.equal(
+      shouldReportSilentSubmit({ ...stay, requests: [{ url: "/save", postData: '{"a":1}' }] }),
+      false,
+    );
+    assert.equal(shouldReportSilentSubmit({ ...stay, urlChanged: true }), false);
+    assert.equal(shouldReportSilentSubmit({ ...stay, submitVisible: false }), false);
+  });
+});
+
 describe("looksLikeRowSelectCheckbox", () => {
   it("matches TanStack row-toggle names, not a normal agree box", () => {
     assert.equal(
@@ -281,6 +333,10 @@ describe("looksLikeSubmitClick", () => {
     );
     assert.equal(looksLikeSubmitClick({ id: "save", by: "role" }), true);
     assert.equal(looksLikeSubmitClick({ id: "done", by: "role" }), true);
+    assert.equal(isPrimaryFormCommit({ id: "button_save", name: "Save" }), true);
+    assert.equal(isPrimaryFormCommit({ id: "submit" }), true);
+    assert.equal(isPrimaryFormCommit({ id: "next", name: "Next" }), false);
+    assert.equal(isPrimaryFormCommit({ id: "apply", name: "Apply" }), false);
     assert.equal(looksLikeSubmitClick({ id: "next", by: "role" }), true);
     assert.equal(looksLikeSubmitClick({ id: "submit", by: "css" }), true);
   });

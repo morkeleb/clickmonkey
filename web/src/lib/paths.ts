@@ -49,3 +49,21 @@ export async function fetchFirstJson<T>(paths: string[]): Promise<T> {
   }
   throw last;
 }
+
+/**
+ * Live CLI (`/api/snapshot`) first. Frozen `snapshot.json` only when that route is
+ * missing (bundled report). Do not probe snapshot.json on a live server — it 404s.
+ */
+export async function loadLiveOrFrozenJson<T>(
+  livePath: string,
+  frozenPath: string,
+): Promise<{ data: T; frozen: boolean }> {
+  try {
+    const data = await fetchFirstJson<T>([livePath]);
+    return { data, frozen: false };
+  } catch (err) {
+    if (err instanceof UiHttpError && err.status !== 404) throw err;
+    const data = await fetchFirstJson<T>([frozenPath]);
+    return { data, frozen: true };
+  }
+}

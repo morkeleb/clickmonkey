@@ -7,7 +7,8 @@ import { saveConfig } from "../src/persist/config.js";
 import { exploreOutlineOf, setPresenceOutline, startPresence } from "../src/persist/presence.js";
 import { emptyConfig } from "../src/schema/config.js";
 import { stampFog } from "../src/persist/fog.js";
-import { buildUiSnapshot, refreshUiSnapshot } from "../src/ui/snapshot.js";
+import { livePatchEqual, livePatchKey } from "../src/ui/live-patch.js";
+import { buildUiSnapshot, expireLiveRuns, refreshUiSnapshot } from "../src/ui/snapshot.js";
 
 describe("buildUiSnapshot", () => {
   it("omits apiKey and resolved $ENV secrets", () => {
@@ -375,5 +376,52 @@ describe("buildUiSnapshot", () => {
     const actions = snap.map.pages[0]?.surfaces[0]?.actions;
     assert.equal(actions?.[1]?.nth, 1);
     assert.equal("futureKey" in (actions?.[1] ?? {}), false);
+  });
+
+  it("expires a stale live run without listing every run dir", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-ui-expire-"));
+    const path = join(dir, "clickmonkey.json");
+    saveConfig(path, emptyConfig("http://127.0.0.1:4173/"));
+    const runDir = join(dir, "clickmonkey", "runs", "20260818T150000Z-ab12");
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, "log.txt"), "open home\n");
+    startPresence(runDir, { pageId: "home", brain: "unleash" });
+    const snap = buildUiSnapshot(path);
+    assert.equal(snap.runs[0]?.live, true);
+    const still = expireLiveRuns(snap, path);
+    assert.equal(still.changed, false);
+    assert.equal(still.snapshot, snap);
+    writeFileSync(
+      join(runDir, "presence.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: "20260818T150000Z-ab12",
+        name: snap.runs[0]?.name,
+        hue: snap.runs[0]?.hue,
+        pid: 999_999_991,
+        pageId: "home",
+        startedAt: "2020-01-01T00:00:00.000Z",
+        updatedAt: "2020-01-01T00:00:00.000Z",
+        stoppedAt: null,
+        brain: "unleash",
+      })}\n`,
+    );
+    const expired = expireLiveRuns(snap, path);
+    assert.equal(expired.changed, true);
+    assert.equal(expired.snapshot.runs[0]?.live, false);
+    const again = expireLiveRuns(expired.snapshot, path);
+    assert.equal(again.changed, false);
+  });
+
+  it("livePatchKey ignores object identity when nobody moved", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-ui-key-"));
+    const path = join(dir, "clickmonkey.json");
+    saveConfig(path, emptyConfig("http://127.0.0.1:4173/"));
+    const a = buildUiSnapshot(path);
+    const b = structuredClone(a);
+    assert.equal(livePatchKey(a), livePatchKey(b));
+    assert.equal(livePatchEqual(a, b), true);
+    b.runs = [{ id: "other", name: "x", hue: 1, live: true, pageId: "home", findingCount: 0 }];
+    assert.equal(livePatchEqual(a, b), false);
   });
 });

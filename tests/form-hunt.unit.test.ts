@@ -5,7 +5,9 @@ import {
   floodHunt,
   formGoalKey,
   huntScore,
+  isOnFormLock,
   mapFormGoals,
+  parseFormLock,
 } from "../src/brains/form-hunt.js";
 import { FOG_OLD_MS } from "../src/brains/npc.js";
 import { decideUnleash } from "../src/brains/unleash.js";
@@ -292,6 +294,49 @@ describe("decideFormHunt", () => {
     );
     assert.equal(d?.huntTarget, "invoices/page");
     assert.equal(d?.line, "open invoices");
+  });
+});
+
+describe("form lock", () => {
+  it("parses --form page and page/surface", () => {
+    assert.deepEqual(parseFormLock("clients_new"), { pageId: "clients_new", surfaceId: "page" });
+    assert.deepEqual(parseFormLock("clients_new/page"), { pageId: "clients_new", surfaceId: "page" });
+    assert.deepEqual(parseFormLock("settings/dialog"), { pageId: "settings", surfaceId: "dialog" });
+  });
+
+  it("hunts only the locked form page", () => {
+    const d = decideFormHunt(
+      {
+        view: viewOf({
+          actions: [
+            { id: "link_customers", opens: "customers" },
+            { id: "link_invoices", opens: "invoices" },
+          ],
+        }),
+        stepsUsed: 0,
+        pages: [home, customers, invoices],
+        lockForm: "invoices",
+      },
+      () => 0,
+    );
+    assert.equal(d?.note, "form hunt");
+    assert.match(d?.line ?? "", /invoices/);
+    assert.doesNotMatch(d?.line ?? "", /customers/);
+  });
+
+  it("does not hunt once standing on the locked page", () => {
+    const ctx = {
+      view: viewOf({
+        page: "invoices",
+        shown: [{ id: "amount", value: "", type: "text" as const }],
+        actions: [{ id: "submit" }],
+      }),
+      stepsUsed: 0,
+      pages: [home, customers, invoices],
+      lockForm: "invoices",
+    };
+    assert.equal(isOnFormLock(ctx), true);
+    assert.equal(decideFormHunt(ctx, () => 0), undefined);
   });
 });
 

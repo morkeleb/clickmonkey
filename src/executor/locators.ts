@@ -60,7 +60,7 @@ export function toPlaywrightLocator(root: Page | PwLocator, loc: Locator): PwLoc
     case "role":
       raw = root.getByRole(
         loc.value as AriaRole,
-        loc.name ? { name: loc.name, exact: true } : {},
+        loc.name ? { name: loc.name, exact: loc.nameExact === false ? false : true } : {},
       );
       break;
     case "label":
@@ -88,7 +88,7 @@ export function widgetLocator(
 export const ACTABLE_WAIT_MS = 15_000;
 const ACTABLE_POLL_MS = 50;
 
-export type ActableMiss = "missing" | "hidden" | "disabled" | "tiny" | "offscreen";
+export type ActableMiss = "missing" | "hidden" | "disabled" | "tiny" | "offscreen" | "covered";
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -128,17 +128,16 @@ async function pickActableNow(
   scroll: boolean,
 ): Promise<PwLocator | undefined> {
   const n = await loc.count().catch(() => 0);
-  let covered: PwLocator | undefined;
   for (let i = 0; i < n; i++) {
     const el = loc.nth(i);
     if (!(await isInteractable(el))) continue;
-    if (scroll) await el.scrollIntoViewIfNeeded().catch(() => undefined);
+    if (scroll) await el.scrollIntoViewIfNeeded({ timeout: 2_000 }).catch(() => undefined);
     if (!(await isInteractable(el))) continue;
     if (scroll && !(await inViewport(el, page))) continue;
-    if (!(await widgetIsCovered(el))) return el;
-    covered ??= el;
+    if (await widgetIsCovered(el)) continue;
+    return el;
   }
-  return covered;
+  return undefined;
 }
 
 /**
@@ -183,12 +182,14 @@ export async function explainActableMiss(loc: PwLocator, page: Page): Promise<Ac
       reasons.add("tiny");
       continue;
     }
-    await el.scrollIntoViewIfNeeded().catch(() => undefined);
+    await el.scrollIntoViewIfNeeded({ timeout: 2_000 }).catch(() => undefined);
     const after = await el.boundingBox().catch(() => null);
     const vp = page.viewportSize();
     if (after && vp && isOffscreen(after, vp)) reasons.add("offscreen");
+    if (await widgetIsCovered(el)) reasons.add("covered");
   }
   if (reasons.has("disabled")) return "disabled";
+  if (reasons.has("covered")) return "covered";
   if (reasons.has("offscreen")) return "offscreen";
   if (reasons.has("tiny")) return "tiny";
   return "hidden";
@@ -204,6 +205,8 @@ export function actableMissHeadline(key: string, miss: ActableMiss): string {
       return `${key} is too small to click`;
     case "offscreen":
       return `${key} is off-screen`;
+    case "covered":
+      return `${key} is covered by another layer`;
     default:
       return `${key} is not visible`;
   }
@@ -304,6 +307,46 @@ export async function disabledControlHints(loc: PwLocator, page: Page): Promise<
 
 export async function isPresentWidget(loc: PwLocator, page: Page): Promise<boolean> {
   return (await pickActable(loc, page)) !== undefined;
+}
+
+/**
+ * Save stayed disabled: fire the form's submit path instead.
+ * `requestSubmit` runs constraint validation; a raw `form.submit()` would skip it.
+ */
+export async function tryFallbackFormSubmit(page: Page, saveLoc: PwLocator): Promise<boolean> {
+  const fromForm = await saveLoc
+    .evaluate((el) => {
+      const node = el as { closest(sel: string): { requestSubmit?: () => void; querySelector(sel: string): unknown } | null };
+      const form = node.closest("form");
+      if (!form) return false;
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+        return true;
+      }
+      const inner = form.querySelector('button[type="submit"], input[type="submit"]') as {
+        disabled?: boolean;
+        click(): void;
+      } | null;
+      if (inner && !inner.disabled) {
+        inner.click();
+        return true;
+      }
+      return false;
+    })
+    .catch(() => false);
+  if (fromForm) return true;
+  const submitBtn = page.locator('button[type="submit"]:not([disabled]), input[type="submit"]:not([disabled])');
+  const n = await submitBtn.count().catch(() => 0);
+  for (let i = 0; i < n; i++) {
+    const btn = submitBtn.nth(i);
+    if (!(await btn.isVisible().catch(() => false))) continue;
+    const ok = await btn
+      .click({ timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (ok) return true;
+  }
+  return false;
 }
 
 /** Visible and enabled, including below the fold. Does not scroll the page. */

@@ -84,6 +84,79 @@
         padding: 24px;
         width: 420px;
       }
+      .cell-wrap {
+        position: relative;
+        margin-top: 48px;
+        width: 220px;
+        height: 32px;
+      }
+      .cell-wrap table {
+        width: 100%;
+        height: 32px;
+        border-collapse: collapse;
+      }
+      .cell-wrap td {
+        padding: 0 8px;
+        line-height: 32px;
+        white-space: nowrap;
+      }
+      .cell-wrap .fvs-menu-surface-base {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        z-index: 5;
+        border: 1px solid #ccc;
+      }
+      .tab-demo {
+        position: relative;
+        margin-top: 48px;
+        width: 420px;
+        height: 72px;
+      }
+      .tab-demo [role="tablist"] {
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        height: 32px;
+        z-index: 3;
+        background: #eee;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 0 8px;
+      }
+      .fvs-tab { padding: 4px 8px; }
+      .tab-demo [role="tabpanel"] {
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        height: 72px;
+        padding: 40px 8px 8px;
+      }
+      .tab-demo [role="tabpanel"].under-tabs {
+        padding: 0 8px;
+      }
+      .tab-demo [role="tabpanel"].under-tabs td {
+        line-height: 32px;
+      }
+      .step-demo {
+        position: relative;
+        margin-top: 48px;
+        width: 420px;
+        height: 48px;
+      }
+      .step-demo h1 {
+        margin: 0;
+        font-size: 24px;
+        line-height: 48px;
+      }
+      .step-demo .step {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+      }
     </style>
   </head>
   <body>
@@ -112,6 +185,49 @@
           <p>Centered dialog</p>
           <button type="button" data-testid="dialog-ok">OK</button>
         </div>
+      </div>
+
+      <div class="cell-wrap" data-testid="menu-cover">
+        <table>
+          <tr><td data-testid="total-cell">TOTAL $80</td></tr>
+        </table>
+        <div class="fvs-menu-surface-base" id="combo-list">Option A</div>
+      </div>
+      <input
+        type="text"
+        role="combobox"
+        aria-expanded="true"
+        aria-controls="combo-list"
+        aria-haspopup="listbox"
+        aria-label="Search rows"
+      />
+
+      <div class="tab-demo" data-testid="tab-cover">
+        <div role="tablist" class="fvs-tab-bar">
+          <div role="tab" class="fvs-tab" aria-selected="true" aria-controls="panel-code">Code</div>
+          <div role="tab" class="fvs-tab" aria-selected="false" aria-controls="panel-desc">Description</div>
+          <div role="tab" class="fvs-tab" aria-selected="false" aria-controls="panel-active">Active</div>
+        </div>
+        <div role="tabpanel" id="panel-code">
+          <table><tr><td>Visible code cell</td></tr></table>
+        </div>
+        <div role="tabpanel" id="panel-desc" hidden>
+          <table><tr><td>Hidden description cell</td></tr></table>
+        </div>
+        <div role="tabpanel" id="panel-active" class="under-tabs">
+          <table>
+            <tr>
+              <td>Code</td>
+              <td>Description</td>
+              <td>Active</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="step-demo" data-testid="step-cover">
+        <h1 data-testid="step-heading">Project heading</h1>
+        <div class="step" data-testid="stepper-step">1</div>
       </div>
     </main>
   </body>

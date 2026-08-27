@@ -36,6 +36,104 @@ export type TextOcclusionHit = {
 
 const OVERLAY_KINDS = new Set<string>(["listbox", "menu", "dialog", "popover", "tooltip"]);
 
+/** Hyphen/BEM class parts — `fvs-menu-surface-base` → menu, surface. */
+export function classTokens(className: string | undefined | null): string[] {
+  return String(className || "")
+    .toLowerCase()
+    .split(/[\s._-]+/)
+    .filter(Boolean);
+}
+
+function consecutiveTokens(tokens: string[], parts: string[]): boolean {
+  if (parts.length === 0) return false;
+  if (parts.length === 1) return tokens.includes(parts[0]!);
+  for (let i = 0; i <= tokens.length - parts.length; i++) {
+    let ok = true;
+    for (let j = 0; j < parts.length; j++) {
+      if (tokens[i + j] !== parts[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+/** Menu-surface / mdc-menu / listbox class tokens — no role required. */
+export function overlayKindFromClass(
+  className: string | undefined | null,
+): OverlayKind | undefined {
+  const tokens = classTokens(className);
+  if (consecutiveTokens(tokens, ["menu", "surface"]) || consecutiveTokens(tokens, ["mdc", "menu"])) {
+    return "menu";
+  }
+  if (tokens.includes("listbox")) return "listbox";
+  return undefined;
+}
+
+export function overlayKindFromNode(opts: {
+  role?: string;
+  tag?: string;
+  className?: string;
+  dialogOpen?: boolean;
+  ariaModal?: boolean;
+  ariaHidden?: boolean;
+  popoverOpen?: boolean;
+  comboboxPopup?: boolean;
+}): OverlayKind | undefined {
+  if (opts.ariaHidden) return undefined;
+  const role = (opts.role || "").toLowerCase();
+  const tag = (opts.tag || "").toLowerCase();
+  if ((tag === "dialog" && opts.dialogOpen) || role === "dialog" || opts.ariaModal) {
+    return "dialog";
+  }
+  if (role === "tooltip") return "tooltip";
+  if (role === "menu") return "menu";
+  if (role === "listbox") return "listbox";
+  if (opts.popoverOpen) return "popover";
+  const fromClass = overlayKindFromClass(opts.className);
+  if (fromClass) return fromClass;
+  if (opts.comboboxPopup) return "listbox";
+  return undefined;
+}
+
+/** Tab chrome (`role=tab` / class token `tab`), not the word in copy. */
+export function isTabChrome(opts: { role?: string; className?: string }): boolean {
+  const role = (opts.role || "").toLowerCase();
+  if (role === "tab" || role === "tablist") return true;
+  if (role === "tabpanel") return false;
+  const tokens = classTokens(opts.className);
+  if (tokens.includes("tabpanel")) return false;
+  return tokens.includes("tab");
+}
+
+/** Stepper step via role/class/testid — stepper-step, MDC/mat step, class token `step`. */
+export function isStepperStep(opts: {
+  role?: string;
+  className?: string;
+  testid?: string;
+}): boolean {
+  const role = (opts.role || "").toLowerCase();
+  const testid = (opts.testid || "").toLowerCase();
+  const cls = (opts.className || "").toLowerCase();
+  const blob = `${role} ${testid} ${cls}`;
+  if (blob.includes("stepper-step") || blob.includes("mdc-step") || blob.includes("mat-step")) {
+    return true;
+  }
+  const tokens = classTokens(`${cls} ${testid} ${role}`);
+  return tokens.includes("stepper") || tokens.includes("step");
+}
+
+export function isUnselectedTabpanel(opts: {
+  hidden?: boolean;
+  ariaHidden?: boolean;
+  tabSelected?: boolean | null;
+}): boolean {
+  if (opts.hidden || opts.ariaHidden) return true;
+  return opts.tabSelected === false;
+}
+
 export function clipWhere(text: string, max = WHERE_MAX): string {
   const one = String(text || "").replace(/\s+/g, " ").trim();
   if (!one) return "";
@@ -224,7 +322,7 @@ const COLLECT_SRC = `(() => {
 
   function shown(el) {
     if (!el) return false;
-    if (el.getAttribute && el.getAttribute("aria-hidden") === "true") return false;
+    if (el.closest && el.closest("[inert], [hidden], [aria-hidden='true']")) return false;
     if (typeof el.checkVisibility === "function") {
       if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
     }
@@ -236,6 +334,126 @@ const COLLECT_SRC = `(() => {
     if (r.bottom <= 0 || r.right <= 0) return false;
     if (r.top >= vh || r.left >= vw) return false;
     return true;
+  }
+
+  function classTokens(el) {
+    var cls = (el && el.getAttribute && el.getAttribute("class")) || "";
+    return String(cls).toLowerCase().split(/[\\s._-]+/).filter(Boolean);
+  }
+
+  function consecutiveTokens(tokens, parts) {
+    var i, j, ok;
+    if (!parts.length) return false;
+    if (parts.length === 1) {
+      for (i = 0; i < tokens.length; i++) if (tokens[i] === parts[0]) return true;
+      return false;
+    }
+    for (i = 0; i <= tokens.length - parts.length; i++) {
+      ok = true;
+      for (j = 0; j < parts.length; j++) {
+        if (tokens[i + j] !== parts[j]) { ok = false; break; }
+      }
+      if (ok) return true;
+    }
+    return false;
+  }
+
+  function overlayKindFromClass(el) {
+    var tokens = classTokens(el);
+    if (consecutiveTokens(tokens, ["menu", "surface"]) || consecutiveTokens(tokens, ["mdc", "menu"])) {
+      return "menu";
+    }
+    if (consecutiveTokens(tokens, ["listbox"])) return "listbox";
+    return "";
+  }
+
+  function isOpenComboboxPopup(node) {
+    if (!node) return false;
+    var id = node.id && String(node.id).trim();
+    if (!id) return false;
+    var expanded = document.querySelectorAll("[aria-expanded='true']");
+    var i, j;
+    for (i = 0; i < expanded.length; i++) {
+      var ex = expanded[i];
+      var role = (ex.getAttribute("role") || "").toLowerCase();
+      var haspopup = (ex.getAttribute("aria-haspopup") || "").toLowerCase();
+      var combo = role === "combobox" || haspopup === "listbox" || haspopup === "menu" || haspopup === "true";
+      if (!combo) continue;
+      var ids = ((ex.getAttribute("aria-controls") || "") + " " + (ex.getAttribute("aria-owns") || "")).trim().split(/\\s+/);
+      for (j = 0; j < ids.length; j++) {
+        if (ids[j] === id) return true;
+      }
+    }
+    return false;
+  }
+
+  function isTabChromeNode(node) {
+    if (!node || !node.getAttribute) return false;
+    var role = (node.getAttribute("role") || "").toLowerCase();
+    if (role === "tab" || role === "tablist") return true;
+    if (role === "tabpanel") return false;
+    var tokens = classTokens(node);
+    var i;
+    for (i = 0; i < tokens.length; i++) if (tokens[i] === "tabpanel") return false;
+    for (i = 0; i < tokens.length; i++) if (tokens[i] === "tab") return true;
+    return false;
+  }
+
+  function isStepperStepNode(node) {
+    if (!node || !node.getAttribute) return false;
+    var role = (node.getAttribute("role") || "").toLowerCase();
+    var testid = (
+      node.getAttribute("data-testid") ||
+      node.getAttribute("data-test-id") ||
+      node.getAttribute("data-test") ||
+      node.getAttribute("data-cy") ||
+      ""
+    ).toLowerCase();
+    var cls = (node.getAttribute("class") || "").toLowerCase();
+    var blob = role + " " + testid + " " + cls;
+    if (blob.indexOf("stepper-step") >= 0 || blob.indexOf("mdc-step") >= 0 || blob.indexOf("mat-step") >= 0) {
+      return true;
+    }
+    var tokens = classTokens(node).concat(String(testid).split(/[\\s._-]+/).filter(Boolean)).concat(role.split(/[\\s._-]+/).filter(Boolean));
+    var i;
+    for (i = 0; i < tokens.length; i++) {
+      if (tokens[i] === "stepper" || tokens[i] === "step") return true;
+    }
+    return false;
+  }
+
+  function inUnselectedTabpanel(el) {
+    var node = el;
+    while (node && node !== document.body && node !== document.documentElement) {
+      if (!node.getAttribute) {
+        node = node.parentElement;
+        continue;
+      }
+      var role = (node.getAttribute("role") || "").toLowerCase();
+      var tokens = classTokens(node);
+      var panel = role === "tabpanel";
+      var i;
+      if (!panel) {
+        for (i = 0; i < tokens.length; i++) if (tokens[i] === "tabpanel") { panel = true; break; }
+      }
+      if (panel) {
+        if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return true;
+        var id = node.id && String(node.id).trim();
+        if (id) {
+          var tabs = document.querySelectorAll("[role='tab'][aria-controls]");
+          var t, c;
+          for (t = 0; t < tabs.length; t++) {
+            var controls = (tabs[t].getAttribute("aria-controls") || "").split(/\\s+/);
+            for (c = 0; c < controls.length; c++) {
+              if (controls[c] !== id) continue;
+              if (tabs[t].getAttribute("aria-selected") === "false") return true;
+            }
+          }
+        }
+      }
+      node = node.parentElement;
+    }
+    return false;
   }
 
   function kindOf(el) {
@@ -278,6 +496,13 @@ const COLLECT_SRC = `(() => {
         var pop = false;
         try { pop = node.matches(":popover-open"); } catch (e) {}
         if (pop) return { kind: "popover", el: node };
+      }
+      var clsKind = overlayKindFromClass(node);
+      if (clsKind && node.getAttribute("aria-hidden") !== "true" && shown(node)) {
+        return { kind: clsKind, el: node };
+      }
+      if (isOpenComboboxPopup(node) && node.getAttribute("aria-hidden") !== "true" && shown(node)) {
+        return { kind: "listbox", el: node };
       }
       node = node.parentElement;
     }
@@ -365,6 +590,18 @@ const COLLECT_SRC = `(() => {
     return false;
   }
 
+  function expectedChromeCover(top, textEl) {
+    var node = top;
+    var depth = 0;
+    while (node && node !== document.body && node !== document.documentElement && depth < 8) {
+      if (textEl.contains(node) || node.contains(textEl)) break;
+      if (isTabChromeNode(node) || isStepperStepNode(node)) return true;
+      node = node.parentElement;
+      depth++;
+    }
+    return false;
+  }
+
   function describeCover(top, textEl) {
     var node = top;
     var depth = 0;
@@ -411,6 +648,7 @@ const COLLECT_SRC = `(() => {
     if (hits.length >= MAX_HITS) break;
     var el = nodes[i];
     if (!shown(el)) continue;
+    if (inUnselectedTabpanel(el)) continue;
     var text = (el.innerText || "").replace(/\\s+/g, " ").trim();
     if (!text) continue;
     var list = el.getClientRects();
@@ -438,6 +676,7 @@ const COLLECT_SRC = `(() => {
       var coverInfo = overlayInfo(top);
       if (coverInfo.overlay && (textOverlay.overlayId !== coverInfo.overlayId)) continue;
       if (stickyChromeCover(top, el)) continue;
+      if (expectedChromeCover(top, el)) continue;
       occluded += 1;
       if (!cover) cover = describeCover(top, el);
     }

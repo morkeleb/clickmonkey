@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { assertNotLegacyConfig, Config, LeashFile } from "../schema/config.js";
 import { emptyDraft, PageModelDraft, parsePageModelDraft } from "../schema/page-model.js";
 import { applyMissingPageDescriptions } from "../surveyor/describe.js";
@@ -33,6 +34,21 @@ function leashPayload(
 
 function readMapFile(path: string, dropUnknown = false): PageModelDraft {
   return parsePageModelDraft(JSON.parse(readFileSync(path, "utf8")), { dropUnknown });
+}
+
+/** Load a sitemap JSON (workspace map.json or another snapshot). */
+export function loadMapFromPath(path: string): PageModelDraft {
+  if (!existsSync(path)) throw new Error(`map not found: ${path}`);
+  const map = readMapFile(path);
+  applyMissingPageDescriptions(map.pages);
+  return map;
+}
+
+/** Swap `config.map` for a file next to the leash or an absolute path. */
+export function configWithMap(config: Config, mapFile: string, configPath: string): Config {
+  const resolved = isAbsolute(mapFile) ? mapFile : resolve(dirname(configPath), mapFile);
+  const map = absorbLeftoverFog(configPath, loadMapFromPath(resolved));
+  return Config.parse({ ...config, map });
 }
 
 export function loadConfig(path: string, opts?: { lenientMap?: boolean }): Config {

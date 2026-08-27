@@ -101,11 +101,76 @@
         <div id="matter-list" role="listbox" hidden></div>
         <input type="hidden" name="matterId" id="matterId" />
 
+        <label for="empty-vendor">Empty vendor</label>
+        <input
+          id="empty-vendor"
+          name="emptyVendor"
+          data-testid="empty-vendor"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="empty-vendor-list"
+          autocomplete="off"
+        />
+        <div id="empty-vendor-list" role="listbox" hidden>
+          <div>No vendors found</div>
+        </div>
+
+        <label for="party">Party</label>
+        <input
+          id="party"
+          name="party"
+          data-testid="party"
+          role="combobox"
+          placeholder="Select a party"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="party-list"
+          autocomplete="off"
+          required
+        />
+        <div id="party-list" role="listbox" hidden>
+          <div>No parties found</div>
+        </div>
+
+        <label for="ownerid">Owner</label>
+        <input
+          id="ownerid"
+          name="ownerid"
+          data-testid="ownerid"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="ownerid-list"
+          autocomplete="off"
+        />
+        <div id="ownerid-list" role="listbox" hidden>
+          <div>No owners found</div>
+        </div>
+
+        <label for="region">Region</label>
+        <input
+          id="region"
+          name="region"
+          data-testid="region"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="region-list"
+          autocomplete="off"
+        />
+        <ul id="region-list" role="listbox" hidden>
+          <li role="option" style="pointer-events: none"><span>North</span></li>
+          <li role="option" style="pointer-events: none"><span>South</span></li>
+        </ul>
+        <input type="hidden" name="regionId" id="regionId" />
+
         <button type="submit" data-testid="submit">Create</button>
       </form>
     </main>
     <script>
       document.body.appendChild(document.getElementById("people-list"));
+      document.body.appendChild(document.getElementById("industry-list"));
 
       function bindSearch(opts) {
         const { input, list, hid, wrap, debounceMs } = opts;
@@ -200,15 +265,55 @@
         });
       })();
 
+      function bindEmptyList(id, listId) {
+        const input = document.getElementById(id);
+        const list = document.getElementById(listId);
+        function open() {
+          list.hidden = false;
+          input.setAttribute("aria-expanded", "true");
+        }
+        input.addEventListener("focus", open);
+        input.addEventListener("input", open);
+      }
+      bindEmptyList("empty-vendor", "empty-vendor-list");
+      bindEmptyList("party", "party-list");
+      bindEmptyList("ownerid", "ownerid-list");
+
+      (function bindRegion() {
+        const input = document.getElementById("region");
+        const list = document.getElementById("region-list");
+        const hid = document.getElementById("regionId");
+        function open() {
+          list.hidden = false;
+          input.setAttribute("aria-expanded", "true");
+        }
+        input.addEventListener("focus", open);
+        input.addEventListener("input", open);
+        list.addEventListener("mousedown", (e) => {
+          const o = e.target.closest("[role=option]");
+          if (!o) return;
+          e.preventDefault();
+          input.value = o.textContent.trim();
+          hid.value = o.textContent.trim();
+          list.hidden = true;
+          input.setAttribute("aria-expanded", "false");
+        });
+      })();
+
       (function bindIndustry() {
         const input = document.getElementById("industry");
         const list = document.getElementById("industry-list");
         const hid = document.getElementById("industryId");
         const all = [...list.querySelectorAll("[role=option]")];
+        let timer;
+        // searchOnEmpty: server list paints after ~600ms (longer than a 500ms open wait).
         function open() {
-          for (const o of all) o.hidden = false;
-          list.hidden = false;
-          input.setAttribute("aria-expanded", "true");
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            for (const o of all) o.hidden = false;
+            list.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+          }, 600);
         }
         input.addEventListener("focus", open);
         input.addEventListener("input", open);

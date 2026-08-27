@@ -5,8 +5,8 @@ import type { BrainContext, BrainDecision } from "./types.js";
 import {
   decideForm,
   dialogOpeners,
-  FORM_BURST_MAX,
   formatClick,
+  formFieldsToFill,
   formSubmitAction,
   formSubmitActions,
   formSubmitIsListPager,
@@ -24,16 +24,20 @@ import {
   listRowActions,
   pickAction,
   isEmptyStateAction,
-  looksLikeSearchField,
-  looksLikeRowSelectCheckbox,
+  isPrimaryFormCommit,
+  mappedPrimaryCommits,
+  listedTypeaheadOptions,
+  looksLikeUnfinishedForm,
+  looksLikeMidForm,
   looksLikeWizard,
+  emptyBodyFields,
   searchIsActive,
   stayActions,
   usableClicks,
   withoutNoops,
   type FillFn,
 } from "./unleash.js";
-import { decideFormHunt, FORM_HUNT_STAY_RATE } from "./form-hunt.js";
+import { decideFormHunt, FORM_HUNT_STAY_RATE, isOnFormLock } from "./form-hunt.js";
 import { fogHunger, modeFogKey, staleMsForPage, type WalkerModeName } from "../schema/fog.js";
 
 export type { WalkerModeName };
@@ -73,20 +77,46 @@ function hasSurfaceSubmit(ctx: BrainContext): boolean {
   const { view } = ctx;
   const legal = legalUnleashActions(view, ctx.pages);
   return Boolean(
-    formSubmitAction(legal, view.surface, view) ?? formSubmitAction(view.actions, view.surface, view),
+    formSubmitAction(legal, view.surface, view) ??
+      formSubmitAction(view.actions, view.surface, view) ??
+      mappedPrimaryCommits(view, ctx.pages)[0],
   );
 }
 
-function fillEmptyBurst(view: View, fill: FillFn): BrainDecision | undefined {
-  const empty = view.shown.filter(
-    (f) =>
-      !looksLikeSearchField(f) &&
-      !looksLikeRowSelectCheckbox(f) &&
-      (!f.value.trim() || f.value === "••••"),
-  );
+function hasEmptyFormField(view: View): boolean {
+  return emptyBodyFields(view).length > 0;
+}
+
+function formHitKey(ctx: BrainContext): string {
+  return `${ctx.view.page}/${ctx.view.surface}`;
+}
+
+function filledThisForm(ctx: BrainContext): boolean {
+  return (ctx.formHits?.[formHitKey(ctx)] ?? 0) > 0;
+}
+
+function hasCommit(ctx: BrainContext): boolean {
+  return ctx.view.actions.some(isPrimaryFormCommit) || mappedPrimaryCommits(ctx.view, ctx.pages).length > 0;
+}
+
+function hasListedTypeaheadOptions(view: View): boolean {
+  return listedTypeaheadOptions(view.actions).length > 0;
+}
+
+/** Empty body fields plus Save, a still-disabled create form, or we already started filling. */
+function shouldStayOnForm(ctx: BrainContext): boolean {
+  if (hasListedTypeaheadOptions(ctx.view) && hasCommit(ctx)) return true;
+  if (hasEmptyFormField(ctx.view)) {
+    if (hasCommit(ctx)) return true;
+    return looksLikeUnfinishedForm(ctx.view) || looksLikeMidForm(ctx.view) || filledThisForm(ctx);
+  }
+  return filledThisForm(ctx) && hasCommit(ctx);
+}
+
+function fillEmptyBurst(view: View, fill: FillFn, ctx?: BrainContext): BrainDecision | undefined {
+  const empty = formFieldsToFill(view, ctx, { checkboxes: false });
   if (empty.length === 0) return undefined;
-  const toFill = empty.slice(0, FORM_BURST_MAX);
-  const lines = toFill.map((field) =>
+  const lines = empty.map((field) =>
     formatStep({
       kind: "fill",
       surface: view.surface,
@@ -100,6 +130,12 @@ function fillEmptyBurst(view: View, fill: FillFn): BrainDecision | undefined {
 function hopOrChromeFallback(view: View, rng: () => number, ctx?: BrainContext): BrainDecision {
   const hunt = ctx ? decideFormHunt(ctx, rng) : undefined;
   if (hunt) return hunt;
+  if (ctx?.lockForm && isOnFormLock(ctx)) {
+    return { line: formatStep({ kind: "screenshot" }), note: "form lock" };
+  }
+  if (ctx?.lockForm) {
+    return { line: formatStep({ kind: "open", page: ctx.lockForm }), note: "form hunt" };
+  }
   const hop = hopPage(view, rng);
   if (!hop.line.startsWith("screenshot") || view.actions.length === 0) return hop;
   const actions = searchIsActive(view)
@@ -115,6 +151,12 @@ function huntOrLocal(
   rng: () => number,
   local: () => BrainDecision,
 ): BrainDecision {
+  if (ctx.lockForm) {
+    if (isOnFormLock(ctx)) return local();
+    const pinned = decideFormHunt(ctx, rng);
+    if (pinned) return pinned;
+    return local();
+  }
   if ((ctx.lootSteps ?? 0) > 0) return local();
   const hunt = decideFormHunt(ctx, rng);
   if (hunt && rng() >= FORM_HUNT_STAY_RATE) return hunt;
@@ -129,28 +171,32 @@ function decideNav(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDec
 
   if (legal.length === 0 && fields.length === 0) return hopOrChromeFallback(view, rng, ctx);
 
-  const leftover = fillEmptyBurst(view, fill);
+  const leftover = fillEmptyBurst(view, fill, ctx);
   if (leftover) return leftover;
 
   return huntOrLocal(ctx, rng, () => {
     const stayFresh = usableClicks(stay, ctx);
+    if (stayFresh.length > 0) {
+      return { line: formatClick(view.surface, pick(stayFresh, rng)) };
+    }
+    // stayActions already dropped add/remove while Save is present.
+    if (stay.length > 0) return hopOrChromeFallback(view, rng, ctx);
     const legalFresh = usableClicks(legal, ctx);
-    const pool = stayFresh.length > 0 ? stayFresh : legalFresh;
-    if (pool.length > 0) {
-      return { line: formatClick(view.surface, pick(pool, rng)) };
+    if (legalFresh.length > 0) {
+      return { line: formatClick(view.surface, pick(legalFresh, rng)) };
     }
     return hopOrChromeFallback(view, rng, ctx);
   });
 }
 
 function canCommit(ctx: BrainContext): boolean {
-  return ctx.writePolicy === "allow" || ctx.view.stack.length > 1;
+  return ctx.writePolicy === "allow" || ctx.view.stack.length > 1 || Boolean(ctx.lockForm);
 }
 
 function decideWizard(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDecision {
   const { view } = ctx;
   if (!canCommit(ctx)) {
-    const leftover = fillEmptyBurst(view, fill);
+    const leftover = fillEmptyBurst(view, fill, ctx);
     if (leftover) return { ...leftover, note: "wizard" };
     return hopOrChromeFallback(view, rng, ctx);
   }
@@ -160,7 +206,7 @@ function decideWizard(ctx: BrainContext, rng: () => number, fill: FillFn): Brain
     formSubmitActions(legal, view.surface, view).filter(isWizardAdvance),
     ctx.noopIds,
   );
-  const leftover = fillEmptyBurst(view, fill);
+  const leftover = fillEmptyBurst(view, fill, ctx);
   if (advances.length > 0) {
     const fills = leftover ? (leftover.lines ?? [leftover.line]) : [];
     const click = formatClick(view.surface, pick(advances, rng));
@@ -178,19 +224,24 @@ function decideWizard(ctx: BrainContext, rng: () => number, fill: FillFn): Brain
 function decideFormMode(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDecision {
   const { view } = ctx;
   const legal = legalUnleashActions(view, ctx.pages);
-  const commit = canCommit(ctx);
-  if (commit) {
+  if (canCommit(ctx)) {
     const form = decideForm(view, legal, rng, fill, ctx);
     if (form) return form;
-    return hopOrChromeFallback(view, rng, ctx);
   }
-  return fillEmptyBurst(view, fill) ?? decideNav(ctx, rng, fill);
+  const leftover = fillEmptyBurst(view, fill, ctx);
+  if (leftover) return leftover;
+  return hopOrChromeFallback(view, rng, ctx);
 }
 
 function decideList(ctx: BrainContext, rng: () => number, fill: FillFn): BrainDecision {
   const { view } = ctx;
-  const leftover = fillEmptyBurst(view, fill);
-  if (leftover) return { ...leftover, note: "list" };
+  const legal = legalUnleashActions(view, ctx.pages);
+  if (canCommit(ctx) && hasEmptyFormField(view)) {
+    const form = decideForm(view, legal, rng, fill, ctx);
+    if (form) return form;
+  }
+  const leftover = fillEmptyBurst(view, fill, ctx);
+  if (leftover) return leftover;
 
   return huntOrLocal(ctx, rng, () => decideListLocal(ctx, rng));
 }
@@ -216,14 +267,6 @@ function decideListLocal(ctx: BrainContext, rng: () => number): BrainDecision {
     return { line: formatClick(view.surface, pick(other, rng)), note: "list stay" };
   }
 
-  const legal = usableClicks(
-    legalUnleashActions(view, ctx.pages).filter((a) => !isListChrome(a)),
-    ctx,
-  );
-  if (legal.length > 0) {
-    return { line: formatClick(view.surface, pick(legal, rng)), note: "list stay" };
-  }
-
   return hopOrChromeFallback(view, rng, ctx);
 }
 
@@ -235,7 +278,12 @@ const wizardMode: WalkerMode = {
 
 const formMode: WalkerMode = {
   name: "form",
-  detect: (ctx) => ctx.view.shown.length > 0 && hasSurfaceSubmit(ctx),
+  detect: (ctx) =>
+    (ctx.view.shown.length > 0 && hasSurfaceSubmit(ctx)) ||
+    looksLikeUnfinishedForm(ctx.view) ||
+    looksLikeMidForm(ctx.view) ||
+    (filledThisForm(ctx) && hasEmptyFormField(ctx.view)) ||
+    (hasListedTypeaheadOptions(ctx.view) && hasSurfaceSubmit(ctx)),
   decide: decideFormMode,
 };
 
@@ -313,6 +361,10 @@ function modeHunger(ctx: BrainContext, name: WalkerModeName): number {
 
 export function detectWalkerMode(ctx: BrainContext): WalkerMode {
   if (wizardMode.detect(ctx)) return wizardMode;
+  // Empty fields + Save/Create, a create form whose Save is still disabled, or mid-fill.
+  if (formMode.detect(ctx) && shouldStayOnForm(ctx)) {
+    return formMode;
+  }
   const applicable = UNLEASH_MODES.filter((m) => m.name !== "nav" && m.name !== "wizard" && m.detect(ctx));
   if (applicable.length === 0) return navMode;
   let best = applicable[0]!;

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Focus order</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; }
+      form {
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 24px;
+        max-width: 20rem;
+      }
+      label { display: flex; flex-direction: column; gap: 4px; min-height: 56px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Focus order</h1>
+      <form id="order-form">
+        <button id="order-save" type="submit">Save</button>
+        <label>Email <input id="order-email" name="email" type="email" /></label>
+        <label>Name <input id="order-name" name="name" /></label>
+      </form>
+    </main>
+  </body>
+</html>

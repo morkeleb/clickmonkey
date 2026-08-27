@@ -42,6 +42,34 @@ describe("buildUiGraph", () => {
     assert.equal(home?.describedBy, "explore");
   });
 
+  it("does not emit Active tabs overflow chips as rooms", () => {
+    const g = buildUiGraph({
+      schemaVersion: 1,
+      app: "x",
+      generation: 1,
+      pages: [
+        {
+          id: "home",
+          path: "/",
+          ready: { by: "testId", value: "home" },
+          surfaces: [
+            {
+              id: "page",
+              kind: "page",
+              fields: [],
+              actions: [{ id: "button_active_tabs", by: "role", value: "button", name: "Active tabs", opens: "active_tabs" }],
+            },
+            { id: "active_tabs", kind: "dialog", fields: [], actions: [] },
+            { id: "active_tabs_4", kind: "dialog", fields: [], actions: [] },
+            { id: "create", kind: "dialog", fields: [], actions: [] },
+          ],
+        },
+      ],
+    });
+    assert.equal(g.nodes.some((n) => n.id === "home::create"), true);
+    assert.equal(g.nodes.some((n) => /active_tabs/.test(n.id)), false);
+  });
+
   it("labels pages by id so /login and /u/login stay distinct", () => {
     const g = buildUiGraph({
       schemaVersion: 1,
@@ -97,6 +125,94 @@ describe("buildUiGraph", () => {
     }, { hops: [{ from: "home", to: "vendors" }] });
     assert.ok(g.edges.some((e) => e.source === "login" && e.target === "home"));
     assert.ok(g.edges.some((e) => e.source === "home" && e.target === "vendors"));
+  });
+
+  it("hangs orphans off home even when home is in the intro chain", () => {
+    const g = buildUiGraph({
+      schemaVersion: 1,
+      app: "x",
+      generation: 1,
+      pages: [
+        {
+          id: "login",
+          path: "/login",
+          entry: true,
+          ready: { by: "testId", value: "login" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+        },
+        {
+          id: "home",
+          path: "/",
+          entry: true,
+          ready: { by: "testId", value: "home" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+        },
+        {
+          id: "settings",
+          path: "/settings",
+          ready: { by: "testId", value: "settings" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+        },
+        {
+          id: "vouchers",
+          path: "/accounts-payable/vouchers",
+          ready: { by: "testId", value: "vouchers" },
+          surfaces: [{ id: "page", kind: "page", fields: [], actions: [] }],
+        },
+      ],
+    });
+    assert.ok(g.edges.some((e) => e.source === "login" && e.target === "home"));
+    assert.ok(g.edges.some((e) => e.source === "home" && e.target === "vouchers"));
+    assert.equal(
+      g.edges.some((e) => e.source === "settings" && e.target === "vouchers"),
+      false,
+      "settings must not become the map hub",
+    );
+  });
+
+  it("does not draw site chrome opens that appear on many pages", () => {
+    const pages = ["home", "fees", "vendors", "vendors_new", "settings"].map((id, i) => ({
+      id,
+      path: id === "home" ? "/" : id === "vendors_new" ? "/vendors/new" : `/${id}`,
+      ready: { by: "testId" as const, value: id },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page" as const,
+          fields: [],
+          actions: [
+            {
+              id: "dashboard_tab_button",
+              by: "testId" as const,
+              value: "dash",
+              opens: "home",
+              status: "ok" as const,
+            },
+            ...(id === "vendors"
+              ? [
+                  {
+                    id: "button_new_vendor",
+                    by: "testId" as const,
+                    value: "new",
+                    opens: "vendors_new",
+                    status: "ok" as const,
+                  },
+                ]
+              : []),
+          ],
+        },
+      ],
+    }));
+    const g = buildUiGraph({ schemaVersion: 1, app: "x", generation: 1, pages });
+    assert.equal(
+      g.edges.some((e) => e.source === "fees" && e.target === "home"),
+      false,
+      "Dashboard tab on every room is not a door",
+    );
+    assert.ok(
+      g.edges.some((e) => e.source === "vendors" && e.target === "vendors_new"),
+      "New Vendor on the vendors list is a door",
+    );
   });
 });
 

@@ -11,6 +11,7 @@ import {
   isReflowDocumentLeak,
   isFixedChromeInViewport,
   isIntendedScroll,
+  isPopupOverflowLayer,
   isSmallOpenDialog,
   overflowLayoutIssue,
   scanOverflowMobile,
@@ -78,7 +79,7 @@ describe("overflow geometry", () => {
     );
   });
 
-  it("treats a dialog under 70% viewport width as an overlay", () => {
+  it("treats a card-sized dialog as an overlay at every viewport", () => {
     assert.equal(
       isSmallOpenDialog({ left: 400, right: 800, top: 120, bottom: 400 }, vw),
       true,
@@ -87,6 +88,28 @@ describe("overflow geometry", () => {
       isSmallOpenDialog({ left: 40, right: 1240, top: 20, bottom: 700 }, vw),
       false,
     );
+    assert.equal(
+      isSmallOpenDialog({ left: 20, right: 300, top: 80, bottom: 400 }, 320),
+      true,
+    );
+    assert.equal(
+      isSmallOpenDialog({ left: 16, right: 304, top: 40, bottom: 360 }, 375),
+      true,
+    );
+  });
+
+  it("skips popup layers by role and class token, not in-flow page blocks", () => {
+    assert.equal(isPopupOverflowLayer({ role: "listbox" }), true);
+    assert.equal(isPopupOverflowLayer({ role: "menu" }), true);
+    assert.equal(isPopupOverflowLayer({ role: "tooltip" }), true);
+    assert.equal(isPopupOverflowLayer({ popoverOpen: true }), true);
+    assert.equal(isPopupOverflowLayer({ className: "fvs-menu-surface" }), true);
+    assert.equal(isPopupOverflowLayer({ className: "mdc-menu" }), true);
+    assert.equal(isPopupOverflowLayer({ className: "fvs-skrim" }), true);
+    assert.equal(isPopupOverflowLayer({ className: "mdc-dialog__scrim" }), true);
+    assert.equal(isPopupOverflowLayer({ className: "modal-backdrop" }), true);
+    assert.equal(isPopupOverflowLayer({ className: "wide hero-grid" }), false);
+    assert.equal(isPopupOverflowLayer({ role: "main", className: "wide" }), false);
   });
 });
 

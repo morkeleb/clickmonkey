@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Adornment clip</title>
+    <style>
+      body { font: 16px/1.4 sans-serif; margin: 24px; }
+      .field {
+        position: relative;
+        display: inline-block;
+        width: 72px;
+        margin-right: 24px;
+        vertical-align: top;
+      }
+      .field input {
+        box-sizing: border-box;
+        width: 100%;
+        font: 16px/1.2 ui-monospace, monospace;
+        padding: 6px 4px;
+        border: 1px solid #333;
+        background: #fff;
+      }
+      .field.padded input { padding-right: 28px; }
+      .field .icon {
+        position: absolute;
+        right: 2px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 16px;
+        height: 16px;
+        pointer-events: none;
+      }
+      [role="tablist"] { margin-top: 24px; }
+      [role="tab"].profit {
+        position: relative;
+        display: inline-block;
+        font: 16px/20px system-ui, sans-serif;
+        padding: 8px 0 8px 12px;
+        white-space: nowrap;
+      }
+      [role="tab"].profit .adorn {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 18px;
+        height: 18px;
+      }
+      .when { margin-top: 24px; }
+    </style>
+  </head>
+  <body>
+    <main data-testid="home">
+      <div class="field" data-testid="clipped-amount">
+        <input type="text" value="100.00%" aria-label="clipped amount" />
+        <svg class="icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <rect x="1" y="2" width="14" height="12" fill="none" stroke="#111" stroke-width="1.5" />
+          <path d="M1 6h14" stroke="#111" />
+        </svg>
+      </div>
+      <div class="field padded" data-testid="padded-amount">
+        <input type="text" value="88.00%" aria-label="padded amount" />
+        <svg class="icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <rect x="1" y="2" width="14" height="12" fill="none" stroke="#111" stroke-width="1.5" />
+          <path d="M1 6h14" stroke="#111" />
+        </svg>
+      </div>
+      <div role="tablist">
+        <div role="tab" class="profit" data-testid="profit-tab">Profitability<svg class="adorn" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><text x="8" y="13" text-anchor="middle" font-size="14">$</text></svg></div>
+      </div>
+      <p class="when">
+        <label>When <input type="date" value="2024-06-15" data-testid="when" /></label>
+      </p>
+    </main>
+  </body>
+</html>

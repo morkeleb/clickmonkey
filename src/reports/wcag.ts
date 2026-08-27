@@ -20,7 +20,6 @@ export type ChapterExtras = {
 
 const TESTABILITY = new Set([
   "opaqueControl",
-  "clickableNonWidget",
   "unnamedDialog",
   "unlabeledField",
   "unnamedControl",
@@ -28,6 +27,10 @@ const TESTABILITY = new Set([
   "noMain",
   "occludedWidget",
   "duplicateName",
+  "unknownId",
+  "unresolvedId",
+  "driftId",
+  "locatorAmbiguous",
 ]);
 
 const VISUAL = new Set([
@@ -74,10 +77,19 @@ const QUALITY = new Set([
   "console.error",
   "console.warning",
   "pageError",
+  "notFound",
+  "httpError",
+  "serverRefusedSubmit",
+  "acceptedInvalid",
+  "throwInsteadOfInvalid",
+  "fenceViolation",
+  "writePolicyBlocked",
+  "uiIssue",
+  "expectFailed",
 ]);
 
 /** Axe ids we emit (wcag2a/aa + 2.1) plus extras. Best-practice extras omit sc/level. */
-const A11Y: Record<string, WcagEntry> = {
+export const A11Y = {
   "area-alt": { sc: "1.1.1", level: "A", chapter: "accessibility", title: "Non-text content" },
   "aria-allowed-attr": { sc: "4.1.2", level: "A", chapter: "accessibility", title: "Name, role, value" },
   "aria-braille-equivalent": { sc: "4.1.2", level: "A", chapter: "accessibility" },
@@ -162,7 +174,11 @@ const A11Y: Record<string, WcagEntry> = {
   focusObscured: { sc: "2.4.11", level: "AA", chapter: "accessibility", title: "Focus not obscured" },
   targetSize: { sc: "2.5.8", level: "AA", chapter: "accessibility", title: "Target size" },
   textSpacing: { sc: "1.4.12", level: "AA", chapter: "accessibility", title: "Text spacing" },
-};
+  silentSubmit: { sc: "3.3.1", level: "A", chapter: "accessibility", title: "Error Identification" },
+  clickableNonWidget: { sc: "2.1.1", level: "A", chapter: "accessibility", title: "Keyboard" },
+  keyboardTrap: { sc: "2.1.2", level: "A", chapter: "accessibility", title: "No keyboard trap" },
+  focusOrder: { sc: "2.4.3", level: "A", chapter: "accessibility", title: "Focus order" },
+} as const satisfies Record<string, WcagEntry>;
 
 const REFLOW_OVERFLOW: WcagEntry = {
   sc: "1.4.10",
@@ -204,6 +220,33 @@ export function splitOverflowByViewport(
   }));
 }
 
+const SILENT_SUBMIT = /did not submit the form: no navigation, no write request, and no invalid fields/i;
+/** Write the UI sent; 400/409/422 is the server rejecting the value, not a missing page. */
+const SERVER_REFUSED_SUBMIT = /\bHTTP\s+(400|409|422)\s+(POST|PUT|PATCH|DELETE)\b/i;
+const ACCEPTED_INVALID =
+  /accepted empty|did not catch junk|did not catch this input|accepted a blank required|accepted input that should have been rejected/i;
+const THROW_INSTEAD_OF_INVALID = /validation is missing|junk value that crashes/i;
+
+/** Save stayed put with no write and no accessible invalid (WCAG 3.3.1). */
+export function isSilentSubmitFinding(message?: string): boolean {
+  return Boolean(message && SILENT_SUBMIT.test(message));
+}
+
+/** Write (POST/PUT/PATCH/DELETE) came back 400/409/422 — UI let it through, API refused. */
+export function isServerRefusedSubmitFinding(message?: string): boolean {
+  return Boolean(message && SERVER_REFUSED_SUBMIT.test(message));
+}
+
+/** Blank required or junk: no field error, and the form sent that value or left the page. */
+export function isAcceptedInvalidFinding(message?: string): boolean {
+  return Boolean(message && ACCEPTED_INVALID.test(message));
+}
+
+/** Junk that should have been a field error crashed the page instead. */
+export function isThrowInsteadOfInvalidFinding(message?: string): boolean {
+  return Boolean(message && THROW_INSTEAD_OF_INVALID.test(message));
+}
+
 /** True only when this row is a single 320 reflow class, not a mixed where blob. */
 export function isOverflowAt320(extras?: ChapterExtras): boolean {
   if (extras?.viewport === "320") return true;
@@ -213,10 +256,22 @@ export function isOverflowAt320(extras?: ChapterExtras): boolean {
 }
 
 export function wcagOf(rule: string, extras?: ChapterExtras): WcagEntry {
+  if (isSilentSubmitFinding(extras?.message) || isSilentSubmitFinding(rule)) {
+    return A11Y.silentSubmit;
+  }
+  if (isServerRefusedSubmitFinding(extras?.message) || rule === "serverRefusedSubmit") {
+    return { chapter: "quality" };
+  }
+  if (isAcceptedInvalidFinding(extras?.message) || rule === "acceptedInvalid") {
+    return { chapter: "quality" };
+  }
+  if (isThrowInsteadOfInvalidFinding(extras?.message) || rule === "throwInsteadOfInvalid") {
+    return { chapter: "quality" };
+  }
   if (rule === "overflow") {
     return isOverflowAt320(extras) ? REFLOW_OVERFLOW : { chapter: "visual" };
   }
-  const a11y = A11Y[rule];
+  const a11y = (A11Y as Record<string, WcagEntry>)[rule];
   if (a11y) return a11y;
   if (TESTABILITY.has(rule)) return { chapter: "testability" };
   if (VISUAL.has(rule)) return { chapter: "visual" };
@@ -246,8 +301,8 @@ export function coverageLines(failedRules: Iterable<{ rule: string; extras?: Cha
   }
   const n = (count: number) => `${count} rule${count === 1 ? "" : "s"}`;
   return [
-    "Checked: WCAG 2.0/2.1 A and AA (axe subset), plus 2.2 AA 2.4.11 and 2.5.8 (DOM), 1.4.10 (320 overflow), 1.4.12 (text spacing).",
-    "Not checked: 3.3.8, 2.5.7, AAA, pages we did not land on.",
+    "Checked: WCAG 2.0/2.1 A and AA (axe subset), plus 2.1.1 (clickable non-widget), 2.1.2 (form Tab trap), 2.4.3 (form focus order), 2.2 AA 2.4.11 and 2.5.8 (DOM), 1.4.10 (320 overflow), 1.4.12 (text spacing).",
+    "Not checked: 1.2.x media, 1.3.2 sequence, 2.1.4 shortcuts, 2.5.1/2.5.2 pointer, 2.5.7 dragging, 3.2.x consistent, 3.3.3–3.3.4/3.3.7–3.3.8, 4.1.3 status, AAA, pages we did not land on.",
     `Fails on covered SCs: A — ${n(a.size)}; AA — ${n(aa.size)}.`,
   ];
 }

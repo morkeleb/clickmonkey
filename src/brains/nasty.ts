@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import type { ShownField } from "../schema/view.js";
 import type { BrainContext, BrainDecision } from "./types.js";
 import { fakerFill } from "./faker-fill.js";
-import { isListedControl } from "../executor/field-control.js";
-import { pickSelectOption } from "../executor/select-options.js";
+import { looksLikeDateMask } from "../executor/date-mask.js";
+import { isListedControl, pickSelectOption } from "../executor/select-options.js";
 import { decideUnleashWork } from "./unleash.js";
 
 const defaultDir = join(dirname(fileURLToPath(import.meta.url)), "../../payloads");
@@ -193,7 +193,9 @@ export function pickNastyFill(field: ShownField, rng: () => number = Math.random
     return pickSelectOption(field.options, rng) ?? "";
   }
   const html = (field.constraints?.htmlType ?? field.type ?? "").toLowerCase();
-  if (NATIVE_TEMPORAL.has(html)) return fakerFill(field, rng);
+  if (NATIVE_TEMPORAL.has(html) || looksLikeDateMask(field.constraints?.placeholder)) {
+    return fakerFill(field, rng);
+  }
   if (html === "number") {
     const pool = numericCatalogPool("number");
     if (pool.length === 0) return fakerFill(field, rng);

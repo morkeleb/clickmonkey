@@ -83,6 +83,55 @@ describe("scanOverflowMobile", () => {
   });
 });
 
+describe("scanOverflow overlay skip", () => {
+  it("does not treat a card-sized dialog as the page at 320 or 375", async () => {
+    await withPage(html, async (page) => {
+      await setCase(page, "fit");
+      await page.evaluate(() => {
+        document.getElementById("phone-dialog")!.classList.add("open");
+      });
+      const reflow = await scanOverflowReflow(page);
+      assert.equal(
+        reflow.some((i) => i.rule === "overflow"),
+        false,
+        `card-sized dialog at 320 is an overlay, got ${JSON.stringify(reflow)}`,
+      );
+      const mobile = await scanOverflowMobile(page);
+      assert.equal(
+        mobile.some((i) => i.rule === "overflow"),
+        false,
+        `card-sized dialog at 375 is an overlay, got ${JSON.stringify(mobile)}`,
+      );
+    });
+  });
+
+  it("does not file a scrim/backdrop or an open menu-surface dropdown", async () => {
+    await withPage(html, async (page) => {
+      await setCase(page, "fit");
+      await page.evaluate(() => {
+        document.getElementById("skrim-demo")!.classList.add("open");
+      });
+      const skrim = await scanOverflow(page);
+      assert.equal(
+        skrim.some((i) => i.rule === "overflow"),
+        false,
+        `scrim/backdrop is not page overflow, got ${JSON.stringify(skrim)}`,
+      );
+
+      await page.evaluate(() => {
+        document.getElementById("skrim-demo")!.classList.remove("open");
+        document.getElementById("menu-demo")!.classList.add("open");
+      });
+      const menu = await scanOverflow(page);
+      assert.equal(
+        menu.some((i) => i.rule === "overflow"),
+        false,
+        `open menu-surface is not page overflow, got ${JSON.stringify(menu)}`,
+      );
+    });
+  });
+});
+
 describe("scanOverflowReflow", () => {
   it("flags a min-width:340px block at 320px, not at 1280 or 375, and restores the 1280 viewport", async () => {
     await withPage(html, async (page) => {

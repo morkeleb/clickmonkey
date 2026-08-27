@@ -10,8 +10,10 @@ it in `clickmonkey/`. The log is a line DSL. The view is what a brain
 snapshot, and a `look` block (font palette + hit-tested cover) — not HTML.
 
 What it harvests vs what QA still owns: [docs/issue-classes.md](docs/issue-classes.md).
+Stable finding ids (T/V/A/Q): [docs/findings](docs/findings/index.md) (GitHub Pages: https://morkeleb.github.io/clickmonkey/findings/). Leftover WCAG a person still tests: [qa-left](https://morkeleb.github.io/clickmonkey/findings/qa-left/).
 Jobs, modes, and fog: [docs/walkers.md](docs/walkers.md).
 Fog ledger and hunger: [docs/fog.md](docs/fog.md).
+How to read the dashboard map (haze, m/u/n pips, live letters): [docs/map.md](docs/map.md) (GitHub Pages: https://morkeleb.github.io/clickmonkey/map/).
 Host-LLM MCP (explore, then freeze and prove a spec): [docs/mcp.md](docs/mcp.md).
 
 0.0.7 stays tagged. Those configs will not run here.
@@ -63,10 +65,12 @@ page and appends it to `clickmonkey/runs/<id>/log.txt`.
 
 The map is fog of war. Walkers have **jobs**; on a tile they pick a **mode**.
 Jobs, modes, and fog hunger: [docs/walkers.md](docs/walkers.md), [docs/fog.md](docs/fog.md).
+Dashboard haze and m/u/n pips: [docs/map.md](docs/map.md).
 
 ```bash
 clickmonkey map --steps 80               # grow pages/surfaces, never fill
 clickmonkey unleash --steps 200          # hunt mapped forms, fill, submit
+clickmonkey unleash --form clients_new   # pin one mapped form, fill, submit, stop
 clickmonkey nasty --steps 200            # junk in those forms (site you own)
 clickmonkey explore --charter "…"        # exploratory testing, no MCP (needs brain)
 clickmonkey mcp                          # host-LLM walk, then freeze/replay specs

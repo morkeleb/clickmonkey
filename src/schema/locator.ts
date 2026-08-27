@@ -10,6 +10,8 @@ export const locatorShape = {
   name: z.string().min(1).optional(),
   /** Playwright `.nth` index; 0 is omitted on the first match. */
   nth: z.number().int().positive().optional(),
+  /** Absent means exact match (current default). `false` is substring. */
+  nameExact: z.boolean().optional(),
 };
 
 export const Locator = z
@@ -23,16 +25,30 @@ export const Locator = z
         path: ["name"],
       });
     }
+    if (loc.by !== "role" && loc.nameExact !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'locator.nameExact is only valid when by is "role"',
+        path: ["nameExact"],
+      });
+    }
   });
 export type Locator = z.infer<typeof Locator>;
 
 /** Shared locator object from a widget or candidate. One place — do not reimplement. */
-export function locatorOf(w: { by: LocatorBy; value: string; name?: string; nth?: number }): Locator {
+export function locatorOf(w: {
+  by: LocatorBy;
+  value: string;
+  name?: string;
+  nth?: number;
+  nameExact?: boolean;
+}): Locator {
   return {
     by: w.by,
     value: w.value,
     ...(w.name !== undefined ? { name: w.name } : {}),
     ...(w.nth !== undefined && w.nth > 0 ? { nth: w.nth } : {}),
+    ...(w.nameExact !== undefined ? { nameExact: w.nameExact } : {}),
   };
 }
 

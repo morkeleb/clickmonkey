@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Form tab</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; }
+      form { display: flex; flex-direction: column; gap: 12px; max-width: 20rem; }
+      label { display: flex; flex-direction: column; gap: 4px; }
+      .reverse { flex-direction: column-reverse; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Form tab</h1>
+      <form id="ok-form">
+        <label>Name <input id="ok-name" name="name" /></label>
+        <label>Email <input id="ok-email" name="email" type="email" /></label>
+        <button id="ok-save" type="submit">Save</button>
+      </form>
+    </main>
+  </body>
+</html>

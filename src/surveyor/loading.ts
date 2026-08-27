@@ -79,7 +79,9 @@ function landmarkIsBusy(html: string): boolean {
 function hasLoadingChrome(html: string): boolean {
   if (/\brole\s*=\s*(["'])progressbar\1/i.test(html)) return true;
   if (/\b(?:aria-label|title)\s*=\s*(["'])[^"']*\bloading\b[^"']*\1/i.test(html)) return true;
-  return /\bclass\s*=\s*["'][^"']*\b(?:spinner|skeleton|animate-pulse|loading)\b/i.test(html);
+  return /\bclass\s*=\s*["'][^"']*\b(?:spinner|skeleton|animate-pulse|loading|CircularProgress)\b/i.test(
+    html,
+  );
 }
 
 /** True when the MAIN pane is still a spinner/skeleton — sidenav chrome does not count. */
@@ -120,11 +122,15 @@ export function readPageLoading(html: LoadingEl): boolean {
   if (/^(loading|please wait|loading[\s.…]+)[\s.…!]*$/i.test(text)) return true;
   if (text.length <= 48 && /^(loading|please wait)\b/i.test(text)) return true;
   if (text.length >= 80) return false;
-  return Boolean(
-    main.querySelector(
-      '[role="progressbar"], [aria-label*="loading" i], [class*="spinner" i], [class*="skeleton" i], [class*="animate-pulse" i]',
-    ),
-  );
+  const loadingSel =
+    '[role="progressbar"], [aria-label*="loading" i], [class*="spinner" i], [class*="skeleton" i], [class*="animate-pulse" i], [class*="CircularProgress" i]';
+  if (main.querySelector(loadingSel)) return true;
+  const dialog = doc.querySelector("dialog[open], [role='dialog']");
+  if (dialog && dialog !== main) {
+    const dtext = (dialog.innerText ?? "").replace(/\s+/g, " ").trim();
+    if (dtext.length < 80 && dialog.querySelector(loadingSel)) return true;
+  }
+  return false;
 }
 
 export async function pageLooksLikeLoading(page: Page): Promise<boolean> {

@@ -86,7 +86,7 @@ describe("quality ledger", () => {
     assert.equal(unioned[0]?.where, 'a "Milkshake" · span "Settings"');
   });
 
-  it("collapses visual paraphrases of the same rule and upgrades severity", () => {
+  it("collapses VLM paraphrases of the same rule and upgrades severity", () => {
     const merged = mergeQualityIssues([
       {
         source: "visual",
@@ -96,6 +96,7 @@ describe("quality ledger", () => {
         count: 1,
         confidence: "medium",
         where: "row icons",
+        via: "vlm",
       },
       {
         source: "visual",
@@ -105,6 +106,7 @@ describe("quality ledger", () => {
         count: 1,
         confidence: "high",
         where: "row action icons",
+        via: "vlm",
       },
       {
         source: "visual",
@@ -122,6 +124,32 @@ describe("quality ledger", () => {
     assert.equal(scanline.confidence, "high");
     assert.equal(scanline.message, "icons do not share a vertical edge");
     assert.equal(scanline.where, "row icons · row action icons");
+  });
+
+  it("keeps distinct DOM scanline classes instead of mashing their where lists", () => {
+    const merged = mergeQualityIssues([
+      {
+        source: "visual",
+        rule: "scanline",
+        severity: "warning",
+        message: "Row values do not share a left edge",
+        count: 1,
+        confidence: "high",
+        where: "list",
+        via: "dom",
+      },
+      {
+        source: "visual",
+        rule: "scanline",
+        severity: "warning",
+        message: "Past-dating window — deposits (days) and Default hard-hold duration (days) sit on one row but do not line up",
+        count: 1,
+        confidence: "high",
+        where: "Past-dating window — deposits (days), Default hard-hold duration (days)",
+        via: "dom",
+      },
+    ]);
+    assert.equal(merged.length, 2);
   });
 
   it("keeps a DOM sparse message when a higher-confidence VLM sparse arrives", () => {
@@ -822,7 +850,7 @@ describe("quality ledger", () => {
     assert.match(md, /^## Accessibility/m);
     assert.match(md, /^## Visual/m);
     assert.match(md, /^## Quality/m);
-    assert.doesNotMatch(md, /html-validate/);
+    assert.match(md, /html-validate no-dup-id/);
     assert.doesNotMatch(md, /No LLM/);
     assert.match(md, /`opaqueControl`/);
     assert.match(md, /`no-dup-id` · error/);

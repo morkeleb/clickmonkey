@@ -52,11 +52,12 @@ describe("reports folder", () => {
     const listed = listReports(cfg);
     assert.equal(listed[0]?.id, "20260818T210000Z-aaaa");
     assert.equal(listed[0]?.findingCount, 1);
-    assert.equal(listed[0]?.title, "1 finding · sess-a");
+    assert.equal(listed[0]?.title, "1 finding · 1 run");
   });
 
-  it("names a single-run report after that run", () => {
-    assert.equal(reportTitle(["sess-a"], 1), "1 finding · sess-a");
+  it("names a one-run report like two-run reports, not with the run id", () => {
+    assert.equal(reportTitle(["sess-a"], 1), "1 finding · 1 run");
+    assert.equal(reportTitle(["a", "b"], 3), "3 findings · 2 runs");
   });
 
   it("counts findings without Quality ### headings", () => {

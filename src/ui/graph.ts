@@ -3,6 +3,7 @@ import type { FindingCase } from "../persist/runs.js";
 import type { UiGraph, UiGraphEdge, UiGraphNode } from "../schema/ui.js";
 import { ledgerPath } from "../surveyor/path-template.js";
 import { prettyPageLabel } from "./graph-labels.js";
+import { isActiveTabsSurfaceId } from "../surveyor/ids.js";
 
 function pathOfHref(url: string | undefined): string | undefined {
   if (!url) return undefined;
@@ -67,6 +68,41 @@ export function hopsFromNavLog(text: string): Array<{ from: string; to: string }
   return hops;
 }
 
+/**
+ * Same action id opening the same page on this many rooms is chrome
+ * (Dashboard tab, sidebar Settings), not a door on the map.
+ */
+export const CHROME_OPEN_PAGES = 4;
+
+/** `/accounts-payable/vouchers` → `/accounts-payable/vouchers/new`, not sidebar chrome. */
+export function isLocalPageOpen(fromPath: string, toPath: string): boolean {
+  const a = fromPath.replace(/\/+$/, "") || "/";
+  const b = toPath.replace(/\/+$/, "") || "/";
+  if (a === "/" || a === b) return false;
+  return b === `${a}/new` || b === `${a}/edit` || b === `${a}/create` || b.startsWith(`${a}/`);
+}
+
+function chromeOpenKeys(map: PageModelDraft): Set<string> {
+  const counts = new Map<string, number>();
+  for (const page of map.pages) {
+    const seen = new Set<string>();
+    for (const surface of page.surfaces) {
+      for (const action of surface.actions) {
+        if (!action.opens) continue;
+        const key = `${action.id}\t${action.opens}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  const chrome = new Set<string>();
+  for (const [key, n] of counts) {
+    if (n >= CHROME_OPEN_PAGES) chrome.add(key);
+  }
+  return chrome;
+}
+
 function addEdge(edges: UiGraphEdge[], source: string, target: string, label?: string): void {
   if (source === target) return;
   if (edges.some((e) => e.source === source && e.target === target)) return;
@@ -85,19 +121,27 @@ function seedEntryHops(map: PageModelDraft, edges: UiGraphEdge[]): void {
     addEdge(edges, entries[i]!.id, entries[i + 1]!.id);
   }
   const lastEntry = entries[entries.length - 1];
-  const firstApp = pages.find((p) => !p.entry);
-  if (lastEntry && firstApp) addEdge(edges, lastEntry.id, firstApp.id);
+  const hub = appHub(map);
+  if (lastEntry && hub && lastEntry.id !== hub.id) addEdge(edges, lastEntry.id, hub.id);
+}
+
+function appHub(map: PageModelDraft): PageModelDraft["pages"][number] | undefined {
+  return (
+    map.pages.find((p) => p.path === "/" || p.id === "home") ??
+    map.pages.find((p) => !p.entry) ??
+    map.pages[0]
+  );
 }
 
 function attachOrphans(map: PageModelDraft, edges: UiGraphEdge[]): void {
   const incoming = new Set(edges.map((e) => e.target));
-  const firstApp = map.pages.find((p) => !p.entry) ?? map.pages[0];
-  if (!firstApp) return;
+  const hub = appHub(map);
+  if (!hub) return;
   for (const page of map.pages) {
-    if (page.id === firstApp.id) continue;
-    if (page.entry) continue;
+    if (page.id === hub.id) continue;
+    if (page.entry && page.path !== "/") continue;
     if (incoming.has(page.id)) continue;
-    addEdge(edges, firstApp.id, page.id);
+    addEdge(edges, hub.id, page.id);
   }
 }
 
@@ -111,6 +155,8 @@ export function buildUiGraph(
   const nodes: UiGraphNode[] = [];
   const edges: UiGraphEdge[] = [];
   const pageIds = new Set(map.pages.map((p) => p.id));
+  const pageById = new Map(map.pages.map((p) => [p.id, p]));
+  const chromeOpens = chromeOpenKeys(map);
   seedEntryHops(map, edges);
 
   for (const hop of opts?.hops ?? []) {
@@ -141,6 +187,7 @@ export function buildUiGraph(
 
     for (const surface of page.surfaces) {
       if (surface.kind !== "dialog") continue;
+      if (isActiveTabsSurfaceId(surface.id)) continue;
       const dialogId = `${page.id}::${surface.id}`;
       nodes.push({
         id: dialogId,
@@ -166,6 +213,9 @@ export function buildUiGraph(
     for (const surface of page.surfaces) {
       for (const action of surface.actions) {
         if (!action.opens || !pageIds.has(action.opens)) continue;
+        if (chromeOpens.has(`${action.id}\t${action.opens}`)) continue;
+        const dest = pageById.get(action.opens);
+        if (!dest || !isLocalPageOpen(page.path, dest.path)) continue;
         const id = `${page.id}->${action.opens}:${action.id}`;
         if (edges.some((e) => e.id === id)) continue;
         edges.push({

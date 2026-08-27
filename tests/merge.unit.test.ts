@@ -9,6 +9,7 @@ import {
   mergePageModel,
   mergeTrees,
   offlineIdsExist,
+  toFieldOrAction,
   type Candidate,
   type MergeInput,
 } from "../src/surveyor/merge.js";
@@ -146,6 +147,14 @@ describe("mergePageModel", () => {
     const saveKey = identityKey("page", "role", "button", "Save");
     assert.equal(identityKey("page", "role", "button", "Employees"), identityKey("page", "role", "button", "Employees", 0));
     assert.notEqual(identityKey("page", "role", "button", "Employees"), identityKey("page", "role", "button", "Employees", 1));
+    assert.equal(
+      identityKey("page", "role", "button", "Active tabs: 1"),
+      identityKey("page", "role", "button", "Active tabs: 17"),
+    );
+    assert.notEqual(
+      identityKey("page", "role", "button", "Inactive tabs: 1"),
+      identityKey("page", "role", "button", "Active tabs: 1"),
+    );
     const result = mergePageModel(model, {
       pageId: "home",
       surfaceId: "page",
@@ -166,6 +175,53 @@ describe("mergePageModel", () => {
     assert.equal(minted.name, "Save changes");
     assert.equal(minted.status, "ok");
     assert.deepEqual(result.appended, ["button_save_changes"]);
+  });
+
+  it("merges Active tabs across counts into one opener", () => {
+    const widget = toFieldOrAction("button_active_tabs", {
+      kind: "action",
+      by: "role",
+      value: "button",
+      name: "Active tabs: 16",
+      resolves: true,
+    });
+    assert.equal(widget.name, "Active tabs");
+    assert.equal(widget.nameExact, false);
+
+    const settings = toFieldOrAction("button_settings", {
+      kind: "action",
+      by: "role",
+      value: "button",
+      name: "Settings",
+      resolves: true,
+    });
+    assert.equal(settings.name, "Settings");
+    assert.equal(settings.nameExact, undefined);
+
+    const model = loadHome();
+    surface(model, "page").actions.push({
+      id: "button_active_tabs",
+      by: "role",
+      value: "button",
+      name: "Active tabs: 1",
+      status: "ok",
+    });
+    const first = mergePageModel(model, {
+      pageId: "home",
+      surfaceId: "page",
+      surfaceKind: "page",
+      candidates: [
+        { kind: "action", by: "role", value: "button", name: "Active tabs: 17", resolves: true },
+      ],
+      leftoverResolves: {},
+    });
+    const page = surface(first.model, "page");
+    const tabs = page.actions.filter((a) => a.name && /active tabs/i.test(a.name));
+    assert.equal(tabs.length, 1);
+    assert.equal(tabs[0]?.id, "button_active_tabs");
+    assert.equal(tabs[0]?.name, "Active tabs");
+    assert.equal(tabs[0]?.nameExact, false);
+    assert.equal(first.appended.length, 0);
   });
 
   it("does not insert a new unresolved candidate", () => {

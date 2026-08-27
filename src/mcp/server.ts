@@ -1,5 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { resolveConfigPath } from "../cli/common.js";
+import { reclaimMcpPresence } from "../persist/presence.js";
+import { runsDir } from "../persist/workspace.js";
 import {
   createMcpHost,
   finishExplore,
@@ -20,6 +23,11 @@ export function createServer(host: McpHost = createMcpHost()): McpServer {
 /** Stdio MCP. Never returns until stdin closes / SIGINT. Finishes a live run on disconnect. */
 export async function runMcp(opts?: { config?: string }): Promise<void> {
   const host = createMcpHost(opts);
+  try {
+    reclaimMcpPresence(runsDir(resolveConfigPath(opts?.config)), { pid: process.pid });
+  } catch {
+    // leash may not exist yet (explore_init first)
+  }
   const handle = serveStdio(() => createServer(host), {
     onerror: (error) => console.error(error),
   });

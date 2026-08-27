@@ -21,6 +21,18 @@ export type FocusStyle = {
   textDecoration?: string;
 };
 
+export type ShotClip = { x: number; y: number; width: number; height: number };
+
+export type FocusVisibleClip = { where: string; clip: ShotClip };
+
+export type FocusVisibleScan = { issues: QualityIssue[]; clips: FocusVisibleClip[] };
+
+/** Viewport padding around a focused control when clipping a 2.4.7 shot. */
+export const FOCUS_VISIBLE_CLIP_PAD = 48;
+/** Floor so a 18×18 tab close is not a postage-stamp PNG. */
+export const FOCUS_VISIBLE_CLIP_MIN_W = 320;
+export const FOCUS_VISIBLE_CLIP_MIN_H = 80;
+
 export type FocusVisibleHit = {
   name: string;
   where: string;
@@ -32,6 +44,8 @@ export type FocusVisibleHit = {
   /** Sibling notched outline / ::before / ::after (MUI OutlinedInput). */
   beforeChrome?: FocusStyle[];
   afterChrome?: FocusStyle[];
+  /** Viewport clip of the control while focused. */
+  clip?: ShotClip | null;
 };
 
 function noneish(v: string | undefined): boolean {
@@ -137,6 +151,118 @@ export function issuesFromHits(hits: FocusVisibleHit[]): QualityIssue[] {
   return issues;
 }
 
+export function parseShotClip(raw: unknown): ShotClip | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const rec = raw as Record<string, unknown>;
+  const x = Number(rec.x);
+  const y = Number(rec.y);
+  const width = Number(rec.width);
+  const height = Number(rec.height);
+  if (![x, y, width, height].every(Number.isFinite)) return undefined;
+  const clip = {
+    x: Math.floor(x),
+    y: Math.floor(y),
+    width: Math.ceil(width),
+    height: Math.ceil(height),
+  };
+  if (clip.x < 0 || clip.y < 0 || clip.width < 1 || clip.height < 1) return undefined;
+  return clip;
+}
+
+export function fitShotClip(
+  clip: ShotClip | undefined,
+  viewport: { width: number; height: number } | null | undefined,
+): ShotClip | undefined {
+  const parsed = parseShotClip(clip);
+  if (!parsed) return undefined;
+  if (!viewport || !(viewport.width > 0 && viewport.height > 0)) return parsed;
+  const x = Math.max(0, parsed.x);
+  const y = Math.max(0, parsed.y);
+  const width = Math.min(parsed.width, viewport.width - x);
+  const height = Math.min(parsed.height, viewport.height - y);
+  return parseShotClip({ x, y, width, height });
+}
+
+export type FocusBox = { left: number; top: number; right: number; bottom: number };
+
+/** Combobox / outlined field chrome, not the whole header. */
+export function isFocusClipWrapper(opts: { role?: string; tag?: string; className?: string }): boolean {
+  const role = (opts.role || "").toLowerCase();
+  const tag = (opts.tag || "").toLowerCase();
+  if (role === "combobox") return true;
+  if (tag === "label") return true;
+  const tokens = ` ${String(opts.className || "").replace(/[-_]/g, " ")} `.toLowerCase();
+  return tokens.includes(" text field ") || tokens.includes(" outlined input ") || tokens.includes(" form control ");
+}
+
+/** Wrapper is the field, not a page/header shell. */
+export function modestFocusWrapper(parent: FocusBox, child: FocusBox, vw: number, vh: number): boolean {
+  const w = parent.right - parent.left;
+  const h = parent.bottom - parent.top;
+  if (!(w > 0 && h > 0)) return false;
+  if (w > vw * 0.85 || h > Math.max(120, vh * 0.25)) return false;
+  return w >= child.right - child.left - 1 && h >= child.bottom - child.top - 1;
+}
+
+/** Pad + min size, clamped to the viewport, so the focused control is fully in frame. */
+export function focusShotClip(
+  box: FocusBox,
+  vw: number,
+  vh: number,
+  pad = FOCUS_VISIBLE_CLIP_PAD,
+): ShotClip | undefined {
+  const bw = box.right - box.left;
+  const bh = box.bottom - box.top;
+  if (!(bw > 0 && bh > 0) || !(vw > 0 && vh > 0)) return undefined;
+  const w = Math.max(bw + pad * 2, FOCUS_VISIBLE_CLIP_MIN_W);
+  const h = Math.max(bh + pad * 2, FOCUS_VISIBLE_CLIP_MIN_H);
+  const cx = box.left + bw / 2;
+  const cy = box.top + bh / 2;
+  let x = Math.floor(cx - w / 2);
+  let y = Math.floor(cy - h / 2);
+  let right = Math.ceil(cx + w / 2);
+  let bottom = Math.ceil(cy + h / 2);
+  if (x < 0) {
+    right = Math.min(vw, right - x);
+    x = 0;
+  }
+  if (y < 0) {
+    bottom = Math.min(vh, bottom - y);
+    y = 0;
+  }
+  if (right > vw) {
+    x = Math.max(0, x - (right - vw));
+    right = vw;
+  }
+  if (bottom > vh) {
+    y = Math.max(0, y - (bottom - vh));
+    bottom = vh;
+  }
+  return parseShotClip({ x, y, width: right - x, height: bottom - y });
+}
+
+export function focusVisibleClipsFromHits(hits: FocusVisibleHit[]): FocusVisibleClip[] {
+  const want = new Set(
+    issuesFromHits(hits)
+      .map((i) => i.where)
+      .filter((w): w is string => Boolean(w)),
+  );
+  const clips: FocusVisibleClip[] = [];
+  const seen = new Set<string>();
+  if (!Array.isArray(hits)) return clips;
+  for (const hit of hits) {
+    const where = String(hit.where || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!where || !want.has(where) || seen.has(where)) continue;
+    const clip = parseShotClip(hit.clip);
+    if (!clip) continue;
+    seen.add(where);
+    clips.push({ where, clip });
+  }
+  return clips;
+}
+
 /**
  * Browser-side. Source string so tsx/esbuild `__name` helpers are not
  * serialized into the page.
@@ -144,11 +270,65 @@ export function issuesFromHits(hits: FocusVisibleHit[]): QualityIssue[] {
  * Snapshots computed style, focuses (keyboard-visible, no scrollIntoView),
  * snapshots again. Node decides whether the delta is a ring.
  */
+const CLIP_RECT_SRC = `
+  function clipHost(el) {
+    var box = el;
+    var p = el && el.parentElement;
+    var depth = 0;
+    var child = el.getBoundingClientRect();
+    while (p && depth < 5 && p !== document.body && p !== document.documentElement) {
+      var role = (p.getAttribute("role") || "").toLowerCase();
+      var tag = p.tagName.toLowerCase();
+      var cls = (" " + String(p.getAttribute("class") || "").replace(/[-_]/g, " ") + " ").toLowerCase();
+      var wrapper = role === "combobox" || tag === "label" || cls.indexOf(" text field ") >= 0 || cls.indexOf(" outlined input ") >= 0 || cls.indexOf(" form control ") >= 0;
+      if (wrapper) {
+        var pr = p.getBoundingClientRect();
+        var pw = pr.right - pr.left;
+        var ph = pr.bottom - pr.top;
+        if (pw > 0 && ph > 0 && pw < vw * 0.85 && ph < Math.max(120, vh * 0.25) && pw >= child.width - 1 && ph >= child.height - 1) {
+          box = p;
+        }
+        break;
+      }
+      p = p.parentElement;
+      depth++;
+    }
+    return box;
+  }
+  function clipRect(el) {
+    if (!el) return null;
+    var host = clipHost(el);
+    var r = host.getBoundingClientRect();
+    var bw = r.width;
+    var bh = r.height;
+    if (!(bw > 0 && bh > 0)) return null;
+    var w = Math.max(bw + pad * 2, ${FOCUS_VISIBLE_CLIP_MIN_W});
+    var h = Math.max(bh + pad * 2, ${FOCUS_VISIBLE_CLIP_MIN_H});
+    var cx = r.left + bw / 2;
+    var cy = r.top + bh / 2;
+    var x = Math.floor(cx - w / 2);
+    var y = Math.floor(cy - h / 2);
+    var right = Math.ceil(cx + w / 2);
+    var bottom = Math.ceil(cy + h / 2);
+    if (x < 0) { right = Math.min(vw, right - x); x = 0; }
+    if (y < 0) { bottom = Math.min(vh, bottom - y); y = 0; }
+    if (right > vw) { x = Math.max(0, x - (right - vw)); right = vw; }
+    if (bottom > vh) { y = Math.max(0, y - (bottom - vh)); bottom = vh; }
+    var cw = right - x;
+    var ch = bottom - y;
+    if (!(cw >= 1 && ch >= 1)) return null;
+    return { x: x, y: y, width: cw, height: ch };
+  }
+`;
+
 const COLLECT_SRC = `(() => {
   var SEL = ${JSON.stringify(ACTABLE_SEL)};
   var MAX = ${MAX_ACTABLES};
   var vw = window.innerWidth || 0;
+  var vh = window.innerHeight || 0;
+  var pad = ${FOCUS_VISIBLE_CLIP_PAD};
   var hits = [];
+${CLIP_RECT_SRC}
 
   function clip(s, n) {
     var one = String(s || "").replace(/\\s+/g, " ").trim();
@@ -409,6 +589,10 @@ const COLLECT_SRC = `(() => {
     } catch (err4) {
       continue;
     }
+    var focusedClip = null;
+    try {
+      focusedClip = clipRect(target);
+    } catch (errClip) {}
     hits.push({
       name: widgetName(target) || "Control",
       where: describeWhere(target),
@@ -417,7 +601,8 @@ const COLLECT_SRC = `(() => {
       beforeParents: beforeParents,
       afterParents: afterParents,
       beforeChrome: beforeChrome,
-      afterChrome: afterChrome
+      afterChrome: afterChrome,
+      clip: focusedClip
     });
   }
   try {
@@ -440,8 +625,154 @@ const COLLECT_SRC = `(() => {
   return hits;
 })()`;
 
-export async function scanFocusVisible(page: Page): Promise<QualityIssue[]> {
+export async function scanFocusVisible(page: Page): Promise<FocusVisibleScan> {
   const raw = (await page.evaluate(COLLECT_SRC).catch(() => [])) as FocusVisibleHit[];
-  if (!Array.isArray(raw)) return [];
-  return issuesFromHits(raw);
+  if (!Array.isArray(raw)) return { issues: [], clips: [] };
+  return { issues: issuesFromHits(raw), clips: focusVisibleClipsFromHits(raw) };
+}
+
+const REFOCUS_SRC = `(where) => {
+  var SEL = ${JSON.stringify(ACTABLE_SEL)};
+  var vw = window.innerWidth || 0;
+  var vh = window.innerHeight || 0;
+  var pad = ${FOCUS_VISIBLE_CLIP_PAD};
+  where = String(where || "").replace(/\\s+/g, " ").trim();
+  if (!where) return null;
+${CLIP_RECT_SRC}
+
+  function clip(s, n) {
+    var one = String(s || "").replace(/\\s+/g, " ").trim();
+    if (!one) return "";
+    return one.length <= n ? one : one.slice(0, n - 1) + "…";
+  }
+
+  function generatedId(id) {
+    if (!id) return true;
+    if (id.charAt(0) === ":") return true;
+    if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)) return true;
+    return false;
+  }
+
+  function shown(el) {
+    if (!el) return false;
+    if (typeof el.checkVisibility === "function") {
+      if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+    }
+    var cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden") return false;
+    if (parseFloat(cs.opacity) === 0) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return false;
+    if (r.right <= 0 || r.left >= vw || r.bottom <= 0) return false;
+    return true;
+  }
+
+  function nativePicker(el) {
+    if (!el || (el.tagName || "").toLowerCase() !== "input") return false;
+    var t = (el.type || "").toLowerCase();
+    return (
+      t === "date" ||
+      t === "datetime-local" ||
+      t === "time" ||
+      t === "month" ||
+      t === "week" ||
+      t === "color" ||
+      t === "file"
+    );
+  }
+
+  function unreliableUaRing(el) {
+    if (!el || (el.tagName || "").toLowerCase() !== "input") return false;
+    var t = (el.type || "").toLowerCase();
+    return t === "checkbox" || t === "radio" || t === "range";
+  }
+
+  function isDisabled(el) {
+    if (el.disabled) return true;
+    if (el.getAttribute("aria-disabled") === "true") return true;
+    if (typeof el.matches === "function" && el.matches(":disabled")) return true;
+    return false;
+  }
+
+  function isAriaHidden(el) {
+    if (!el) return false;
+    if (el.getAttribute && el.getAttribute("aria-hidden") === "true") return true;
+    if (el.closest && el.closest("[aria-hidden='true']")) return true;
+    return false;
+  }
+
+  function describeWhere(el) {
+    var tag = el.tagName.toLowerCase();
+    var hooks = ["data-testid", "data-test-id", "data-test", "data-cy"];
+    var i;
+    for (i = 0; i < hooks.length; i++) {
+      var hook = el.getAttribute(hooks[i]);
+      if (hook && hook.trim()) return tag + "[" + hooks[i] + '="' + clip(hook.trim(), 40) + '"]';
+    }
+    var id = el.id && String(el.id).trim();
+    if (id && !generatedId(id)) return "#" + clip(id, 40);
+    var named =
+      el.getAttribute("aria-label") ||
+      el.getAttribute("title") ||
+      el.getAttribute("alt") ||
+      el.getAttribute("name") ||
+      el.getAttribute("placeholder");
+    if (named && named.trim()) return tag + ' "' + clip(named.trim(), 40) + '"';
+    var text = (el.innerText || "").replace(/\\s+/g, " ").trim();
+    if (text) return tag + ' "' + clip(text, 40) + '"';
+    var href = el.getAttribute("href");
+    if (href && href.trim()) return tag + '[href="' + clip(href.trim(), 48) + '"]';
+    return tag;
+  }
+
+  try {
+    var tab = { key: "Tab", code: "Tab", keyCode: 9, which: 9, bubbles: true, cancelable: true };
+    document.dispatchEvent(new KeyboardEvent("keydown", tab));
+    window.dispatchEvent(new KeyboardEvent("keydown", tab));
+  } catch (errTab) {}
+
+  var nodes = document.querySelectorAll(SEL);
+  var n;
+  var target = null;
+  for (n = 0; n < nodes.length; n++) {
+    var el = nodes[n];
+    if (!shown(el) || isDisabled(el) || isAriaHidden(el) || nativePicker(el) || unreliableUaRing(el)) continue;
+    if (describeWhere(el) === where) {
+      target = el;
+      break;
+    }
+  }
+  if (!target) return null;
+  try {
+    target.focus({ focusVisible: true });
+  } catch (err2) {
+    try {
+      target.focus();
+    } catch (err3) {
+      return null;
+    }
+  }
+  var active = document.activeElement;
+  if (active !== target && !(target.contains && target.contains(active))) return null;
+  return clipRect(target);
+}`;
+
+const BLUR_SRC = `(() => {
+  try {
+    if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
+  } catch (e) {}
+})()`;
+
+/** Re-focus by `where` and return a viewport clip of the focused control. */
+export async function refocusWhereForClip(page: Page, where: string): Promise<ShotClip | undefined> {
+  const raw = await page
+    .evaluate(`(${REFOCUS_SRC})(${JSON.stringify(String(where ?? ""))})`)
+    .catch(() => undefined);
+  return parseShotClip(raw);
+}
+
+export async function blurActiveElement(page: Page): Promise<void> {
+  await page.evaluate(BLUR_SRC).catch(() => undefined);
 }

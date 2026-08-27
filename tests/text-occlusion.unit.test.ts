@@ -8,9 +8,14 @@ import {
   describeCover,
   expectedOverlay,
   isStickyChromeCover,
+  isStepperStep,
+  isTabChrome,
+  isUnselectedTabpanel,
   hitPaints,
   issuesFromHits,
   occlusionConfidence,
+  overlayKindFromClass,
+  overlayKindFromNode,
   probeRelated,
   rectUsable,
   skipOpenOverlay,
@@ -119,6 +124,40 @@ describe("text-occlusion helpers", () => {
       skipOpenOverlay({ textOverlayId: 0, coverOverlay: "dialog", coverOverlayId: 0 }),
       false,
     );
+  });
+
+  it("classifies menu-surface / mdc-menu / listbox-without-role as overlays", () => {
+    assert.equal(overlayKindFromClass("fvs-menu-surface-base"), "menu");
+    assert.equal(overlayKindFromClass("mdc-menu"), "menu");
+    assert.equal(overlayKindFromClass("mdc-list listbox"), "listbox");
+    assert.equal(overlayKindFromClass("hero-grid"), undefined);
+    assert.equal(overlayKindFromNode({ comboboxPopup: true }), "listbox");
+    assert.equal(overlayKindFromNode({ role: "listbox" }), "listbox");
+    assert.equal(
+      skipOpenOverlay({
+        textOverlayId: -1,
+        coverOverlay: overlayKindFromClass("fvs-menu-surface-base"),
+        coverOverlayId: 0,
+      }),
+      true,
+    );
+  });
+
+  it("skips tab chrome and stepper steps, not table/copy tokens", () => {
+    assert.equal(isTabChrome({ role: "tab" }), true);
+    assert.equal(isTabChrome({ role: "tablist" }), true);
+    assert.equal(isTabChrome({ className: "fvs-tab" }), true);
+    assert.equal(isTabChrome({ className: "table" }), false);
+    assert.equal(isTabChrome({ className: "sortable-table" }), false);
+    assert.equal(isTabChrome({ role: "tabpanel" }), false);
+    assert.equal(isStepperStep({ className: "step" }), true);
+    assert.equal(isStepperStep({ testid: "stepper-step" }), true);
+    assert.equal(isStepperStep({ className: "mdc-step" }), true);
+    assert.equal(isStepperStep({ className: "badge" }), false);
+    assert.equal(isUnselectedTabpanel({ hidden: true }), true);
+    assert.equal(isUnselectedTabpanel({ ariaHidden: true }), true);
+    assert.equal(isUnselectedTabpanel({ tabSelected: false }), true);
+    assert.equal(isUnselectedTabpanel({ tabSelected: true }), false);
   });
 });
 

@@ -4,14 +4,16 @@ import type { Page } from "@schema/page-model";
 import type { QualityIssue, QualityPage, QualityRuntimeEvent } from "@schema/quality";
 import type { TestabilityIssue, TestabilityPage } from "@schema/testability";
 import { monkeyOfBrain } from "@schema/fog";
+import { DOCS_MAP } from "@schema/site";
 import type { UiGraphNode, UiMapFinding, UiRun, UiSnapshot } from "@schema/ui";
+import { checkOf } from "../../../src/reports/check.ts";
 import {
   chapterOf,
   splitOverflowByViewport,
+  type ChapterExtras,
   type OverflowViewport,
   type ReportChapter,
 } from "../../../src/reports/wcag.ts";
-import { whyRule } from "../../../src/reports/why.ts";
 import { Shot } from "@/components/shot";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -28,10 +30,10 @@ import { runHue, sameLedgerPage } from "@/lib/utils";
 
 type LedgerKey = { path: string; origin?: string };
 
-function WhyItMatters({ rule }: { rule: string }) {
-  const why = whyRule(rule);
-  if (!why) return null;
-  return <p className="mt-1 text-xs break-words text-muted-foreground">Why it matters: {why}</p>;
+function WhyItMatters({ rule, extras }: { rule: string; extras?: ChapterExtras }) {
+  const check = checkOf(rule, extras);
+  if (!check) return null;
+  return <p className="mt-1 text-xs break-words text-muted-foreground">Why it matters: {check.why}</p>;
 }
 
 function alsoOnOtherPages(n: number): string | undefined {
@@ -61,7 +63,7 @@ function otherPagesWithQualityRule(pages: QualityPage[], current: LedgerKey, rul
 function chapterExtras(
   issue: QualityIssue,
   extras?: { where?: string; viewport?: OverflowViewport },
-) {
+): ChapterExtras {
   return {
     message: issue.message,
     where: extras?.where ?? issue.where,
@@ -70,18 +72,22 @@ function chapterExtras(
   };
 }
 
-/** Same chapterOf split as the report: axe + WCAG-mapped DOM (incl. 320 overflow) vs leftover layout. */
+function issueChapter(rule: string, extras: ChapterExtras): ReportChapter {
+  return checkOf(rule, extras)?.chapter ?? chapterOf(rule, extras);
+}
+
+/** Same Check split as the report: axe + WCAG-mapped DOM (incl. 320 overflow) vs leftover layout. */
 function chapterIssues(issues: QualityIssue[], chapter: ReportChapter): QualityIssue[] {
   const out: QualityIssue[] = [];
   for (const issue of issues) {
     if (issue.rule === "overflow") {
       for (const seg of splitOverflowByViewport(issue.where, issue.message)) {
-        if (chapterOf(issue.rule, chapterExtras(issue, seg)) !== chapter) continue;
+        if (issueChapter(issue.rule, chapterExtras(issue, seg)) !== chapter) continue;
         out.push(seg.where ? { ...issue, where: seg.where } : issue);
       }
       continue;
     }
-    if (chapterOf(issue.rule, chapterExtras(issue)) === chapter) out.push(issue);
+    if (issueChapter(issue.rule, chapterExtras(issue)) === chapter) out.push(issue);
   }
   return out;
 }
@@ -155,7 +161,14 @@ function IssueList({
               {issue.role ? ` · ${issue.role}` : ""}
               {issue.inputType ? ` · ${issue.inputType}` : ""}
             </div>
-            <WhyItMatters rule={issue.code} />
+            <WhyItMatters
+              rule={issue.code}
+              extras={{
+                source: "testability",
+                message: issue.tag,
+                ...(issue.where ? { where: issue.where } : {}),
+              }}
+            />
             {issue.where ? (
               <p className="mt-0.5 text-[11px] break-all text-muted-foreground">Where: {issue.where}</p>
             ) : null}
@@ -193,7 +206,14 @@ function QualityIssueCards({
               {alsoOn ? <span className="text-xs text-muted-foreground">{alsoOn}</span> : null}
             </div>
             <p className="mt-1 text-xs break-words text-muted-foreground">{issue.message}</p>
-            <WhyItMatters rule={issue.rule} />
+            <WhyItMatters
+              rule={issue.rule}
+              extras={{
+                source: issue.source,
+                message: issue.message,
+                ...("where" in issue && issue.where ? { where: issue.where } : {}),
+              }}
+            />
             {"where" in issue && issue.where ? (
               <p className="mt-0.5 text-[11px] break-all text-muted-foreground">Where: {issue.where}</p>
             ) : null}
@@ -331,6 +351,14 @@ export function NodeSheet({
                         </div>
                       ))}
                     </div>
+                    <a
+                      href={DOCS_MAP}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-block text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      How to read the map
+                    </a>
                   </InfoStat>
                 ) : null}
                 <InfoStat label="Surfaces">{counts.surfaces}</InfoStat>

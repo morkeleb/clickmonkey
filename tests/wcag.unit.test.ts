@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { chapterOf, coverageLines, isOverflowAt320, splitOverflowByViewport, wcagOf } from "../src/reports/wcag.js";
+import {
+  chapterOf,
+  coverageLines,
+  isOverflowAt320,
+  isAcceptedInvalidFinding,
+  isServerRefusedSubmitFinding,
+  isSilentSubmitFinding,
+  isThrowInsteadOfInvalidFinding,
+  splitOverflowByViewport,
+  wcagOf,
+} from "../src/reports/wcag.js";
 
 describe("wcag map", () => {
   it("buckets axe, DOM, and layout rules into chapters", () => {
@@ -19,6 +29,11 @@ describe("wcag map", () => {
     assert.equal(chapterOf("contrast"), "visual");
     assert.equal(chapterOf("no-dup-id"), "quality");
     assert.equal(chapterOf("duplicateName"), "testability");
+    assert.equal(chapterOf("clickableNonWidget"), "accessibility");
+    assert.equal(wcagOf("clickableNonWidget").sc, "2.1.1");
+    assert.equal(wcagOf("clickableNonWidget").level, "A");
+    assert.equal(wcagOf("keyboardTrap").sc, "2.1.2");
+    assert.equal(wcagOf("focusOrder").sc, "2.4.3");
     assert.equal(wcagOf("skip-link").sc, "2.4.1");
     assert.equal(wcagOf("label-content-name-mismatch").sc, "2.5.3");
     assert.equal(wcagOf("aria-dialog-name").sc, "4.1.2");
@@ -28,6 +43,34 @@ describe("wcag map", () => {
     assert.equal(wcagOf("summary-name").sc, "4.1.2");
     assert.equal(wcagOf("table-fake-caption").sc, "1.3.1");
     assert.equal(wcagOf("td-has-header").sc, "1.3.1");
+    const silent =
+      "Save did not submit the form: no navigation, no write request, and no invalid fields were shown";
+    assert.equal(isSilentSubmitFinding(silent), true);
+    assert.equal(chapterOf("expectFailed", { message: silent }), "accessibility");
+    assert.equal(wcagOf("expectFailed", { message: silent }).sc, "3.3.1");
+    assert.equal(wcagOf("expectFailed", { message: silent }).level, "A");
+    assert.equal(wcagOf("expectFailed", { message: silent }).title, "Error Identification");
+    assert.equal(wcagOf("silentSubmit").sc, "3.3.1");
+    assert.equal(chapterOf("expectFailed"), "quality");
+    const refused = "HTTP 409 POST https://app/api/vouchers: Vendor has status Blacklisted";
+    assert.equal(isServerRefusedSubmitFinding(refused), true);
+    assert.equal(isServerRefusedSubmitFinding("HTTP 400 GET https://app/api/vouchers"), false);
+    assert.equal(isServerRefusedSubmitFinding("HTTP 403 POST https://app/api/vouchers"), false);
+    assert.equal(chapterOf("serverRefusedSubmit"), "quality");
+    assert.equal(chapterOf("httpError", { message: refused }), "quality");
+    assert.equal(wcagOf("serverRefusedSubmit").sc, undefined);
+    const empty = "Required field `page.name` accepted empty";
+    const junk = "Validation did not catch junk in `page.email`";
+    assert.equal(isAcceptedInvalidFinding(empty), true);
+    assert.equal(isAcceptedInvalidFinding(junk), true);
+    assert.equal(isAcceptedInvalidFinding(silent), false);
+    assert.equal(chapterOf("acceptedInvalid"), "quality");
+    assert.equal(chapterOf("expectFailed", { message: empty }), "quality");
+    const threw = "validation is missing or does not wrap parsing";
+    assert.equal(isThrowInsteadOfInvalidFinding(threw), true);
+    assert.equal(isThrowInsteadOfInvalidFinding("Ga(...) is not a function"), false);
+    assert.equal(chapterOf("throwInsteadOfInvalid"), "quality");
+    assert.equal(chapterOf("pageError", { message: threw }), "quality");
   });
 
   it("maps overflow at 320 to 1.4.10 and leaves 1280 in visual", () => {
@@ -59,7 +102,13 @@ describe("wcag map", () => {
       { rule: "overflow", extras: { where: "body @ 320px" } },
     ]);
     assert.match(lines.join("\n"), /Fails on covered SCs: A — 1 rule; AA — 3 rules\./);
-    assert.match(lines.join("\n"), /Not checked: 3\.3\.8, 2\.5\.7, AAA/);
+    assert.match(lines.join("\n"), /Not checked:.*2\.5\.7.*AAA/);
+    assert.match(lines.join("\n"), /2\.1\.1/);
+    assert.match(lines.join("\n"), /2\.1\.2/);
+    assert.match(lines.join("\n"), /2\.4\.3/);
+    assert.doesNotMatch(lines.join("\n"), /Not checked:.*2\.1\.2/);
+    assert.doesNotMatch(lines.join("\n"), /Not checked:.*2\.4\.3/);
+    assert.doesNotMatch(lines.join("\n"), /Guide:/);
     assert.doesNotMatch(lines.join("\n"), /meets AA/i);
   });
 });

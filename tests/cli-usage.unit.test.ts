@@ -39,6 +39,7 @@ describe("clickmonkey CLI chassis", () => {
     const result = run([]);
     assert.match(result.stdout, /map/);
     assert.match(result.stdout, /unleash/);
+    assert.match(result.stdout, /--form page/);
     assert.match(result.stdout, /^\s+nasty\s/m);
     assert.match(result.stdout, /explore/);
     assert.match(result.stdout, /^\s+mcp\s/m);

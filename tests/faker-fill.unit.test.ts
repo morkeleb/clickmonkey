@@ -46,6 +46,34 @@ describe("fill rule matching", () => {
     assert.equal(fillRuleId(field({ id: "username", type: "text" })), "username");
     assert.equal(fillRuleId(field({ id: "company_name", type: "text" })), "organization");
   });
+
+  it("scores compact date ids and date-mask placeholders as date", () => {
+    assert.equal(fillRuleId(field({ id: "transactiondate" })), "date");
+    assert.equal(fillRuleId(field({ id: "invoicedate" })), "date");
+    assert.equal(fillRuleId(field({ id: "duedate" })), "date");
+    assert.equal(fillRuleId(field({ id: "lineitems_0__transactiondate" })), "date");
+    assert.equal(fillRuleId(field({ id: "when", constraints: { placeholder: "MM/DD/YYYY" } })), "date");
+    assert.equal(fillRuleId(field({ id: "when", type: "date" })), "date");
+    assert.equal(fillRuleId(field({ id: "when", constraints: { htmlType: "date" } })), "date");
+    assert.equal(fillRuleId(field({ id: "startdate" })), "date");
+    assert.notEqual(fillRuleId(field({ id: "update" })), "date");
+    assert.notEqual(fillRuleId(field({ id: "candidate" })), "date");
+    assert.notEqual(fillRuleId(field({ id: "validate" })), "date");
+  });
+
+  it("treats currency as an amount only on a number input", () => {
+    assert.equal(fillRuleId(field({ id: "currencycode", type: "text" })), "currencyCode");
+    assert.equal(fillRuleId(field({ id: "currencyCode", type: "text" })), "currencyCode");
+    assert.equal(fillRuleId(field({ id: "currency", type: "text" })), "currencyCode");
+    assert.equal(fillRuleId(field({ id: "currency", type: "select" })), "currencyCode");
+    assert.equal(fillRuleId(field({ id: "currency", type: "number" })), "amount");
+    assert.equal(
+      fillRuleId(field({ id: "currencycode", type: "text", constraints: { htmlType: "number" } })),
+      "amount",
+    );
+    assert.equal(fillRuleId(field({ id: "price", type: "text" })), "amount");
+    assert.equal(fillRuleId(field({ id: "amount", type: "text" })), "amount");
+  });
 });
 
 describe("fakerFill", () => {
@@ -104,6 +132,42 @@ describe("fakerFill", () => {
     const a = fakerFill(field({ id: "name" }), () => 0.11);
     const b = fakerFill(field({ id: "name" }), () => 0.77);
     assert.notEqual(a, b);
+  });
+
+  it("emits a placeholder date mask, not ISO, and keeps ISO for native date", () => {
+    const masked = fakerFill(
+      field({ id: "invoicedate", constraints: { placeholder: "MM/DD/YYYY" } }),
+      () => 0.3,
+    );
+    assert.match(masked, /^\d{2}\/\d{2}\/\d{4}$/);
+    assert.doesNotMatch(masked, /^\d{4}-\d{2}-\d{2}$/);
+    const dmy = fakerFill(
+      field({ id: "invoicedate", constraints: { placeholder: "DD/MM/YYYY" } }),
+      () => 0.3,
+    );
+    assert.match(dmy, /^\d{2}\/\d{2}\/\d{4}$/);
+    const native = fakerFill(
+      field({ id: "when", type: "date", constraints: { htmlType: "date" } }),
+      () => 0.3,
+    );
+    assert.match(native, /^\d{4}-\d{2}-\d{2}$/);
+    const nativeMasked = fakerFill(
+      field({
+        id: "when",
+        type: "date",
+        constraints: { htmlType: "date", placeholder: "MM/DD/YYYY" },
+      }),
+      () => 0.3,
+    );
+    assert.match(nativeMasked, /^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("fills a text currency field with a code, not a money amount", () => {
+    const code = fakerFill(field({ id: "currencycode", type: "text" }), () => 0.3);
+    assert.match(code, /^[A-Z]{3}$/);
+    assert.doesNotMatch(code, /\d/);
+    const money = fakerFill(field({ id: "currency", type: "number" }), () => 0.3);
+    assert.match(money, /^\d+\.\d{2}$/);
   });
 });
 

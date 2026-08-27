@@ -82,6 +82,19 @@ describe("htmlLooksLikeLoading", () => {
     assert.equal(htmlLooksLikeLoading(html), false);
   });
 
+  it("treats a heading plus CircularProgress as loading", () => {
+    const html = `
+      <html><body>
+        <nav>Dashboard Trust Settings</nav>
+        <main>
+          <h1>Trust Settings</h1>
+          <div class="MuiCircularProgress-root" role="progressbar"></div>
+        </main>
+      </body></html>
+    `;
+    assert.equal(htmlLooksLikeLoading(html), true);
+  });
+
   it("does not treat a small spinner on a populated main as a loading screen", () => {
     const html = `
       <main>

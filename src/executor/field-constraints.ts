@@ -8,7 +8,7 @@ function intAttr(raw: string): number | undefined {
   return n;
 }
 
-/** Live min/max/length/pattern/autocomplete on the control. Empty when none are set. */
+/** Live min/max/length/pattern/autocomplete/placeholder on the control. Empty when none are set. */
 export async function readFieldConstraints(loc: PwLocator): Promise<ShownFieldConstraints | undefined> {
   // Browser-side callback. Must stay closure-free for locator.evaluate.
   const raw = await loc
@@ -27,9 +27,10 @@ export async function readFieldConstraints(loc: PwLocator): Promise<ShownFieldCo
       const pattern = node.getAttribute("pattern")?.trim() ?? "";
       const autocomplete = node.getAttribute("autocomplete")?.trim() ?? "";
       const inputMode = node.getAttribute("inputmode")?.trim() ?? "";
+      const placeholder = node.getAttribute("placeholder")?.trim() ?? "";
       const tag = (node.tagName || "").toLowerCase();
       const htmlType = tag === "input" ? (node.type || node.getAttribute("type") || "").toLowerCase() : "";
-      return { min, max, minLength, maxLength, step, pattern, autocomplete, inputMode, htmlType };
+      return { min, max, minLength, maxLength, step, pattern, autocomplete, inputMode, htmlType, placeholder };
     })
     .catch(() => undefined);
   if (!raw) return undefined;
@@ -52,6 +53,7 @@ export async function readFieldConstraints(loc: PwLocator): Promise<ShownFieldCo
     ...(autocomplete ? { autocomplete } : {}),
     ...(raw.inputMode ? { inputMode: raw.inputMode } : {}),
     ...(htmlType ? { htmlType } : {}),
+    ...(raw.placeholder ? { placeholder: raw.placeholder } : {}),
   };
   return Object.keys(out).length > 0 ? out : undefined;
 }

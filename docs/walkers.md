@@ -13,12 +13,13 @@ Host-LLM MCP: [mcp.md](mcp.md).
 Parallel runs merge into one `clickmonkey/map.json`. Rings on the dashboard
 are live units. map, unleash, and nasty each have their own last-land clock
 per page. explore and mcp do not — they still show as different live letters
-(**e** / **c**) when they stand on the same page.
+(**e** / **c**) when they stand on the same page. How to read haze, pips,
+and rings: [map.md](map.md).
 
 | Monkey | Command | Does |
 |---|---|---|
 | **map** | `clickmonkey map` | Unseen doors, then rooms this map run has not stood on recently. Never fill or submit. |
-| **unleash** | `clickmonkey unleash` | Pathfind to mapped forms this unleash run has not filled recently, fill, submit. |
+| **unleash** | `clickmonkey unleash` | Pathfind to mapped forms this unleash run has not filled recently, fill, submit. `--form clients_new` pins one page, retries Save, stops when submit leaves. |
 | **nasty** | `clickmonkey nasty` | Same hunt on the **nasty** clock — pages unleash already walked still look hungry. Junk payloads. Site you own. `unleash --nasty` is the same call. |
 | **explore** | `clickmonkey explore` | One charter. Unattended LLM. Not a soak. Needs `brain`. |
 | **mcp** | `clickmonkey mcp` | Host LLM walks (`explore_start` …), then freeze/replay a spec. Not `clickmonkey explore`. [mcp.md](mcp.md). |

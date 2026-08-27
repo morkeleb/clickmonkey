@@ -376,10 +376,10 @@ describe("walker modes", () => {
     assert.match(text, /click page\.submit/);
   });
 
-  it("picks the staler of form and list when both apply", () => {
+  it("picks the staler of form and list when both apply and fields are filled", () => {
     const view = viewOf({
       shown: [
-        { id: "name", value: "", type: "text" },
+        { id: "name", value: "Ada", type: "text" },
         { id: "search", value: "", type: "text" },
       ],
       actions: [
@@ -392,6 +392,190 @@ describe("walker modes", () => {
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     assert.equal(detectWalkerMode({ ...ctx, modeFog: { "home/form": hourAgo } }).name, "list");
     assert.equal(detectWalkerMode({ ...ctx, modeFog: { "home/list": hourAgo } }).name, "form");
+  });
+
+  it("stays in form while empty fields remain even when list chrome is hungrier", () => {
+    const view = viewOf({
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "amount", value: "", type: "text" },
+        { id: "search", value: "", type: "text" },
+      ],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "button_previous", label: "Previous" },
+        { id: "button_next", label: "Next" },
+        { id: "tab_dashboard", role: "tab", label: "Dashboard" },
+        { id: "tab_active", role: "tab", label: "Active" },
+        { id: "button_save", label: "Save" },
+      ],
+    });
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 0,
+      writePolicy: "allow",
+      modeFog: { "home/form": hourAgo },
+    };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.5);
+    assert.match(text, /click page\.button_save/);
+  });
+
+  it("treats a create form with many empty fields as form even without an enabled Save", () => {
+    const view = viewOf({
+      shown: [
+        { id: "legalname", value: "", type: "text" },
+        { id: "dbaname", value: "", type: "text" },
+        { id: "website", value: "", type: "text" },
+        { id: "notes", value: "", type: "text" },
+      ],
+      actions: [{ id: "tab_dashboard", role: "tab", label: "Dashboard" }],
+    });
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 0,
+      writePolicy: "allow",
+      modeFog: { "home/form": hourAgo },
+    };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.5);
+    assert.match(text, /^fill page\./);
+    assert.doesNotMatch(text, /click page\.(button_next|tab_dashboard)/);
+  });
+
+  it("fills every empty field on a form with no Save, but skips extra child rows", () => {
+    const view = viewOf({
+      shown: [
+        ...Array.from({ length: 13 }, (_, i) => ({ id: `f${i}`, value: "", type: "text" as const })),
+        { id: "lineitems_0__amount", value: "", type: "text" as const },
+        { id: "lineitems_1__amount", value: "", type: "text" as const },
+      ],
+      actions: [{ id: "tab_dashboard", role: "tab", label: "Dashboard" }],
+    });
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 0,
+      writePolicy: "allow",
+      modeFog: { "home/form": hourAgo },
+    };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.5);
+    const fills = text.split("\n").filter((l) => l.startsWith("fill "));
+    assert.equal(fills.length, 14);
+    assert.match(text, /fill page\.f12 /);
+    assert.match(text, /fill page\.lineitems_0__amount /);
+    assert.doesNotMatch(text, /lineitems_1__/);
+    assert.doesNotMatch(text, /click page\.tab_dashboard/);
+  });
+
+  it("stays in form and clicks Save when leftover listed rows remain after fields are filled", () => {
+    const view = viewOf({
+      shown: [{ id: "reference", value: "INV-1", type: "text" }],
+      actions: [
+        { id: "option_acme", role: "option", label: "Acme" },
+        { id: "button_save", label: "Save" },
+        { id: "tab_dashboard", role: "tab", label: "Dashboard", nav: true },
+      ],
+    });
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 4,
+      writePolicy: "allow",
+      formHits: { "home/page": 3 },
+    };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.5);
+    assert.equal(text, "click page.button_save");
+    assert.doesNotMatch(text, /tab_dashboard|option_acme/);
+  });
+
+  it("stays in form after some fields are filled even without Save, and does not hop tabs", () => {
+    const view = viewOf({
+      shown: [
+        { id: "legalname", value: "Todd Turner", type: "text" },
+        { id: "dbaname", value: "solutio omnis", type: "text" },
+        { id: "website", value: "https://example.com", type: "text" },
+        { id: "industry", value: "", type: "text" },
+      ],
+      actions: [
+        { id: "tab_dashboard", role: "tab", label: "Dashboard" },
+        { id: "button_active_tabs__6", label: "Active tabs" },
+      ],
+    });
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 3,
+      writePolicy: "allow",
+      modeFog: { "home/form": hourAgo },
+      formHits: { "home/page": 1 },
+    };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.5);
+    assert.match(text, /fill page\.industry /);
+    assert.doesNotMatch(text, /click page\.(tab_dashboard|button_active_tabs)/);
+  });
+
+  it("stays in form to click mapped Save after every field is filled", () => {
+    const view = viewOf({
+      shown: [
+        { id: "legalname", value: "Todd Turner", type: "text" },
+        { id: "notes", value: "hello", type: "text" },
+      ],
+      actions: [{ id: "tab_dashboard", role: "tab", label: "Dashboard" }],
+    });
+    const pages = [
+      {
+        id: "home",
+        path: "/",
+        ready: { by: "testId", value: "home" },
+        surfaces: [
+          {
+            id: "page",
+            kind: "page" as const,
+            fields: [],
+            actions: [{ id: "button_save", by: "testId" as const, value: "save", status: "ok" as const }],
+          },
+        ],
+      },
+    ];
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 4,
+      writePolicy: "allow",
+      pages: pages as BrainContext["pages"],
+      formHits: { "home/page": 1 },
+    };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.5);
+    assert.match(text, /click page\.button_save/);
+    assert.doesNotMatch(text, /tab_dashboard/);
+  });
+
+  it("does not lock form on empty list filters with Apply", () => {
+    const view = viewOf({
+      shown: [{ id: "status", value: "", type: "text" }],
+      actions: [
+        { id: "combobox_status", role: "combobox" },
+        { id: "button_apply", label: "Apply" },
+        { id: "button_previous", label: "Previous" },
+        { id: "button_next", label: "Next" },
+        { id: "sorted_ascending", label: "Sorted ascending" },
+      ],
+    });
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    assert.equal(
+      detectWalkerMode({
+        view,
+        stepsUsed: 0,
+        writePolicy: "allow",
+        modeFog: { "home/form": hourAgo },
+      }).name,
+      "list",
+    );
   });
 
   it("does not lock wizard on Continue shopping", () => {

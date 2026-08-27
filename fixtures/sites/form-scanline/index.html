@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Form scanline</title>
+    <style>
+      body { font: 16px/1.4 sans-serif; margin: 16px 24px; }
+      h1 { font-size: 1.25rem; margin: 0 0 12px; }
+      header { margin: 0 0 8px; }
+      header button { font: inherit; padding: 2px 8px; }
+      .row { display: flex; gap: 24px; margin-bottom: 16px; align-items: flex-start; }
+      .field { display: flex; flex-direction: column; gap: 4px; }
+      .field.dropped { margin-top: 36px; }
+      .side { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+      .side.skew label { align-self: flex-start; margin-top: -28px; padding-bottom: 32px; }
+      .side.ink-pad label { padding: 0 0 56px; line-height: 24px; margin: 0; }
+      .side.ink-pad input {
+        box-sizing: border-box;
+        height: 24px;
+        padding: 0 4px;
+        border: 1px solid #888;
+        font: inherit;
+        line-height: 22px;
+      }
+      .split { margin: 8px 0; }
+      .split.indent { margin-left: 48px; }
+      .chrome-wrap { border: 1px solid #888; display: block; }
+      .chrome-wrap input, .chrome-wrap select { width: 100%; box-sizing: border-box; }
+      .chrome-wrap.tight { padding: 4px; }
+      .chrome-wrap.loose { padding: 24px 4px 4px; }
+      .MuiOutlinedInput-root {
+        border: 1px solid #888;
+        box-sizing: border-box;
+        display: flex;
+        height: 64px;
+        padding: 0 4px;
+      }
+      .MuiOutlinedInput-root.tight-mui { align-items: flex-start; padding-top: 4px; }
+      .MuiOutlinedInput-root.roomy-mui { align-items: flex-end; padding-bottom: 4px; }
+      .MuiOutlinedInput-root input { border: 0; margin: 0; padding: 0; width: 100%; box-sizing: border-box; }
+      .row.scan-gap { margin-top: 56px; }
+      .custom-select { position: relative; }
+      .custom-select .vis-hide {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        opacity: 0;
+        border: 0;
+      }
+      .custom-select button { margin-top: 36px; }
+      .stack { margin-left: 200px; width: 240px; }
+      .stack-col { margin-bottom: 12px; }
+      .stack-col.indent { margin-left: 40px; }
+      .filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        max-width: 420px;
+        margin: 24px 0;
+      }
+      .filter-bar .field { width: 190px; }
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        max-width: 720px;
+        margin: 24px 0;
+      }
+      .card, .MuiPaper-root {
+        border: 1px solid #bbb;
+        padding: 12px 16px;
+        border-radius: 6px;
+      }
+      .card h2, .MuiPaper-root h2 { font-size: 1rem; margin: 0 0 8px; }
+      .card .drop-field { margin-top: 28px; }
+      dialog.create-journal {
+        position: fixed;
+        top: 48px;
+        left: 16%;
+        width: 68%;
+        z-index: 20;
+        padding: 16px 20px 20px;
+        border: 1px solid #444;
+        background: #fff;
+        box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <button type="button" aria-haspopup="listbox">Site</button>
+      </nav>
+    </header>
+    <main data-testid="home">
+      <h1>New Vendor</h1>
+      <div class="row">
+        <div class="field">
+          <label for="vendor-type">Vendor Type</label>
+          <select id="vendor-type"><option>Supplier</option></select>
+        </div>
+        <div class="field dropped">
+          <label for="legal-name">Legal Name</label>
+          <input id="legal-name" value="Acme" />
+        </div>
+      </div>
+      <div class="side skew">
+        <label for="tax-id">Tax ID</label>
+        <input id="tax-id" value="12-345" />
+      </div>
+      <div class="side ink-pad">
+        <label for="display-name">Display Name</label>
+        <input id="display-name" value="Acme" />
+      </div>
+      <div class="split">
+        <label for="atty-0">Attorney</label>
+        <input id="atty-0" />
+      </div>
+      <div class="split indent">
+        <label for="atty-1">Attorney</label>
+        <input id="atty-1" />
+      </div>
+      <div class="split">
+        <label for="atty-2">Attorney</label>
+        <input id="atty-2" />
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="inv-date">Invoice Date</label>
+          <div class="chrome-wrap tight"><input id="inv-date" value="2026-08-01" /></div>
+        </div>
+        <div class="field">
+          <label for="pay-terms">Payment Terms</label>
+          <div class="chrome-wrap loose"><select id="pay-terms"><option>Net 15</option></select></div>
+        </div>
+      </div>
+      <div class="row scan-gap">
+        <div class="field">
+          <label for="account-code">Account Code</label>
+          <div class="MuiOutlinedInput-root tight-mui"><input id="account-code" /></div>
+        </div>
+        <div class="field">
+          <label for="cost-center">Cost Center</label>
+          <div class="MuiOutlinedInput-root roomy-mui"><input id="cost-center" /></div>
+        </div>
+      </div>
+      <div class="row scan-gap">
+        <div class="field">
+          <label for="country">Country</label>
+          <input id="country" />
+        </div>
+        <div class="field">
+          <label for="addr">Address type</label>
+          <div class="custom-select">
+            <select id="addr" class="vis-hide">
+              <option>Billing</option>
+            </select>
+            <button type="button" aria-haspopup="listbox">Select address type</button>
+          </div>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="stack-col">
+          <label for="identity">Identity</label>
+          <input id="identity" />
+        </div>
+        <div class="stack-col indent">
+          <label for="vendor-kind">Vendor Kind</label>
+          <input id="vendor-kind" />
+        </div>
+        <div class="stack-col">
+          <label for="dba">DBA</label>
+          <input id="dba" />
+        </div>
+      </div>
+      <section class="journal-block">
+        <h2>Journals</h2>
+        <div class="filter-bar">
+          <div class="field">
+            <label for="journal-search">Journal search</label>
+            <input id="journal-search" />
+          </div>
+          <div class="field">
+            <label for="journal-status">Journal status</label>
+            <select id="journal-status" role="combobox"><option>All</option></select>
+          </div>
+          <div class="field">
+            <label for="from-date">From date</label>
+            <input id="from-date" type="date" />
+          </div>
+          <div class="field">
+            <label for="posted-date">Posted date</label>
+            <input id="posted-date" type="date" />
+          </div>
+        </div>
+      </section>
+      <div class="card-grid">
+        <article class="card">
+          <h2>Default Payment Terms</h2>
+          <div class="field">
+            <label for="pay-default">Default Payment Terms</label>
+            <input id="pay-default" value="Net 30" />
+          </div>
+        </article>
+        <article class="card">
+          <h2>Max Past Days</h2>
+          <div class="field drop-field">
+            <label for="max-past">Max Past Days</label>
+            <input id="max-past" value="90" />
+          </div>
+        </article>
+      </div>
+      <div class="card-grid">
+        <section class="MuiPaper-root">
+          <h2>Transaction Entry</h2>
+          <div class="field">
+            <label for="lock-period">Lock period</label>
+            <input id="lock-period" />
+          </div>
+        </section>
+        <section class="MuiPaper-root">
+          <h2>Hold &amp; Maturation</h2>
+          <div class="field drop-field">
+            <label for="hold-days">Hold days</label>
+            <input id="hold-days" />
+          </div>
+        </section>
+      </div>
+    </main>
+    <dialog open id="create-journal" class="create-journal">
+      <h2>Create Journal Entry</h2>
+      <div class="field">
+        <label for="entry-memo">Memo</label>
+        <input id="entry-memo" />
+      </div>
+      <button type="button" id="close-journal" onclick="this.closest('dialog').close()">Close</button>
+    </dialog>
+  </body>
+</html>

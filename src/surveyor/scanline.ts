@@ -10,8 +10,29 @@ export type LayoutHit = {
 };
 
 const MAX_HITS = 8;
-const CLIP_PX = 4;
+export const CLIP_PX = 4;
 const SCAN_PX = 16;
+/** Visible inner boxes to check when the td itself does not overflow. */
+export const INNER_CLIP_CAP = 8;
+
+export function isClippedBox(opts: {
+  scrollWidth: number;
+  clientWidth: number;
+  textOverflow?: string;
+  overflowX?: string;
+  webkitLineClamp?: string;
+  lineClamp?: string;
+  text?: string;
+}): boolean {
+  if (opts.scrollWidth <= opts.clientWidth + CLIP_PX) return false;
+  if ((opts.textOverflow || "") === "ellipsis") return false;
+  const clamp = opts.webkitLineClamp || opts.lineClamp;
+  if (clamp && clamp !== "none") return false;
+  const ox = opts.overflowX || "";
+  if (ox === "auto" || ox === "scroll") return false;
+  const text = String(opts.text || "").replace(/\s+/g, " ").trim();
+  return text.length >= 2;
+}
 
 /**
  * Browser-side. Source string so tsx/esbuild `__name` helpers are not
@@ -21,6 +42,7 @@ const COLLECT_SRC = `(() => {
   var CLIP_PX = ${CLIP_PX};
   var SCAN_PX = ${SCAN_PX};
   var MAX_HITS = ${MAX_HITS};
+  var INNER_CLIP_CAP = ${INNER_CLIP_CAP};
   var hits = [];
   var seen = {};
 
@@ -42,11 +64,18 @@ const COLLECT_SRC = `(() => {
     return one.length <= n ? one : one.slice(0, n - 1) + "…";
   }
 
+  var clipN = 0;
+  var lineN = 0;
+
   function push(rule, where, message, confidence) {
+    if (rule === "clip" && clipN >= MAX_HITS) return;
+    if (rule === "scanline" && lineN >= MAX_HITS) return;
     var key = rule + "\\0" + where + "\\0" + message;
     if (seen[key]) return;
     seen[key] = true;
     hits.push({ rule: rule, where: where, message: message, confidence: confidence });
+    if (rule === "clip") clipN += 1;
+    else if (rule === "scanline") lineN += 1;
   }
 
   function cleanEllipsis(el) {
@@ -73,6 +102,71 @@ const COLLECT_SRC = `(() => {
 
   function overflowAmt(el) {
     return el.scrollWidth - el.clientWidth;
+  }
+
+  function nestedInOtherCell(inner, cell) {
+    var host = inner.closest("td, th, [role='cell'], [role='gridcell']");
+    return Boolean(host && host !== cell);
+  }
+
+  function editorEl(el) {
+    if (!el) return false;
+    var tag = (el.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "select" || tag === "textarea") return true;
+    var role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+    return (
+      role === "combobox" ||
+      role === "textbox" ||
+      role === "searchbox" ||
+      role === "spinbutton" ||
+      role === "listbox" ||
+      role === "option"
+    );
+  }
+
+  function inEditor(el, cell) {
+    var cur = el;
+    while (cur && cur !== cell) {
+      if (editorEl(cur)) return true;
+      cur = cur.parentElement;
+    }
+    return editorEl(el);
+  }
+
+  function cellIsEditor(cell) {
+    if (editorEl(cell)) return true;
+    var nodes = cell.querySelectorAll(
+      "input, select, textarea, [role='combobox'], [role='textbox'], [role='searchbox'], [role='spinbutton']",
+    );
+    var i;
+    for (i = 0; i < nodes.length; i++) {
+      if (nestedInOtherCell(nodes[i], cell)) continue;
+      if (shown(nodes[i])) return true;
+    }
+    return false;
+  }
+
+  // Inner span/div can clip while the td box itself does not overflow.
+  // Skip the cell's editor — input overflow is field clip, not mid-word cell clip.
+  function cellClipAmt(cell) {
+    if (isClipped(cell) && !cellIsEditor(cell)) return overflowAmt(cell);
+    var nodes = cell.querySelectorAll("*");
+    var i;
+    var n = 0;
+    for (i = 0; i < nodes.length && n < INNER_CLIP_CAP; i++) {
+      var inner = nodes[i];
+      var tag = (inner.tagName || "").toLowerCase();
+      if (tag === "td" || tag === "th") continue;
+      var role = ((inner.getAttribute && inner.getAttribute("role")) || "").toLowerCase();
+      if (role === "cell" || role === "gridcell" || role === "columnheader" || role === "rowheader") continue;
+      if (nestedInOtherCell(inner, cell)) continue;
+      if (inEditor(inner, cell)) continue;
+      if (!shown(inner)) continue;
+      n += 1;
+      if (!isClipped(inner)) continue;
+      return overflowAmt(inner);
+    }
+    return 0;
   }
 
   function colLabel(table, i) {
@@ -115,6 +209,7 @@ const COLLECT_SRC = `(() => {
       var row = list[i];
       if (row.closest("thead") || row.closest("tfoot")) continue;
       if (row.querySelector("th") && !row.querySelector("td")) continue;
+      if (row.querySelector("[role='columnheader']") && !row.querySelector("[role='gridcell'], td")) continue;
       if (!shown(row)) continue;
       var cells = rowCells(row);
       if (cells.length < 2) continue;
@@ -133,58 +228,269 @@ const COLLECT_SRC = `(() => {
       for (c = 0; c < rows[r].cells.length; c++) {
         cell = rows[r].cells[c];
         if (!shown(cell)) continue;
-        if (!isClipped(cell)) continue;
-        var amt = overflowAmt(cell);
+        var amt = cellClipAmt(cell);
+        if (!amt) continue;
         var label = colLabel(table, c);
         push(
           "clip",
           label + " in " + whereTable,
-          label + " text is cut mid-word without an ellipsis",
+          "Text in the " + label + " column is cut off (no ellipsis)",
           amt >= 12 ? "high" : "medium",
         );
-        if (hits.length >= MAX_HITS) return;
+        if (clipN >= MAX_HITS) break;
       }
+      if (clipN >= MAX_HITS) break;
     }
-    if (rows.length < 2) return;
-    var spanned = false;
-    for (r = 0; r < rows.length; r++) {
-      for (c = 0; c < rows[r].cells.length; c++) {
-        cell = rows[r].cells[c];
-        if ((cell.colSpan || 1) > 1 || (cell.rowSpan || 1) > 1) spanned = true;
-      }
-    }
-    if (spanned) return;
+    if (lineN >= MAX_HITS) return;
     var colCount = 0;
     for (r = 0; r < rows.length; r++) {
       if (rows[r].cells.length > colCount) colCount = rows[r].cells.length;
     }
-    for (c = 0; c < colCount; c++) {
-      var lefts = [];
+    function contentLeft(el) {
+      var box = el.getBoundingClientRect();
+      var cs = window.getComputedStyle(el);
+      return box.left + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.borderLeftWidth) || 0);
+    }
+    function textAlignEdge(el) {
+      var cs = window.getComputedStyle(el);
+      var a = (cs.textAlign || "").toLowerCase();
+      var dir = (cs.direction || "").toLowerCase();
+      if (a === "center") return "center";
+      if (a === "right" || a === "end") return "right";
+      if (a === "left" || a === "start") return "left";
+      return dir === "rtl" ? "right" : "left";
+    }
+    function firstLineRect(el) {
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+      var node;
+      while ((node = walker.nextNode())) {
+        var raw = node.nodeValue || "";
+        if (!raw.replace(/\\s+/g, "")) continue;
+        var range = document.createRange();
+        try { range.selectNodeContents(node); } catch (err) { continue; }
+        var rects = range.getClientRects();
+        if (!rects || rects.length === 0) continue;
+        var line = rects[0];
+        if (line.width < 1 && line.height < 1) continue;
+        return line;
+      }
+      return null;
+    }
+    function inkRects(el) {
+      var out = [];
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+      var node;
+      while ((node = walker.nextNode())) {
+        var raw = node.nodeValue || "";
+        if (!raw.replace(/\\s+/g, "")) continue;
+        var range = document.createRange();
+        try { range.selectNodeContents(node); } catch (err) { continue; }
+        var rects = range.getClientRects();
+        var k;
+        for (k = 0; k < rects.length; k++) {
+          var line = rects[k];
+          if (line.width < 1 || line.height < 1) continue;
+          out.push({ left: line.left, right: line.right, top: line.top, bottom: line.bottom });
+        }
+      }
+      return out;
+    }
+    function inkOverlapAmt(aRects, bRects) {
+      var best = 0;
+      var i, j;
+      for (i = 0; i < aRects.length; i++) {
+        for (j = 0; j < bRects.length; j++) {
+          var w = Math.min(aRects[i].right, bRects[j].right) - Math.max(aRects[i].left, bRects[j].left);
+          var h = Math.min(aRects[i].bottom, bRects[j].bottom) - Math.max(aRects[i].top, bRects[j].top);
+          if (w >= 8 && h >= 4) {
+            var m = w < h ? w : h;
+            if (m > best) best = m;
+          }
+        }
+      }
+      return best;
+    }
+    function paintsIntoNext(aRects, nextEl) {
+      if (aRects.length === 0) return 0;
+      var nextBox = nextEl.getBoundingClientRect();
+      var left = contentLeft(nextEl);
+      var right = -Infinity;
+      var i;
+      for (i = 0; i < aRects.length; i++) {
+        if (aRects[i].right > right) right = aRects[i].right;
+      }
+      var extra = right - left;
+      if (extra < 8) return 0;
+      for (i = 0; i < aRects.length; i++) {
+        var h = Math.min(aRects[i].bottom, nextBox.bottom) - Math.max(aRects[i].top, nextBox.top);
+        if (h >= 4) return extra;
+      }
+      return 0;
+    }
+    function textEdge(el, edge) {
+      var line = firstLineRect(el);
+      if (!line) return edge === "right" ? el.getBoundingClientRect().right : contentLeft(el);
+      return edge === "right" ? line.right : line.left;
+    }
+    function spreadOf(vals) {
+      if (vals.length === 0) return 0;
+      var minV = vals[0];
+      var maxV = vals[0];
+      var s;
+      for (s = 1; s < vals.length; s++) {
+        if (vals[s] < minV) minV = vals[s];
+        if (vals[s] > maxV) maxV = vals[s];
+      }
+      return maxV - minV;
+    }
+    function columnMostlyEditors(col) {
+      var n = 0;
+      var editors = 0;
+      var i;
+      for (i = 0; i < rows.length; i++) {
+        var box = rows[i].cells[col];
+        if (!box || !shown(box)) continue;
+        n += 1;
+        if (cellIsEditor(box)) editors += 1;
+      }
+      return n > 0 && editors * 2 >= n;
+    }
+    if (rows.length >= 2) {
+      for (c = 0; c < colCount; c++) {
+        if (columnMostlyEditors(c)) continue;
+        var lefts = [];
+        for (r = 0; r < rows.length; r++) {
+          cell = rows[r].cells[c];
+          if (!cell || !shown(cell)) continue;
+          if ((cell.colSpan || 1) > 1 || (cell.rowSpan || 1) > 1) continue;
+          lefts.push(contentLeft(cell));
+        }
+        if (lefts.length < 2) continue;
+        var spread = spreadOf(lefts);
+        if (spread <= SCAN_PX) continue;
+        var label = colLabel(table, c);
+        push(
+          "scanline",
+          label + " in " + whereTable,
+          "The " + label + " column does not line up from row to row",
+          spread >= 28 ? "high" : "medium",
+        );
+        if (lineN >= MAX_HITS) return;
+      }
+    }
+    var head = table.querySelector("thead tr");
+    if (!head) {
+      var grole = table.querySelectorAll("[role='row']");
+      var g;
+      for (g = 0; g < grole.length; g++) {
+        if (grole[g].querySelector("[role='columnheader']") && !grole[g].querySelector("[role='gridcell'], td")) {
+          head = grole[g];
+          break;
+        }
+      }
+    }
+    var heads = head && shown(head) ? rowCells(head) : [];
+    if (clipN < MAX_HITS && heads.length >= 2) {
+      var collided = {};
+      var squishNames = [];
+      var squishAmt = 0;
+      for (c = 0; c < heads.length - 1; c++) {
+        if (!heads[c] || !shown(heads[c]) || !heads[c + 1] || !shown(heads[c + 1])) continue;
+        if ((heads[c].colSpan || 1) > 1 || (heads[c + 1].colSpan || 1) > 1) continue;
+        var aInk = inkRects(heads[c]);
+        var bInk = inkRects(heads[c + 1]);
+        if (aInk.length === 0 || bInk.length === 0) continue;
+        var hit = inkOverlapAmt(aInk, bInk);
+        var into = paintsIntoNext(aInk, heads[c + 1]);
+        if (into > hit) hit = into;
+        var ar = heads[c].getBoundingClientRect();
+        var br = heads[c + 1].getBoundingClientRect();
+        var bw = Math.min(ar.right, br.right) - Math.max(ar.left, br.left);
+        var bh = Math.min(ar.bottom, br.bottom) - Math.max(ar.top, br.top);
+        if (bw >= 8 && bh >= 8 && bw > hit) hit = bw;
+        if (hit < 8) continue;
+        if (hit > squishAmt) squishAmt = hit;
+        if (!collided[c]) {
+          collided[c] = true;
+          squishNames.push(colLabel(table, c));
+        }
+        if (!collided[c + 1]) {
+          collided[c + 1] = true;
+          squishNames.push(colLabel(table, c + 1));
+        }
+      }
+      if (squishNames.length >= 2) {
+        var squishLabel =
+          squishNames.length === 2
+            ? squishNames[0] + " and " + squishNames[1]
+            : squishNames.slice(0, squishNames.length - 1).join(", ") + ", and " + squishNames[squishNames.length - 1];
+        push(
+          "clip",
+          squishNames.join(" · ") + " in " + whereTable,
+          squishLabel + " headers are squished together",
+          squishAmt >= 16 ? "high" : "medium",
+        );
+      }
+      for (c = 0; c < heads.length; c++) {
+        if (collided[c]) continue;
+        if (!heads[c] || !shown(heads[c])) continue;
+        var headAmt = cellClipAmt(heads[c]);
+        if (!headAmt) continue;
+        var headLabel = colLabel(table, c);
+        push(
+          "clip",
+          headLabel + " in " + whereTable,
+          "The " + headLabel + " header is cut off — the title does not fit its column",
+          headAmt >= 12 ? "high" : "medium",
+        );
+        if (clipN >= MAX_HITS) break;
+      }
+    }
+    for (c = 0; c < Math.max(colCount, heads.length); c++) {
+      if (!heads[c] || !shown(heads[c])) continue;
+      if ((heads[c].colSpan || 1) > 1) continue;
+      if (columnMostlyEditors(c)) continue;
+      var hLeft = contentLeft(heads[c]);
+      var cellLefts = [];
+      var hAlign = textAlignEdge(heads[c]);
+      var alignOk = hAlign === "left" || hAlign === "right";
+      var cellInk = [];
       for (r = 0; r < rows.length; r++) {
         cell = rows[r].cells[c];
         if (!cell || !shown(cell)) continue;
-        var box = cell.getBoundingClientRect();
-        var cs = window.getComputedStyle(cell);
-        lefts.push(box.left + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.borderLeftWidth) || 0));
+        if ((cell.colSpan || 1) > 1 || (cell.rowSpan || 1) > 1) continue;
+        cellLefts.push(contentLeft(cell));
+        if (alignOk && textAlignEdge(cell) !== hAlign) alignOk = false;
+        if (hAlign === "left" || hAlign === "right") cellInk.push(textEdge(cell, hAlign));
       }
-      if (lefts.length < 2) continue;
-      var minL = lefts[0];
-      var maxL = lefts[0];
-      var i;
-      for (i = 1; i < lefts.length; i++) {
-        if (lefts[i] < minL) minL = lefts[i];
-        if (lefts[i] > maxL) maxL = lefts[i];
+      if (cellLefts.length === 0) continue;
+      var all = [hLeft].concat(cellLefts);
+      var hSpread = spreadOf(all);
+      if (hSpread <= SCAN_PX && alignOk && cellInk.length > 0) {
+        var inkSpread = spreadOf([textEdge(heads[c], hAlign)].concat(cellInk));
+        if (inkSpread > SCAN_PX && hAlign === "left") {
+          var locked = 0;
+          for (r = 0; r < rows.length; r++) {
+            cell = rows[r].cells[c];
+            if (!cell || !shown(cell)) continue;
+            if ((cell.colSpan || 1) > 1 || (cell.rowSpan || 1) > 1) continue;
+            var line = firstLineRect(cell);
+            var box = cell.getBoundingClientRect();
+            if (line && line.left >= (box.left + box.right) / 2) locked += 1;
+          }
+          if (locked * 2 >= cellInk.length) inkSpread = 0;
+        }
+        hSpread = inkSpread;
       }
-      var spread = maxL - minL;
-      if (spread <= SCAN_PX) continue;
-      var label = colLabel(table, c);
+      if (hSpread <= SCAN_PX) continue;
+      var hLabel = colLabel(table, c);
       push(
         "scanline",
-        label + " in " + whereTable,
-        label + " cells do not share a left edge",
-        spread >= 28 ? "high" : "medium",
+        hLabel + " in " + whereTable,
+        "The " + hLabel + " header does not line up with the cells below it",
+        hSpread >= 28 ? "high" : "medium",
       );
-      if (hits.length >= MAX_HITS) return;
+      if (lineN >= MAX_HITS) return;
     }
   }
 
@@ -192,10 +498,10 @@ const COLLECT_SRC = `(() => {
   var t;
   for (t = 0; t < tables.length; t++) {
     scanTable(tables[t]);
-    if (hits.length >= MAX_HITS) break;
+    if (clipN >= MAX_HITS && lineN >= MAX_HITS) break;
   }
 
-  if (hits.length < MAX_HITS) {
+  if (clipN < MAX_HITS) {
     var fields = document.querySelectorAll(
       "input:not([type='hidden']):not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit']):not([type='file']), textarea",
     );
@@ -214,7 +520,7 @@ const COLLECT_SRC = `(() => {
         "Value is cut off inside the field (no ellipsis)",
         amt >= 12 ? "high" : "medium",
       );
-      if (hits.length >= MAX_HITS) break;
+      if (clipN >= MAX_HITS) break;
     }
   }
 

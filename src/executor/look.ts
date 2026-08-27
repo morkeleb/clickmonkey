@@ -73,23 +73,24 @@ function readFontHits(root: {
 
 type HitResult = { covered: boolean; by?: string };
 
-/** Browser-side. Must stay closure-free for locator.evaluate. */
-function readHit(el: {
-  getBoundingClientRect(): { left: number; top: number; width: number; height: number };
+type HitNode = {
+  getBoundingClientRect(): { left: number; top: number; right: number; bottom: number; width: number; height: number };
   contains(other: unknown): boolean;
   getAttribute(name: string): string | null;
+  hasAttribute(name: string): boolean;
+  closest(sel: string): HitNode | null;
+  parentElement: HitNode | null;
   tagName: string;
   id: string;
   ownerDocument: {
-    elementFromPoint(x: number, y: number): {
-      contains(other: unknown): boolean;
-      getAttribute(name: string): string | null;
-      tagName: string;
-      id: string;
-    } | null;
+    getElementById(id: string): HitNode | null;
+    elementFromPoint(x: number, y: number): HitNode | null;
     defaultView: { innerWidth: number; innerHeight: number } | null;
   };
-}): HitResult {
+};
+
+/** Browser-side. Must stay closure-free for locator.evaluate. */
+function readHit(el: HitNode): HitResult {
   const r = el.getBoundingClientRect();
   if (r.width < 2 || r.height < 2) return { covered: false };
   const x = r.left + r.width / 2;
@@ -101,6 +102,59 @@ function readHit(el: {
   const top = el.ownerDocument.elementFromPoint(x, y);
   if (!top) return { covered: false };
   if (el === top || el.contains(top) || top.contains(el)) return { covered: false };
+  try {
+    const fieldHost = typeof el.closest === "function" ? el.closest('[role="combobox"], label') : null;
+    if (fieldHost && (fieldHost === top || fieldHost.contains(top))) return { covered: false };
+    const topHost = typeof top.closest === "function" ? top.closest('[role="combobox"], label') : null;
+    if (fieldHost && topHost && fieldHost === topHost) return { covered: false };
+    const idBlob = `${el.getAttribute("aria-controls") || ""} ${el.getAttribute("aria-owns") || ""} ${
+      fieldHost ? `${fieldHost.getAttribute("aria-controls") || ""} ${fieldHost.getAttribute("aria-owns") || ""}` : ""
+    }`;
+    const ids = idBlob.trim().split(/\s+/);
+    let i = 0;
+    for (i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (!id) continue;
+      const list = el.ownerDocument.getElementById(id);
+      if (list && (list === top || list.contains(top))) return { covered: false };
+    }
+    const tag = el.tagName.toLowerCase();
+    const role = (el.getAttribute("role") || "").toLowerCase();
+    if (tag === "select" || role === "combobox") {
+      const topRole = (top.getAttribute("role") || "").toLowerCase();
+      const topTag = top.tagName.toLowerCase();
+      const trigger =
+        topTag === "button" || topRole === "button" || topRole === "combobox" || topRole === "listbox" || topRole === "option";
+      if (trigger) {
+        const b = top.getBoundingClientRect();
+        const left = Math.max(r.left, b.left);
+        const right = Math.min(r.right, b.right);
+        const topY = Math.max(r.top, b.top);
+        const bottom = Math.min(r.bottom, b.bottom);
+        if (right > left && bottom > topY) {
+          const inter = (right - left) * (bottom - topY);
+          const smaller = Math.min(r.width * r.height, b.width * b.height);
+          if (smaller > 0 && inter / smaller >= 0.6) return { covered: false };
+        }
+      }
+      let p = el.parentElement;
+      let depth = 0;
+      while (p && depth < 4) {
+        const ptag = p.tagName.toLowerCase();
+        if (ptag === "form" || ptag === "main" || ptag === "body" || ptag === "html") break;
+        if (p.contains(top) && win) {
+          const pr = p.getBoundingClientRect();
+          if (pr.height <= Math.max(r.height * 6, 96) && pr.width < win.innerWidth * 0.9) {
+            return { covered: false };
+          }
+        }
+        p = p.parentElement;
+        depth += 1;
+      }
+    }
+  } catch {
+    // hit-test still uses the painted node below
+  }
   const testId = top.getAttribute("data-testid")?.trim();
   if (testId) return { covered: true, by: testId.slice(0, 40) };
   if (top.id?.trim()) return { covered: true, by: top.id.trim().slice(0, 40) };

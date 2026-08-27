@@ -2,7 +2,13 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { chat } from "../brains/chat.js";
-import { persistFinding, persistVisualIssueFindings, shouldPersistFinding } from "../persist/finding.js";
+import {
+  persistFinding,
+  persistVisualIssueFindings,
+  shouldPersistFinding,
+  visualIssueScreenshotPath,
+  type VisualIssueScreenshot,
+} from "../persist/finding.js";
 import { touchPresence } from "../persist/presence.js";
 import { persistSharedMap } from "../persist/config.js";
 import { lastQualityPage, lastVisualHash, persistQualityRuntime, persistQualityVisual } from "../persist/quality.js";
@@ -28,7 +34,13 @@ import { resolveVision, type Config } from "../schema/config.js";
 import { staleMsForPage } from "../schema/fog.js";
 import type { PageModel, PageModelDraft } from "../schema/page-model.js";
 import type { View } from "../schema/view.js";
-import { attachHttpOracle, isDocumentNotFound, isNotFoundPage, type OracleFinding } from "../oracles/http.js";
+import {
+  attachHttpOracle,
+  flushHttpOracle,
+  isDocumentNotFound,
+  isNotFoundPage,
+  type OracleFinding,
+} from "../oracles/http.js";
 import { reportDocumentNotFound } from "../persist/broken.js";
 import { attachPageErrorOracle } from "../oracles/page-error.js";
 import { applyVisionBlurb, mechanicalDescription, visionMayDescribe } from "../surveyor/describe.js";
@@ -39,7 +51,21 @@ import {
   waitOutLoading,
 } from "../surveyor/loading.js";
 import { scanLayout } from "../surveyor/layout.js";
-import { examineScreenshot, hashPngFile, visionPass, type MeasuredVisualHit } from "../surveyor/vision.js";
+import {
+  blurActiveElement,
+  fitShotClip,
+  refocusWhereForClip,
+  type FocusVisibleClip,
+} from "../surveyor/focus-visible.js";
+import {
+  examineScreenshot,
+  hashPngFile,
+  shouldSkipVision,
+  visionOutcome,
+  visionPass,
+  type MeasuredVisualHit,
+  type VisionSkipReason,
+} from "../surveyor/vision.js";
 import { checkFence } from "./fence.js";
 import {
   captureStepShot,
@@ -54,7 +80,7 @@ import { hashHtml, persistQualityFromHtml, qualityFromHtml } from "../surveyor/r
 import { ledgerOrigin, originOfHref, pathnameOf } from "../surveyor/ready.js";
 import { seoIsPrivate } from "../surveyor/seo.js";
 import { hoppablePages, hopContextOf } from "./hop.js";
-import { logLand, logSight, logStepDone, logStepStart, type NavMeta } from "./nav-log.js";
+import { logLand, logSight, logStepDone, logStepStart, logVision, type NavMeta } from "./nav-log.js";
 import { dumpVerboseState } from "./verbose.js";
 import { buildView } from "./view.js";
 
@@ -308,6 +334,65 @@ function measuredHits(issues: QualityIssue[] | undefined): MeasuredVisualHit[] |
   }));
 }
 
+function applyFocusVisibleEvidence(
+  issues: QualityIssue[],
+  shots: VisualIssueScreenshot[] | undefined,
+): QualityIssue[] {
+  return issues.map((issue) => {
+    if (issue.rule !== "focusVisible") return issue;
+    if (visualIssueScreenshotPath(issue, { issueScreenshots: shots })) return issue;
+    return { ...issue, confidence: "medium" as const };
+  });
+}
+
+async function captureFocusVisibleShots(
+  state: RunState,
+  clips: FocusVisibleClip[],
+): Promise<VisualIssueScreenshot[]> {
+  if (clips.length === 0) return [];
+  const dir = join(state.outDir, "shots");
+  mkdirSync(dir, { recursive: true });
+  const n = String(state.log.steps.length).padStart(3, "0");
+  const viewport = state.page.viewportSize();
+  const scroll = (await state.page
+    .evaluate(`({ x: window.scrollX || 0, y: window.scrollY || 0 })`)
+    .catch(() => ({ x: 0, y: 0 }))) as { x: number; y: number };
+  const sx = Number.isFinite(scroll.x) ? scroll.x : 0;
+  const sy = Number.isFinite(scroll.y) ? scroll.y : 0;
+  const shots: VisualIssueScreenshot[] = [];
+  try {
+    for (const [i, item] of clips.entries()) {
+      const live = await refocusWhereForClip(state.page, item.where);
+      if (!live) continue;
+      const clip = fitShotClip(live, viewport) ?? fitShotClip(item.clip, viewport);
+      if (!clip) continue;
+      const path = join(dir, `step-${n}-focus-visible-${String(i).padStart(2, "0")}.png`);
+      await state.page.screenshot({ path, clip }).catch(() => undefined);
+      if (existsSync(path)) shots.push({ where: item.where, screenshotPath: path });
+    }
+  } finally {
+    await blurActiveElement(state.page);
+    await state.page.evaluate(`window.scrollTo(${sx}, ${sy})`).catch(() => undefined);
+  }
+  return shots;
+}
+
+/** One harness line per PNG this run. Skip `ok` (those hits are already in quality.json). */
+function emitVisionLog(
+  state: RunState,
+  reason: VisionSkipReason,
+  info: { pageKey: string; shotHash?: string; path?: string; issues?: number },
+): void {
+  if (reason === "ok") return;
+  if (!state.navLogPath) return;
+  if (info.shotHash && state.blurbTriedHashByPage?.[info.pageKey] === info.shotHash) return;
+  logVision(state.navLogPath, {
+    reason,
+    ...(info.path ? { path: info.path } : {}),
+    ...(info.issues !== undefined ? { issues: info.issues } : {}),
+  });
+}
+
 /** PNG + HTTP only. Do not touch `page` — finish() runs this with axe after layout restored the viewport. */
 async function scanStepVision(
   state: RunState,
@@ -321,17 +406,39 @@ async function scanStepVision(
   const { path, origin, href } = loc;
   const pageKey = sightPageKey(path, origin);
   applyPageSight(state, pageKey);
-  if (state.replay || bounced) return undefined;
-  if (!shotPath || !existsSync(shotPath)) return undefined;
-  if (step.kind === "screenshot" && step.ui) return undefined;
-  if (html && htmlLooksLikeLoading(html)) return undefined;
+  const shotOk = Boolean(shotPath && existsSync(shotPath) && !(step.kind === "screenshot" && step.ui));
+  const shotHash = shotOk && shotPath ? hashPngFile(shotPath) : undefined;
+  const markTried = (hash = shotHash) => {
+    if (!hash) return;
+    state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: hash };
+  };
+  const emit = (reason: VisionSkipReason, extra?: { issues?: number }) => {
+    emitVisionLog(state, reason, { pageKey, shotHash, path, ...extra });
+  };
+  if (state.replay || bounced) {
+    emit(visionOutcome({ replay: true }));
+    markTried();
+    return undefined;
+  }
+  if (!shotOk || !shotPath) {
+    if (step.kind === "screenshot" && step.ui) return undefined;
+    emit(visionOutcome({ noShot: true }));
+    return undefined;
+  }
+  if (html && htmlLooksLikeLoading(html)) {
+    emit(visionOutcome({ loadingHtml: true }));
+    return undefined;
+  }
   try {
     const vision = resolveVision(state.config.vision, state.config.brain);
-    if (!vision || (!vision.issues && !vision.assist)) return undefined;
+    if (!vision || (!vision.issues && !vision.assist)) {
+      emit(visionOutcome({ noConfig: true }));
+      markTried();
+      return undefined;
+    }
     const key = { path, ...(origin ? { origin } : {}) };
     const onPageSurface = state.surfaceStack.length <= 1;
     const mapPage = onPageSurface ? state.model.pages.find((p) => p.id === state.pageId) : undefined;
-    const shotHash = hashPngFile(shotPath);
     const needBlurb = Boolean(
       mapPage && visionMayDescribe(mapPage) && state.blurbTriedHashByPage?.[pageKey] !== shotHash,
     );
@@ -339,13 +446,13 @@ async function scanStepVision(
     const pngUnchanged = Boolean(opts?.ledgerVisualHash) && shotHash === opts?.ledgerVisualHash;
     const staleMs = staleMsForPage(state.fogAtStart, state.pageId);
     const triedThisRun = state.blurbTriedHashByPage?.[pageKey] === shotHash;
+    const fogFresh = shouldSkipVision({ staleMs, unchanged: pngUnchanged });
     if (visionPass({ needBlurb, needSight, pngUnchanged, staleMs, triedThisRun }) === "skip") {
+      emit(visionOutcome({ fogFresh, triedThisRun }));
+      markTried();
       applyPageSight(state, pageKey);
       return undefined;
     }
-    const markTried = (hash = shotHash) => {
-      state.blurbTriedHashByPage = { ...(state.blurbTriedHashByPage ?? {}), [pageKey]: hash };
-    };
     const apiKey = vision.apiKeyEnv ? process.env[vision.apiKeyEnv] : undefined;
     const result = await examineScreenshot({
       chat,
@@ -357,11 +464,13 @@ async function scanStepVision(
       ...(opts?.measured && opts.measured.length > 0 ? { measured: opts.measured } : {}),
     });
     if (result.status !== "ok") {
+      emit(visionOutcome({ status: result.status, hashMatch: result.status === "skip" }));
       markTried();
       applyPageSight(state, pageKey);
       return undefined;
     }
     if (visionReplyIsLoading(result)) {
+      emit(visionOutcome({ status: "ok", loadingFrame: true }));
       markTried(result.hash);
       applyPageSight(state, pageKey);
       return undefined;
@@ -390,6 +499,9 @@ async function scanStepVision(
         });
       }
     }
+    const persist = Boolean(vision.issues && result.persist);
+    const reason = visionOutcome({ status: "ok", persist, issueCount: result.issues.length });
+    emit(reason, reason === "empty" || reason === "no-persist" ? { issues: result.issues.length } : undefined);
     if (vision.assist && result.sight) {
       state.lastSightByPage = { ...(state.lastSightByPage ?? {}), [pageKey]: result.sight };
       if (state.navLogPath) {
@@ -401,6 +513,8 @@ async function scanStepVision(
     if (needBlurb) return result.blurb;
     return undefined;
   } catch {
+    emit(visionOutcome({ status: "fail" }));
+    markTried();
     applyPageSight(state, pageKey);
     return undefined;
   }
@@ -506,6 +620,7 @@ async function finish(
   }
   syncPageFromUrl(state);
   await syncSurfaceStack(state);
+  await flushHttpOracle(state.page);
 
   const href = state.page.url();
   const fenceHit = state.inIntro ? "ok" : checkFence(href, state.config.fence);
@@ -573,29 +688,39 @@ async function finish(
       const shotHash = shotPath && existsSync(shotPath) ? hashPngFile(shotPath) : undefined;
       const skipLayout = shotHash ? prev?.visualHash === shotHash : hashHit;
       if (!skipLayout) {
-        const layout = await scanLayout(state.page);
-        persistQualityVisual(
-          state.configPath,
-          {
-            ...qualityKey,
-            foundAt: new Date().toISOString(),
-            visual: layout.issues,
-            visualHash: shotHash ?? prev?.visualHash ?? "layout",
-          },
-          state.outDir,
-          ...(layout.complete ? [{ replaceDom: true }] : []),
-        );
-        if (layout.issues.length > 0 && shotPath) {
-          persistVisualIssueFindings(state.outDir, layout.issues, {
-            stepIndex: state.log.steps.length,
-            url: loc.href,
-            pageId: state.pageId,
-            screenshotPath: shotPath,
-            tapePath: join(state.outDir, "replay.log"),
-            replayLog: compactTape(state, step, "visual issue"),
-          });
+        if (await pageLooksLikeLoading(state.page)) {
+          measured = measuredHits(prev?.visual);
+        } else {
+          const layout = await scanLayout(state.page);
+          let issueScreenshots: VisualIssueScreenshot[] | undefined;
+          if (layout.focusVisibleClips?.length && state.config.screenshots !== false) {
+            issueScreenshots = await captureFocusVisibleShots(state, layout.focusVisibleClips);
+          }
+          const visual = applyFocusVisibleEvidence(layout.issues, issueScreenshots);
+          persistQualityVisual(
+            state.configPath,
+            {
+              ...qualityKey,
+              foundAt: new Date().toISOString(),
+              visual,
+              visualHash: shotHash ?? prev?.visualHash ?? "layout",
+            },
+            state.outDir,
+            ...(layout.complete ? [{ replaceDom: true }] : []),
+          );
+          if (visual.length > 0 && (shotPath || issueScreenshots?.length)) {
+            persistVisualIssueFindings(state.outDir, visual, {
+              stepIndex: state.log.steps.length,
+              url: loc.href,
+              pageId: state.pageId,
+              screenshotPath: shotPath,
+              ...(issueScreenshots?.length ? { issueScreenshots } : {}),
+              tapePath: join(state.outDir, "replay.log"),
+              replayLog: compactTape(state, step, "visual issue"),
+            });
+          }
+          measured = measuredHits(visual);
         }
-        measured = measuredHits(layout.issues);
       } else {
         measured = measuredHits(prev?.visual);
       }
@@ -725,7 +850,7 @@ export function createExecutor(state: RunState): {
     const result = await finish(state, step, failure, hrefBefore);
     if (state.navLogPath) {
       logStepDone(state.navLogPath, {
-        line,
+        line: formatStep(step),
         ok: result.ok,
         started,
         pageId: state.pageId,

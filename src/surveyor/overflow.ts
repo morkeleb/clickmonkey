@@ -11,8 +11,12 @@ export const DOCUMENT_X_SLACK = 16;
 /** WCAG 1.4.10: 1280 CSS px at 400% zoom. */
 export const REFLOW_OVERFLOW_VW = 320;
 export const MAX_OVERFLOW_HITS = 8;
-/** Open dialogs below this share of the viewport width are overlays, not pages. */
+/** Open dialogs below this share of max(vw, 800) are overlays, not pages. */
 export const DIALOG_PAGE_SHARE = 0.7;
+/** Phone viewports still compare dialogs against a desktop-sized width. */
+export const DIALOG_PAGE_MIN_VW = 800;
+/** Card-sized dialogs stay overlays even when they fill a 320/375 viewport. */
+export const DIALOG_OVERLAY_MAX_PX = 700;
 
 export type OverflowBox = {
   left: number;
@@ -107,9 +111,56 @@ export function isFixedChromeInViewport(opts: {
   );
 }
 
+/** Hyphen/BEM class parts — `fvs-menu-surface-base` → menu, surface. */
+export function classTokens(className: string | undefined | null): string[] {
+  return String(className || "")
+    .toLowerCase()
+    .split(/[\s._-]+/)
+    .filter(Boolean);
+}
+
+function consecutiveTokens(tokens: string[], parts: string[]): boolean {
+  if (parts.length === 0) return false;
+  if (parts.length === 1) return tokens.includes(parts[0]!);
+  for (let i = 0; i <= tokens.length - parts.length; i++) {
+    let ok = true;
+    for (let j = 0; j < parts.length; j++) {
+      if (tokens[i + j] !== parts[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+/**
+ * Dropdowns, tooltips, and backdrops — not in-flow page overflow.
+ * Class tokens, not product copy.
+ */
+export function isPopupOverflowLayer(opts: {
+  role?: string;
+  className?: string;
+  popoverOpen?: boolean;
+}): boolean {
+  const role = (opts.role || "").toLowerCase();
+  if (role === "listbox" || role === "menu" || role === "tooltip") return true;
+  if (opts.popoverOpen) return true;
+  const tokens = classTokens(opts.className);
+  if (tokens.includes("skrim") || tokens.includes("scrim") || tokens.includes("backdrop")) {
+    return true;
+  }
+  if (consecutiveTokens(tokens, ["menu", "surface"])) return true;
+  if (consecutiveTokens(tokens, ["mdc", "menu"])) return true;
+  return false;
+}
+
 /** Overlay dialogs — not almost-page shells we should measure inside. */
 export function isSmallOpenDialog(box: OverflowBox, vw: number): boolean {
-  return box.right - box.left < vw * DIALOG_PAGE_SHARE;
+  const width = box.right - box.left;
+  if (width < DIALOG_OVERLAY_MAX_PX) return true;
+  return width < DIALOG_PAGE_SHARE * Math.max(vw, DIALOG_PAGE_MIN_VW);
 }
 
 /** True when 320 overflow is new, not the same ~Npx 100vw leak already seen at 1280. */
@@ -189,6 +240,8 @@ const COLLECT_SRC = `(() => {
   var DOCUMENT_X_SLACK = ${DOCUMENT_X_SLACK};
   var MAX_HITS = ${MAX_OVERFLOW_HITS};
   var DIALOG_PAGE_SHARE = ${DIALOG_PAGE_SHARE};
+  var DIALOG_PAGE_MIN_VW = ${DIALOG_PAGE_MIN_VW};
+  var DIALOG_OVERLAY_MAX_PX = ${DIALOG_OVERLAY_MAX_PX};
   var SKIP = {
     SCRIPT: 1, STYLE: 1, LINK: 1, META: 1, NOSCRIPT: 1, TEMPLATE: 1,
     HEAD: 1, BR: 1, WBR: 1, SOURCE: 1, TRACK: 1, IFRAME: 1,
@@ -315,6 +368,58 @@ const COLLECT_SRC = `(() => {
     return ox === "auto" || ox === "scroll" || ox === "hidden" || ox === "clip";
   }
 
+  function classTokens(el) {
+    var cls = (el && el.getAttribute && el.getAttribute("class")) || "";
+    return String(cls).toLowerCase().split(/[\\s._-]+/).filter(Boolean);
+  }
+
+  function consecutiveTokens(tokens, parts) {
+    var i, j, ok;
+    if (!parts.length) return false;
+    if (parts.length === 1) {
+      for (i = 0; i < tokens.length; i++) if (tokens[i] === parts[0]) return true;
+      return false;
+    }
+    for (i = 0; i <= tokens.length - parts.length; i++) {
+      ok = true;
+      for (j = 0; j < parts.length; j++) {
+        if (tokens[i + j] !== parts[j]) { ok = false; break; }
+      }
+      if (ok) return true;
+    }
+    return false;
+  }
+
+  function isPopupLayer(el) {
+    if (!el || !el.getAttribute) return false;
+    var role = (el.getAttribute("role") || "").toLowerCase();
+    if (role === "listbox" || role === "menu" || role === "tooltip") return true;
+    if (el.hasAttribute("popover")) {
+      try { if (el.matches(":popover-open")) return true; } catch (e) {}
+    }
+    var tokens = classTokens(el);
+    var i;
+    for (i = 0; i < tokens.length; i++) {
+      if (tokens[i] === "skrim" || tokens[i] === "scrim" || tokens[i] === "backdrop") return true;
+    }
+    if (consecutiveTokens(tokens, ["menu", "surface"])) return true;
+    if (consecutiveTokens(tokens, ["mdc", "menu"])) return true;
+    return false;
+  }
+
+  function inPopupLayer(el) {
+    var n = el;
+    while (n && n !== document.body && n !== document.documentElement) {
+      if (isPopupLayer(n)) return true;
+      n = n.parentElement;
+    }
+    return false;
+  }
+
+  function dialogIsSmall(width) {
+    return width < DIALOG_OVERLAY_MAX_PX || width < DIALOG_PAGE_SHARE * Math.max(vw, DIALOG_PAGE_MIN_VW);
+  }
+
   function openDialogs() {
     var nodes = document.querySelectorAll("dialog[open], [role='dialog']");
     var out = [];
@@ -327,7 +432,7 @@ const COLLECT_SRC = `(() => {
       }
       var r = el.getBoundingClientRect();
       if (r.width < 80 || r.height < 80) continue;
-      out.push({ el: el, box: r, small: r.width < vw * DIALOG_PAGE_SHARE });
+      out.push({ el: el, box: r, small: dialogIsSmall(r.width) });
     }
     return out;
   }
@@ -401,6 +506,7 @@ const COLLECT_SRC = `(() => {
     if (SKIP[el.tagName]) continue;
     if (!shown(el)) continue;
     if (inSmallDialog(el, dialogs)) continue;
+    if (inPopupLayer(el)) continue;
     if (skipFixedChrome(el)) continue;
     if (large && el === large.el) continue;
 
@@ -448,7 +554,7 @@ const COLLECT_SRC = `(() => {
     }
   }
 
-  if (pageScrollsX && bestEl) {
+  if (pageScrollsX && bestEl && bestRight > paneRight + DOCUMENT_X_SLACK) {
     push(bestEl, "document", pageX, "the viewport");
   }
 

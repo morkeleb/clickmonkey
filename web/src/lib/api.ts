@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { UiEvent, UiFault, UiRun, UiSnapshot } from "@schema/ui";
+import { livePatchEqual } from "@ui/live-patch";
 import { faultFromHttpError } from "@/lib/fault";
-import { fetchFirstJson, publicUrl, UiHttpError } from "@/lib/paths";
+import { fetchFirstJson, loadLiveOrFrozenJson, publicUrl, UiHttpError } from "@/lib/paths";
 
 const EVENT_TYPES = ["hello", "map", "quality", "testability", "run", "nav"] as const;
 
@@ -75,9 +76,9 @@ export function useSnapshot(): {
 
     async function loadSnapshot(): Promise<boolean> {
       try {
-        const data = await fetchFirstJson<UiSnapshot>(["api/snapshot", "snapshot.json"]);
+        const data = await fetchFirstJson<UiSnapshot>(["api/snapshot"]);
         if (!cancelled) {
-          setSnapshot(data);
+          setSnapshot((prev) => (prev && livePatchEqual(prev, data) ? prev : data));
           setError(null);
           setFault(null);
         }
@@ -100,7 +101,7 @@ export function useSnapshot(): {
         const parsed: unknown = JSON.parse(data);
         const next = readSnapshot(parsed);
         if (next && !cancelled) {
-          setSnapshot(next);
+          setSnapshot((prev) => (prev && livePatchEqual(prev, next) ? prev : next));
           setError(null);
           setFault(null);
           return;
@@ -110,8 +111,9 @@ export function useSnapshot(): {
         if ((runs || lastFog) && !cancelled) {
           setSnapshot((prev) => {
             if (!prev) return prev;
-            const next = lastFog ? applyLastFog(prev, lastFog) : prev;
-            return runs ? { ...next, runs } : next;
+            const patched = lastFog ? applyLastFog(prev, lastFog) : prev;
+            const merged = runs ? { ...patched, runs } : patched;
+            return livePatchEqual(prev, merged) ? prev : merged;
           });
         }
       } catch {
@@ -147,15 +149,21 @@ export function useSnapshot(): {
 
     void (async () => {
       try {
-        const frozen = await fetchFirstJson<UiSnapshot>(["snapshot.json"]);
+        const { data, frozen } = await loadLiveOrFrozenJson<UiSnapshot>("api/snapshot", "snapshot.json");
         if (cancelled) return;
-        staticMode = true;
-        setSnapshot(frozen);
+        staticMode = frozen;
+        setSnapshot(data);
         setError(null);
         setFault(null);
-      } catch {
-        const ok = await loadSnapshot();
-        if (ok && !cancelled) connect();
+        if (!frozen) connect();
+      } catch (err) {
+        if (cancelled) return;
+        const next =
+          err instanceof UiHttpError
+            ? faultFromHttpError(err.status, err.body)
+            : faultFromHttpError(0, err instanceof Error ? err.message : "snapshot failed");
+        setFault(next);
+        setError(next.copy);
       }
     })();
 

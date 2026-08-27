@@ -56,4 +56,36 @@ describe("scanTextOcclusion", () => {
       );
     });
   });
+
+  it("skips a menu overlay, tab chrome on another panel, and a stepper over a heading", async () => {
+    await withPage(html, async (page) => {
+      const issues = await scanTextOcclusion(page);
+      const hits = issues.filter((i) => i.rule === "textOcclusion");
+      const dump = JSON.stringify(issues);
+
+      assert.equal(
+        hits.some((i) => /TOTAL|fvs-menu-surface/i.test(`${i.where} ${i.message}`)),
+        false,
+        `menu-surface covering a cell must skip, got ${dump}`,
+      );
+      assert.equal(
+        hits.some((i) => /fvs-tab|tablist/i.test(`${i.where} ${i.message}`)),
+        false,
+        `tab chrome covering another panel must skip, got ${dump}`,
+      );
+      assert.equal(
+        hits.some((i) => /Code|Description|Active/.test(`${i.where} ${i.message}`) && /tab/i.test(i.message)),
+        false,
+        `unselected tabpanel cells must skip, got ${dump}`,
+      );
+      assert.equal(
+        hits.some((i) => /Project heading/i.test(`${i.where} ${i.message}`)),
+        false,
+        `stepper step covering a heading must skip, got ${dump}`,
+      );
+
+      const covered = hits.find((i) => /Quarterly revenue/i.test(`${i.where} ${i.message}`));
+      assert.ok(covered, `opaque badge cover must still file, got ${dump}`);
+    });
+  });
 });

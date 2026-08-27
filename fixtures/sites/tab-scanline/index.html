@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tab scanline</title>
+    <style>
+      body { font: 16px/1.4 sans-serif; margin: 24px; }
+      nav.menubar { display: flex; gap: 16px; margin-bottom: 24px; }
+      .strip { display: flex; gap: 8px; margin-bottom: 24px; }
+      .strip [role="tab"] { padding: 8px 12px; }
+      .strip [role="tab"]:nth-child(2) { padding-left: 48px; }
+      .sidebar { display: flex; flex-direction: column; gap: 8px; width: 200px; margin: 24px 0; }
+      .sidebar [role="tab"] { padding: 8px 12px; }
+      [role="menu"] { margin: 24px 0; padding: 8px; border: 1px solid #ccc; width: 240px; }
+      [role="menuitem"] { display: block; padding-left: 8px; }
+      [role="menuitem"]:nth-child(2) { padding-left: 48px; }
+    </style>
+  </head>
+  <body>
+    <main data-testid="home">
+      <nav class="menubar" aria-label="Primary">
+        <a href="#home">Home</a>
+        <a href="#about">About</a>
+        <a href="#team">Team</a>
+        <a href="#help">Help</a>
+      </nav>
+      <h1>Reports</h1>
+      <div role="tablist" class="strip" aria-label="Statements" data-testid="statements">
+        <div role="tab" aria-selected="true">Overview</div>
+        <div role="tab">Income Statement</div>
+        <div role="tab">Balance Sheet</div>
+        <div role="tab">Cash Flow</div>
+      </div>
+      <div role="tablist" class="sidebar" aria-label="Sidebar" data-testid="sidebar">
+        <div role="tab" aria-selected="true">Overview</div>
+        <div role="tab">Income Statement</div>
+        <div role="tab">Balance Sheet</div>
+        <div role="tab">Cash Flow</div>
+      </div>
+      <ul role="menu" aria-label="Overflow">
+        <li role="menuitem">Short</li>
+        <li role="menuitem">Padded</li>
+        <li role="menuitem">Also</li>
+        <li role="menuitem">More</li>
+      </ul>
+    </main>
+  </body>
+</html>

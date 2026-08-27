@@ -21,6 +21,7 @@ import {
   handleExploreFinish,
   handleExploreShot,
   handleExploreStart,
+  handleExploreVisit,
   handleExploreStep,
   handleNastyList,
   handleNastySamples,
@@ -67,6 +68,7 @@ function stubSession(overrides: Partial<McpSession> = {}): McpSession {
     pages: [],
     start: async () => visit,
     visit: async () => visit,
+    pageState: async () => "page: home\nsurface: page\nfields:\n  name: \"\"\nactions:\n  submit  [enabled]",
     step: async () => ({ ok: true, result: {} as never, visit, newProductFinding: false }),
     setPlan: () => undefined,
     advancePlan: () => undefined,
@@ -86,6 +88,24 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 }
 
 describe("mcp tools", () => {
+  it("explore_visit default is compact; full dumps mapped widgets", async () => {
+    const visit = visitOf();
+    const host: McpHost = {
+      session: stubSession({
+        livePageUrl: "https://app/home",
+        pageState: async () => 'page: home\nactions:\n  button_save  [disabled, aria-disabled]',
+      }),
+    };
+    const compact = await handleExploreVisit(host);
+    assert.equal(compact.isError, undefined);
+    assert.ok(textOf(compact).includes(visit.formatted));
+    assert.doesNotMatch(textOf(compact), /aria-disabled/);
+    const full = await handleExploreVisit(host, { full: true });
+    assert.match(textOf(full), /detail: full/);
+    assert.match(textOf(full), /button_save/);
+    assert.match(textOf(full), /disabled/);
+  });
+
   it("explore_start without config is a tool error", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cm-mcp-noconfig-"));
     try {
@@ -244,6 +264,23 @@ describe("mcp tools", () => {
       });
       assert.equal(result.isError, undefined);
       assert.equal(seen, "billing lives under settings");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("explore_start map path must exist", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-mcp-map-"));
+    const configPath = join(dir, "clickmonkey.json");
+    try {
+      saveConfig(configPath, emptyConfig("http://127.0.0.1:4173/"));
+      const host = createMcpHost();
+      const result = await handleExploreStart(host, {
+        config: configPath,
+        map: join(dir, "missing-map.json"),
+      });
+      assert.equal(result.isError, true);
+      assert.match(textOf(result), /map not found/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

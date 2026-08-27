@@ -1,4 +1,4 @@
-import { formSubmitIsListPager, isFormSubmit } from "../brains/unleash.js";
+import { formSubmitIsListPager, isFormSubmit, isPrimaryFormCommit } from "../brains/unleash.js";
 import type { ShownAction } from "../schema/view.js";
 
 export function isPotentialWrite(
@@ -38,3 +38,5 @@ export function looksLikeSubmitClick(
   const sibs = (siblings ?? []).map(asShown);
   return isFormSubmit(shown, undefined, formSubmitIsListPager(sibs));
 }
+
+export { isPrimaryFormCommit };

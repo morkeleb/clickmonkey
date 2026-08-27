@@ -133,9 +133,29 @@ export function pidAlive(pid: number): boolean {
 
 export function isPresenceLive(p: Presence, now = Date.now()): boolean {
   if (p.stoppedAt) return false;
+  if (!pidAlive(p.pid)) return false;
   const age = now - Date.parse(p.updatedAt);
   if (Number.isFinite(age) && age <= PRESENCE_STALE_MS) return true;
-  return pidAlive(p.pid);
+  return true;
+}
+
+/**
+ * Grok MCP reload spawns a new server and leaves the old one heartbeating.
+ * Mark those walks offline. `touchPresence` will not revive a stopped file.
+ */
+export function reclaimMcpPresence(
+  runsRoot: string,
+  keep: { pid: number; id?: string },
+): Presence[] {
+  const out: Presence[] = [];
+  for (const p of listPresences(runsRoot)) {
+    if (p.brain !== "mcp") continue;
+    if (p.stoppedAt) continue;
+    if (p.pid === keep.pid && (keep.id === undefined || p.id === keep.id)) continue;
+    const stopped = stopPresence(join(runsRoot, p.id));
+    if (stopped) out.push(stopped);
+  }
+  return out;
 }
 
 export function listPresences(runsRoot: string): Presence[] {

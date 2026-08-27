@@ -29,6 +29,8 @@ var DIALOG_SEL = "dialog, [role='dialog'], [aria-modal='true']";
 var FIELD_SEL = 'input, select, textarea, [contenteditable="true"]';
 var ACTION_SEL = 'button, a[href], [role="button"], input[type="submit"], input[type="button"]';
 var WIDGET_ROLES = { button: 1, link: 1, tab: 1, menuitem: 1, option: 1, combobox: 1, checkbox: 1, radio: 1, switch: 1, slider: 1, textbox: 1, searchbox: 1, spinbutton: 1 };
+var WIDGET_HOST_SEL = "button, a[href], [role=button], [role=link], [role=tab], [role=menuitem], [role=option], [role=combobox], [role=checkbox], [role=radio], [role=switch], label, input, select, textarea";
+var ROW_HOST_SEL = "tr, [role=row], [role=grid], [role=treegrid], [role=listbox], [role=menu], [role=tree], table";
 var doc = document;
 var issues = [];
 var els;
@@ -143,6 +145,23 @@ function isSemanticWidget(node) {
   var role = (node.getAttribute("role") || "").toLowerCase();
   return Boolean(WIDGET_ROLES[role]);
 }
+function isCommandRole(node) {
+  var role = (node.getAttribute("role") || "").toLowerCase();
+  return role === "button" || role === "link" || role === "tab" || role === "menuitem" || role === "checkbox" || role === "radio" || role === "switch";
+}
+function isNativelyFocusable(node) {
+  var tag = node.tagName.toLowerCase();
+  if (node.disabled) return false;
+  if (node.getAttribute("aria-disabled") === "true") return false;
+  if (tag === "button" || tag === "select" || tag === "textarea") return true;
+  if (tag === "a" && node.hasAttribute("href")) return true;
+  if (tag === "input") return (node.type || "text").toLowerCase() !== "hidden";
+  return false;
+}
+function isKeyboardWidget(node) {
+  if (isNativelyFocusable(node)) return true;
+  return node.tabIndex >= 0;
+}
 function inListPopup(node) {
   return Boolean(node.closest && node.closest("[role='listbox'], [role='menu'], [role='tree'], [role='option'], [role='menuitem']"));
 }
@@ -173,13 +192,29 @@ function hasOwnPointer(node) {
   }
   return false;
 }
+function wrapsField(node) {
+  return Boolean(node.querySelector && node.querySelector("input, select, textarea, [contenteditable='true']"));
+}
+function isStepperChrome(node) {
+  var testid = (node.getAttribute("data-testid") || "").toLowerCase();
+  if (testid.indexOf("stepper") >= 0) return true;
+  return Boolean(node.closest && node.closest("[data-testid*='stepper']"));
+}
 function skipClickableNonWidget(node) {
   var tag = node.tagName.toLowerCase();
   if (tag === "script" || tag === "style" || tag === "noscript" || tag === "link" || tag === "meta") return true;
   if (!shown(node)) return true;
   if (flags.excludeVisibleDialogs && insideForeignDialog(node)) return true;
-  if (isSemanticWidget(node)) return true;
+  if (isSemanticWidget(node)) {
+    if (isCommandRole(node) && !isKeyboardWidget(node)) return false;
+    return true;
+  }
+  if (node.closest && node.closest(WIDGET_HOST_SEL)) return true;
+  if (tag === "svg" || tag === "path" || tag === "i") return true;
+  if (wrapsField(node)) return true;
+  if (isStepperChrome(node)) return true;
   if (inListPopup(node)) return true;
+  if (node.closest && node.closest(ROW_HOST_SEL)) return true;
   if (isShell(node)) return true;
   if (tooBig(node)) return true;
   return false;
@@ -242,8 +277,9 @@ for (i = 0; i < els.length && clickableHits < 8; i++) {
   if (skipClickableNonWidget(el)) continue;
   var pointer = hasOwnPointer(el) || el.hasAttribute("onclick");
   var tabbable = el.tabIndex >= 0;
-  if (!pointer && !tabbable) continue;
-  if (!pointer && el.tabIndex < 0) continue;
+  var commandUnreachable = isCommandRole(el) && !isKeyboardWidget(el);
+  if (!pointer && !tabbable && !commandUnreachable) continue;
+  if (!pointer && el.tabIndex < 0 && !commandUnreachable) continue;
   push("clickableNonWidget", "block", el);
   clickableHits += 1;
 }
@@ -285,6 +321,8 @@ const LISTENER_AUDIT_JS = `(() => {
   var root = document.querySelector(sel);
   if (!root) return [];
   var WIDGET_ROLES = { button: 1, link: 1, tab: 1, menuitem: 1, option: 1, combobox: 1, checkbox: 1, radio: 1, switch: 1, slider: 1, textbox: 1, searchbox: 1, spinbutton: 1 };
+  var WIDGET_HOST_SEL = "button, a[href], [role=button], [role=link], [role=tab], [role=menuitem], [role=option], [role=combobox], [role=checkbox], [role=radio], [role=switch], label, input, select, textarea";
+  var ROW_HOST_SEL = "tr, [role=row], [role=grid], [role=treegrid], [role=listbox], [role=menu], [role=tree], table";
   var POINTER = { click: 1, mousedown: 1, mouseup: 1, pointerdown: 1, pointerup: 1 };
   var out = [];
   var nodes = root.querySelectorAll("*");
@@ -316,8 +354,20 @@ const LISTENER_AUDIT_JS = `(() => {
     if (tag === "button" || tag === "input" || tag === "select" || tag === "textarea") return true;
     if (tag === "a" && node.hasAttribute("href")) return true;
     var role = (node.getAttribute("role") || "").toLowerCase();
-    if (WIDGET_ROLES[role]) return true;
+    if (WIDGET_ROLES[role]) {
+      var command = role === "button" || role === "link" || role === "tab" || role === "menuitem" || role === "checkbox" || role === "radio" || role === "switch";
+      var native = tag === "button" || tag === "select" || tag === "textarea" || (tag === "a" && node.hasAttribute("href")) || tag === "input";
+      if (command && !native && node.tabIndex < 0) return false;
+      return true;
+    }
+    if (node.closest && node.closest(WIDGET_HOST_SEL)) return true;
+    if (tag === "svg" || tag === "path" || tag === "i") return true;
+    if (node.querySelector && node.querySelector("input, select, textarea, [contenteditable='true']")) return true;
+    var testid = (node.getAttribute("data-testid") || "").toLowerCase();
+    if (testid.indexOf("stepper") >= 0) return true;
+    if (node.closest && node.closest("[data-testid*='stepper']")) return true;
     if (node.closest && node.closest("[role='listbox'], [role='menu'], [role='tree'], [role='option'], [role='menuitem']")) return true;
+    if (node.closest && node.closest(ROW_HOST_SEL)) return true;
     var rid = (node.id || "").toLowerCase();
     if (rid === "root" || rid === "app" || rid === "__next") return true;
     var r = node.getBoundingClientRect();

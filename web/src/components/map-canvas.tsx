@@ -12,15 +12,18 @@ import {
   type EdgeChange,
   type NodeChange,
   type NodeTypes,
+  type Viewport,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UiSnapshot } from "@schema/ui";
+import { DOCS_MAP } from "@schema/site";
 import { MapNode } from "@/components/map-node";
 import { MapSection } from "@/components/map-section";
-import { defaultExpanded, layoutGraph, type GraphFlowNode } from "@/lib/layout";
+import { defaultExpanded, layoutGraph, mergeExpanded, sameFlowNodes, type GraphFlowNode } from "@/lib/layout";
 import "@xyflow/react/dist/style.css";
 
 const nodeTypes: NodeTypes = { graph: MapNode, section: MapSection };
+const START_VIEW: Viewport = { x: 80, y: 80, zoom: 0.95 };
 
 function MapCanvasInner({
   snapshot,
@@ -32,14 +35,12 @@ function MapCanvasInner({
   const { fitView } = useReactFlow();
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<Viewport>(START_VIEW);
   const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(snapshot.graph, snapshot.runs));
+  const fitted = useRef(false);
 
   useEffect(() => {
-    setExpanded((prev) => {
-      const next = defaultExpanded(snapshot.graph, snapshot.runs);
-      for (const key of prev) next.add(key);
-      return next;
-    });
+    setExpanded((prev) => mergeExpanded(prev, snapshot.graph, snapshot.runs));
   }, [snapshot.graph, snapshot.runs]);
 
   const laidOut = useMemo(
@@ -48,26 +49,45 @@ function MapCanvasInner({
   );
   const [nodes, setNodes] = useState<GraphFlowNode[]>(laidOut.nodes);
   const [edges, setEdges] = useState<Edge[]>(laidOut.edges);
-  const signature = useMemo(
-    () =>
-      `${laidOut.nodes.map((n) => n.id).join(",")}|${[...expanded].sort().join(",")}|${query}|${selectedId ?? ""}`,
-    [laidOut, expanded, query, selectedId],
-  );
-
   useEffect(() => {
     setNodes((prev) => {
       const selected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
-      return laidOut.nodes.map((node) => (selected.has(node.id) ? { ...node, selected: true } : node));
+      const next = laidOut.nodes.map((node) => (selected.has(node.id) ? { ...node, selected: true } : node));
+      return sameFlowNodes(prev, next) ? prev : next;
     });
-    setEdges(laidOut.edges);
+    setEdges((prev) => {
+      if (
+        prev.length === laidOut.edges.length &&
+        prev.every((e, i) => e.id === laidOut.edges[i]?.id && e.hidden === laidOut.edges[i]?.hidden)
+      ) {
+        return prev;
+      }
+      return laidOut.edges;
+    });
   }, [laidOut]);
 
   useEffect(() => {
+    if (laidOut.nodes.length === 0) return;
+    if (query) {
+      const hits = laidOut.nodes.filter((n) => !n.hidden && n.type !== "section");
+      if (hits.length === 0) return;
+      const frame = requestAnimationFrame(() => {
+        void fitView({ nodes: hits, padding: 0.3, maxZoom: 1 });
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (fitted.current) return;
+    const live = snapshot.runs.filter((r) => r.live && r.pageId).map((r) => r.pageId!);
+    const entries = snapshot.graph.nodes.filter((n) => n.kind === "page" && n.entry).map((n) => n.id);
+    const focus = new Set(live.length > 0 ? live : entries);
+    const targets = laidOut.nodes.filter((n) => focus.has(n.id) || (n.data.pageId && focus.has(n.data.pageId)));
+    if (targets.length === 0) return;
+    fitted.current = true;
     const frame = requestAnimationFrame(() => {
-      void fitView({ padding: 0.16 });
+      void fitView({ nodes: targets, padding: 0.45, maxZoom: 1, minZoom: 0.75 });
     });
     return () => cancelAnimationFrame(frame);
-  }, [fitView, signature]);
+  }, [fitView, query, laidOut.nodes.length]);
 
   const onNodesChange = useCallback((changes: NodeChange<GraphFlowNode>[]) => {
     setNodes((nds) => applyNodeChanges(changes, nds));
@@ -110,10 +130,11 @@ function MapCanvasInner({
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeClick={onNodeClick}
-      fitView
       colorMode="dark"
-      minZoom={0.12}
+      minZoom={0.35}
       maxZoom={1.75}
+      viewport={viewport}
+      onViewportChange={setViewport}
       proOptions={{ hideAttribution: true }}
       nodesConnectable={false}
       nodesDraggable={false}
@@ -139,12 +160,14 @@ function MapCanvasInner({
         />
       </Panel>
       <Panel position="top-right" className="m-3">
-        <div className="rounded-md border border-zinc-700 bg-zinc-900/90 px-2.5 py-1.5 text-[10px] leading-4 text-zinc-400">
-          <div className="font-medium text-zinc-300">fog (green recent · red hungry)</div>
-          <div>m map · u unleash · n nasty</div>
-          <div className="mt-1 font-medium text-zinc-300">live (colored letter)</div>
-          <div>m map · u unleash · n nasty · e explore · c mcp</div>
-        </div>
+        <a
+          href={DOCS_MAP}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-zinc-500 underline-offset-4 hover:text-zinc-300 hover:underline"
+        >
+          How to read the map
+        </a>
       </Panel>
     </ReactFlow>
   );

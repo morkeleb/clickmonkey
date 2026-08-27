@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { looksLikeNotFoundUi } from "../src/oracles/http.js";
+import { looksLikeNotFoundUi, summarizeHttpErrorBody } from "../src/oracles/http.js";
 
 describe("looksLikeNotFoundUi", () => {
   it("matches the Next.js default 404 page", () => {
@@ -52,5 +52,29 @@ describe("looksLikeNotFoundUi", () => {
       }),
       false,
     );
+  });
+});
+
+describe("summarizeHttpErrorBody", () => {
+  it("reads a JSON message field", () => {
+    assert.equal(
+      summarizeHttpErrorBody(
+        JSON.stringify({
+          message: "Vendor has status Blacklisted; vouchers may only reference Active or OnHold.",
+        }),
+      ),
+      "Vendor has status Blacklisted; vouchers may only reference Active or OnHold.",
+    );
+  });
+
+  it("reads nested error.message and redacts JWTs", () => {
+    const token = "eyJhbGciOiJIUzI1NiJ9.aaaa.bbbb";
+    const out = summarizeHttpErrorBody(JSON.stringify({ error: { message: `denied ${token}` } }));
+    assert.match(out, /denied/);
+    assert.doesNotMatch(out, /eyJhbGci/);
+  });
+
+  it("returns empty for a blank body", () => {
+    assert.equal(summarizeHttpErrorBody("  "), "");
   });
 });

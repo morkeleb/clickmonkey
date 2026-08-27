@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { hopsFromNavLog } from "./graph.js";
 import { loadConfig } from "../persist/config.js";
-import { isPresenceLive, listPresences } from "../persist/presence.js";
+import { isPresenceLive, listPresences, loadPresence } from "../persist/presence.js";
 import { loadCombinedQuality } from "../persist/quality.js";
 import { jobFogOf } from "../schema/fog.js";
 import type { PageFog } from "../schema/page-model.js";
@@ -75,6 +75,33 @@ function hopsOf(listed: ReturnType<typeof listRuns>) {
 }
 
 export type SnapshotPatch = "runs" | "quality" | "testability" | "findings";
+export { livePatchKey } from "./live-patch.js";
+
+/**
+ * Re-check presence.json for runs already marked live.
+ * Presence can go stale without a file write; do not readdir the whole runs tree.
+ */
+export function expireLiveRuns(
+  snapshot: UiSnapshot,
+  configPath: string,
+): { snapshot: UiSnapshot; changed: boolean } {
+  const root = runsDir(configPath);
+  let changed = false;
+  const runs = snapshot.runs.map((run) => {
+    if (!run.live) return run;
+    const p = loadPresence(join(root, run.id, "presence.json"));
+    if (!p || !isPresenceLive(p)) {
+      changed = true;
+      return { ...run, live: false };
+    }
+    const pageId = p.pageId;
+    const outline = p.outline;
+    if (pageId === run.pageId && JSON.stringify(outline) === JSON.stringify(run.outline)) return run;
+    changed = true;
+    return { ...run, pageId, ...(outline ? { outline } : {}) };
+  });
+  return { snapshot: changed ? { ...snapshot, runs } : snapshot, changed };
+}
 
 function withFog(graph: UiGraph, pages: { id: string; fog?: PageFog }[]): UiGraph {
   const byId = new Map(pages.map((p) => [p.id, p.fog] as const));

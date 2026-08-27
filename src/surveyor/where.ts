@@ -50,7 +50,20 @@ export function describeFromHtml(html: string): string | undefined {
   if (href && tag) return `${tag}[href="${clip(href, 48)}"]`;
   const src = attr(html, "src");
   if (src && tag) return `${tag}[src="${clip(src, 48)}"]`;
+  const cls = attr(html, "class")
+    ?.trim()
+    .split(/\s+/)
+    .find(Boolean);
+  if (cls && tag) return `${tag}.${clip(cls, 40)}`;
   return tag;
+}
+
+/** Opening-tag snippet from Playwright (`<div class="menu">`). */
+export function describeInterceptorHtml(openTag: string): string | undefined {
+  const raw = openTag.trim();
+  if (!raw) return undefined;
+  const html = raw.startsWith("<") ? (raw.endsWith(">") ? raw : `${raw}>`) : `<${raw}>`;
+  return describeFromHtml(html);
 }
 
 export function describeQualityWhere(opts: { html?: string; selector?: string }): string | undefined {

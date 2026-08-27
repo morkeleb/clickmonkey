@@ -4,8 +4,16 @@ export const SECTION_NODE = { width: 236, height: 64 } as const;
 export const DIALOG_NODE = { width: 160, height: 48 } as const;
 
 /** Horizontal gap between rank bounding boxes (LR). */
-export const RANK_SEP = 96;
-export const NODE_SEP = 56;
+export const RANK_SEP = 72;
+export const NODE_SEP = 40;
+/** Nested pages in an expanded section wrap to this many columns when the cluster is large. */
+export const NEST_COL_COUNT = 2;
+export const NEST_COL_MIN = 8;
+export const NEST_COL_GAP = 8;
+
+export function nestColumns(pageCount: number): number {
+  return pageCount >= NEST_COL_MIN ? NEST_COL_COUNT : 1;
+}
 /** Space between a page card's right edge and its dialog stack. */
 export const DIALOG_GAP_X = 40;
 export const DIALOG_GAP_Y = 8;

@@ -1,4 +1,4 @@
-import type { Page, Request } from "playwright";
+import type { Locator as PwLocator, Page, Request } from "playwright";
 import { validationMissExplanation, type FindingKind } from "../schema/finding.js";
 import { locatorOf, type Locator } from "../schema/locator.js";
 import { readyKey, widgetKey } from "../schema/refs.js";
@@ -10,6 +10,13 @@ import {
 } from "../surveyor/ready.js";
 import { checkFence } from "./fence.js";
 import { oneLineBug } from "../schema/dsl.js";
+import {
+  clickFailureMessage,
+  closeOpenOverlays,
+  coveredByMessage,
+  describeClickHit,
+  dismissLeftoverMenuCover,
+} from "./click-hit.js";
 import type { Step } from "../schema/log.js";
 import type { Action, Field, Page as PageDef, Surface, Widget } from "../schema/page-model.js";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
@@ -22,19 +29,23 @@ import {
   explainActableMiss,
   pickActable,
   toPlaywrightLocator,
+  tryFallbackFormSubmit,
   widgetLocator,
 } from "./locators.js";
 import type { RunState } from "./run.js";
 import { resolveSecretAsync } from "./secrets.js";
-import { isPotentialWrite, looksLikeSubmitClick } from "./write-policy.js";
+import { isPotentialWrite, isPrimaryFormCommit, looksLikeSubmitClick } from "./write-policy.js";
 import { readFieldConstraints } from "./field-constraints.js";
 import {
   clipFillValue,
   clearTrackedFills,
   fieldLooksInvalid,
   fillShouldLookInvalid,
+  pageHasBlockingInvalid,
   readFieldValidity,
   rememberTrackedFill,
+  shouldReportSilentSubmit,
+  SILENT_SUBMIT_MESSAGE,
   validationMissesToReport,
   type FieldValidity,
   type TrackedFill,
@@ -84,6 +95,12 @@ export function findWidget(
 
 export function isField(w: Widget): w is Field {
   return "type" in w;
+}
+
+function isOptionWidget(w: Widget): boolean {
+  if (isField(w)) return false;
+  if (w.by === "role" && String(w.value).toLowerCase() === "option") return true;
+  return w.id.toLowerCase().startsWith("option_");
 }
 
 function locatorFor(state: RunState, key: string, widget: { by: Locator["by"]; value: string; name?: string }): Locator {
@@ -308,6 +325,76 @@ async function checkTrackedFillsAfterSubmit(
   };
 }
 
+async function readTrackedValidityAfterSubmit(state: RunState): Promise<FieldValidity[]> {
+  const out: FieldValidity[] = [];
+  for (const last of state.lastFills ?? []) {
+    const filled = findWidget(state, last.surface, last.id);
+    if (!filled) continue;
+    const loc = widgetLocator(state.page, filled.surface, locatorOf(filled.widget));
+    const visible = await loc.first().isVisible().catch(() => false);
+    if (!visible) continue;
+    const validity = await readFieldValiditySettled(state, loc.first(), last.id);
+    rememberTrackedFill(state, { ...last, validity });
+    out.push(validity);
+  }
+  return out;
+}
+
+async function checkSilentFailedSubmit(
+  state: RunState,
+  watch: { requests: WatchedRequest[] },
+  submit: PwLocator,
+  urlBefore: string,
+  widgetRef: string,
+): Promise<StepFailure | undefined> {
+  const suspects = (state.lastFills ?? []).filter((f) => f.shouldInvalid);
+  if (suspects.length === 0) {
+    await state.page.waitForTimeout(INVALID_SETTLE_MS);
+  }
+  const validity = await readTrackedValidityAfterSubmit(state);
+  if (await pageHasBlockingInvalid(state.page)) {
+    validity.push({ ariaInvalid: false, errorVisible: false, nativeInvalid: true });
+  }
+  if (
+    !shouldReportSilentSubmit({
+      urlChanged: state.page.url() !== urlBefore,
+      submitVisible: await submit.isVisible().catch(() => false),
+      requests: watch.requests,
+      validity,
+    })
+  ) {
+    return undefined;
+  }
+  return { kind: "expectFailed", message: SILENT_SUBMIT_MESSAGE, widgetRef };
+}
+
+async function pickClickable(
+  state: RunState,
+  loc: ReturnType<typeof widgetLocator>,
+  key: string,
+): Promise<{ ok: true; locator: PwLocator } | { ok: false; failure: StepFailure }> {
+  await dismissLeftoverMenuCover(loc, state.page);
+  let pw = await pickActable(loc, state.page, { timeoutMs: 0, scroll: true });
+  if (!pw) {
+    const miss = await explainActableMiss(loc, state.page);
+    if (miss === "covered") {
+      await dismissLeftoverMenuCover(loc, state.page);
+      pw = await pickActable(loc, state.page, { timeoutMs: 800, scroll: true });
+    } else if (miss === "disabled") {
+      pw = await pickActable(loc, state.page, { timeoutMs: ACTABLE_WAIT_MS, scroll: true });
+    }
+  }
+  if (!pw) {
+    const miss = await explainActableMiss(loc, state.page);
+    if (miss === "covered") {
+      const hit = await describeClickHit(loc.first(), state.page);
+      return { ok: false, failure: { kind: "expectFailed", message: coveredByMessage(key, hit), widgetRef: key } };
+    }
+    return { ok: false, failure: await actableMissFailure(state, key, loc) };
+  }
+  return { ok: true, locator: pw };
+}
+
 async function actableMissFailure(
   state: RunState,
   key: string,
@@ -340,8 +427,6 @@ async function performClick(
   const actable = requireActable(state, surfaceId, id);
   if (!actable.ok) return actable.failure;
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
-  const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS, scroll: true });
-  if (!pw) return actableMissFailure(state, actable.key, raw);
   if (!isField(actable.widget) && !state.inIntro) {
     const blocked = await writePolicyBlocked(state, actable.surface, actable.widget, actable.locator);
     if (blocked) {
@@ -350,23 +435,43 @@ async function performClick(
     }
   }
   recordLocator(state, actable.key, actable.locator);
+  const primary = !isField(actable.widget) && isPrimaryFormCommit(actable.widget);
   const watchingSubmit =
     !isField(actable.widget) && looksLikeSubmitClick(actable.widget, actable.surface.actions);
-  const watch = watchingSubmit ? startSubmitRequestWatch(state.page) : undefined;
+  const urlBefore = watchingSubmit || primary ? state.page.url() : undefined;
+  const watch = watchingSubmit || primary ? startSubmitRequestWatch(state.page) : undefined;
+  const pw = await pickClickable(state, raw, actable.key);
   try {
-    try {
-      await pw.click({ timeout: 2_000 });
-    } catch (err) {
-      const raw = err instanceof Error ? err.message : `${actable.key} click failed`;
-      return {
-        kind: "expectFailed",
-        message: oneLineBug(raw) || `${actable.key} click failed`,
-        widgetRef: actable.key,
-      };
+    if (pw.ok) {
+      try {
+        await pw.locator.click({ timeout: 2_000 });
+      } catch (err) {
+        if (!primary || !(await tryFallbackFormSubmit(state.page, raw.first()))) {
+          const rawErr = err instanceof Error ? err.message : `${actable.key} click failed`;
+          const hit = /intercepts pointer events/i.test(rawErr)
+            ? await describeClickHit(pw.locator, state.page)
+            : undefined;
+          return {
+            kind: "expectFailed",
+            message: clickFailureMessage({ widgetKey: actable.key, error: rawErr, hit }),
+            widgetRef: actable.key,
+          };
+        }
+      }
+    } else if (!primary || !(await tryFallbackFormSubmit(state.page, raw.first()))) {
+      return pw.failure;
     }
-    if (watch) {
+    if (isOptionWidget(actable.widget)) {
+      await closeOpenOverlays(state.page, pw.ok ? pw.locator : raw.first());
+    }
+    const submitLoc = pw.ok ? pw.locator : raw.first();
+    if (watch && urlBefore !== undefined) {
       const missed = await checkTrackedFillsAfterSubmit(state, watch);
       if (missed) return missed;
+      if (primary) {
+        const silent = await checkSilentFailedSubmit(state, watch, submitLoc, urlBefore, actable.key);
+        if (silent) return silent;
+      }
     }
   } finally {
     watch?.stop();
@@ -387,25 +492,26 @@ async function performClick(
 
 async function performFill(
   state: RunState,
-  surfaceId: string,
-  id: string,
-  value: string,
+  step: Extract<Step, { kind: "fill" }>,
 ): Promise<StepFailure | undefined> {
+  const { surface: surfaceId, id, value } = step;
   const actable = requireActable(state, surfaceId, id);
   if (!actable.ok) return actable.failure;
   const resolved = await resolveSecretAsync(value);
   const raw = widgetLocator(state.page, actable.surface, actable.locator);
-  const pw = await pickActable(raw, state.page, { timeoutMs: ACTABLE_WAIT_MS, scroll: true });
-  if (!pw) return actableMissFailure(state, actable.key, raw);
+  const pw = await pickClickable(state, raw, actable.key);
+  if (!pw.ok) return pw.failure;
   recordLocator(state, actable.key, actable.locator);
   const field = isField(actable.widget) ? actable.widget : undefined;
-  const applied = await applyFieldFill(pw, state.page, field, resolved, actable.key);
+  const applied = await applyFieldFill(pw.locator, state.page, field, resolved, actable.key);
+  await closeOpenOverlays(state.page, pw.locator);
   if (!applied.ok) {
     return { kind: "expectFailed", message: applied.message, widgetRef: actable.key };
   }
+  step.value = applied.value;
   if (!applied.track) return undefined;
-  const constraints = await readFieldConstraints(pw);
-  const validity = await readFieldValidity(pw, state.page, id);
+  const constraints = await readFieldConstraints(pw.locator);
+  const validity = await readFieldValidity(pw.locator, state.page, id);
   const liveValue = applied.value;
   const shouldInvalid = fillShouldLookInvalid(
     {
@@ -673,7 +779,7 @@ export async function performStep(state: RunState, step: Step): Promise<StepFail
     case "click":
       return performClick(state, step.surface, step.id);
     case "fill":
-      return performFill(state, step.surface, step.id, step.value);
+      return performFill(state, step);
     case "expectInvalid":
       return performExpectInvalid(state, step.surface, step.id);
     case "expectVisible":

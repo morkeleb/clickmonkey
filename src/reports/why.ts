@@ -1,14 +1,18 @@
-import type { FindingKind } from "../schema/finding.js";
+import { pageErrorDetail, type FindingKind } from "../schema/finding.js";
 
 /** One copy-paste paragraph: why this class is worth fixing. Finite set of check results. */
-const RULE_WHY: Record<string, string> = {
+const RULE_WHY = {
   // testability
   duplicateName:
     "Two controls share this name, so clicks and screen readers hit the first one. Nested items (a people list under an Employees expander) never get opened or mapped.",
   missingStableId:
     "There is no stable id. The next walk, spec, or retry may not find this control even when it is still on screen.",
   clickableNonWidget:
-    "A click lives on a div/span/svg, not a button or link — HTML onclick, React onClick, or addEventListener('click'). Mouse users can still activate it. Keyboard and screen-reader users never land on it, and inspect cannot map it as a control, so walks skip it. Put the handler on a <button> or role=\"button\" with a name. Do not scrape list rows or the page root into the map: those are not page actions.",
+    "A click lives on a div/span/svg, not a button or link — HTML onclick, React onClick, or addEventListener('click') — or a role=button is not keyboard-focusable (WCAG 2.1.1). Mouse users can still activate it. Keyboard and screen-reader users never land on it, and inspect cannot map it as a control, so walks skip it. Put the handler on a <button> or <a href>, or give role=button tabindex=0 and Enter/Space. Do not scrape list rows or the page root into the map: those are not page actions.",
+  keyboardTrap:
+    "Tab cannot leave this form control (WCAG 2.1.2). Keyboard users are stuck; mouse users still click away. Stop swallowing Tab (or document a standard exit such as Escape on a modal that also cycles its own tabbables).",
+  focusOrder:
+    "Tab order in the form jumps up a row (WCAG 2.4.3). What you see is not the order the keyboard visits. Fix DOM order or CSS that reverses the column; wrap-around from last field to first is not this.",
   opaqueControl:
     "The control has no accessible name. Assistive tech announces a blank widget, and the map cannot give it a stable id.",
   unlabeledField:
@@ -107,11 +111,11 @@ const RULE_WHY: Record<string, string> = {
   // visual
   overlap: "Two things occupy the same pixels. Users mis-click or cannot read a label.",
   overflow: "Content leaks out of its card, table, or the viewport. It looks broken and can hide a control.",
-  clip: "Text or a control is cut off mid-glyph, not a clean ellipsis. Names and amounts become unreadable.",
+  clip: "Text or a control is cut off mid-glyph, not a clean ellipsis. Names and amounts become unreadable. A trailing icon or %/$ suffix sitting on the letters is the same class. Column headers smashed into the next title are this, not a ragged data column.",
   zIndex: "A control is covered so it cannot be read or used. The click hits whatever is on top.",
   align: "A row or column is clearly broken, not a 1px taste difference. The eye cannot scan the list.",
   scanline:
-    "Repeating items do not share an edge. Scanning a list becomes hunting; it usually means a wrapping cell or mixed padding.",
+    "Repeating items, card/list values shoved by variable-width titles, tab titles in a strip, form fields on a row, or a table header vs its cells do not share an edge. Scanning becomes hunting; it usually means mixed padding, a wrapping cell, or a flex row without columns.",
   sparse:
     "The main pane is left-locked: the form or column stops short and more than half the width is empty on the right. Centered cards are not this; it is unused canvas, not a layout choice.",
   targetSize:
@@ -138,11 +142,19 @@ const RULE_WHY: Record<string, string> = {
     "Sticky/fixed header is taller than scroll-padding-top, so keyboard focus and in-page jumps tuck under the chrome (WCAG 2.4.11 companion).",
   pointerEvents:
     "The control is shown and enabled but pointer-events is none, so a mouse click never hits it. Keyboard may still focus it.",
+  silentSubmit:
+    "Save did nothing users can perceive: no navigation, no write, and no error. People think the form stored. WCAG 3.3.1 requires identifying input errors.",
+  serverRefusedSubmit:
+    "The UI let this submit; the server refused it. Users can pick or send a value that will not store, and only see an error after Save.",
+  acceptedInvalid:
+    "A required field was blank, or a field held junk it should not accept. The field never showed an error, and the form still sent that value or left the page. Bad data can be stored.",
+  throwInsteadOfInvalid:
+    "A value that should have been a field error crashed the page instead. Users lose the tab; they never see a red field.",
   other:
     "A pixel-only rendering defect: empty-vs-broken, toast covering chrome, icon collision, abnormal ellipsis, mojibake/tofu, leftover lorem/TODO, or chart labels cut on a canvas. Overflow, clip, and overlap are measured from the DOM.",
-};
+} as const satisfies Record<string, string>;
 
-const FINDING_WHY: Record<FindingKind, string> = {
+export const FINDING_WHY: Record<FindingKind, string> = {
   pageError:
     "The page script crashed. Users cannot continue and unsaved work is lost.",
   httpError:
@@ -169,33 +181,80 @@ const FINDING_WHY: Record<FindingKind, string> = {
     "The layout is broken in the pixels: text or controls collide, clip, or cannot be read. People bounce or mis-click.",
 };
 
+export type RuleWhyKey = keyof typeof RULE_WHY;
+
 export function whyRule(rule: string): string | undefined {
-  return RULE_WHY[rule];
+  if (rule in RULE_WHY) return RULE_WHY[rule as RuleWhyKey];
+  if (rule in FINDING_WHY) return FINDING_WHY[rule as FindingKind];
+  return undefined;
 }
 
-export function whyFinding(kind: FindingKind, message: string): string {
-  if (kind === "expectFailed") {
-    if (/accepted empty|did not catch|validation did not/i.test(message)) {
-      return "Invalid or empty input was accepted. Bad data can be stored, billed, or shown to other users.";
+/** Instance overlay when this hit is not the Check class (403, disabled Save, locator miss). */
+export type InstanceCopy = {
+  why?: string;
+  /** Empty string suppresses Check.expected (locator miss has no contract line). */
+  expected?: string;
+  actual?: string;
+};
+
+const LOCATOR_MISS = /was not found|Timeout \d+ms exceeded|locator\./i;
+const DISABLED_CONTROL = /\bis disabled\b/i;
+const TYPEAHEAD_MISS =
+  /no matching options|could not click a listed option|the list opened with no options/i;
+const SQUISHED_HEADERS = /headers are squished/i;
+const HTTP_403 = /\b403\b/;
+
+/**
+ * Instance expected/why/actual after `ruleForFinding`. Not a second class remap.
+ * silentSubmit / acceptedInvalid / serverRefusedSubmit / throwInsteadOfInvalid stay on Check.
+ */
+export function instanceCopy(rule: string, message: string): InstanceCopy {
+  if (rule === "expectFailed") {
+    if (LOCATOR_MISS.test(message)) {
+      return {
+        why: "The walker could not find or click the control. Users may still see it, but specs and retries will flake, and a duplicate name often means the wrong match was targeted.",
+        expected: "",
+        actual: message,
+      };
     }
-    if (/was not found|Timeout \d+ms exceeded|locator\./i.test(message)) {
-      return "The walker could not find or click the control. Users may still see it, but specs and retries will flake, and a duplicate name often means the wrong match was targeted.";
+    if (DISABLED_CONTROL.test(message)) {
+      return {
+        why: "Save (or another primary action) stayed disabled. The form is usually still on screen; the button is off until a change is registered, validation passes, or a section is unlocked.",
+        expected: "The action is enabled.",
+        actual: message,
+      };
     }
-    if (/\bis disabled\b/i.test(message)) {
-      return "Save (or another primary action) stayed disabled. The form is usually still on screen; the button is off until a change is registered, validation passes, or a section is unlocked.";
+    if (TYPEAHEAD_MISS.test(message)) {
+      return {
+        expected: "The typeahead shows options we can pick.",
+        actual: message,
+      };
     }
   }
-  if (kind === "pageError" && /validation is missing|junk value that crashes/i.test(message)) {
-    return "A junk value should show a field error, not crash the tab. The same input in production takes the page down.";
+  if (rule === "httpError" && HTTP_403.test(message)) {
+    return {
+      why: "The API refused this user. If the nav item is still visible, people click into a dead end; if 403 is expected, the link should not be there.",
+    };
   }
-  if (kind === "httpError" && /\b403\b/.test(message)) {
-    return "The API refused this user. If the nav item is still visible, people click into a dead end; if 403 is expected, the link should not be there.";
+  if (rule === "clip" && SQUISHED_HEADERS.test(message)) {
+    return {
+      expected: "Each column header is readable in its own column.",
+      actual: message,
+    };
   }
-  return FINDING_WHY[kind];
+  if (rule === "pageError" || rule === "throwInsteadOfInvalid") {
+    return { actual: `Uncaught JavaScript \`${pageErrorDetail(message)}\`.` };
+  }
+  return {};
+}
+
+/** Instance why when this hit's why is not the Check class. Keyed on remapped rule. */
+export function whyFinding(rule: string, message: string): string | undefined {
+  return instanceCopy(rule, message).why;
 }
 
 export function whyFindingBlock(kind: FindingKind, message: string, override?: string): string {
-  const why = (override?.trim() || whyFinding(kind, message)).trim();
+  const why = (override?.trim() || whyFinding(kind, message) || FINDING_WHY[kind]).trim();
   return why
     .split(/\n+/)
     .map((line) => `> ${line}`)

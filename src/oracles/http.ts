@@ -106,6 +106,45 @@ export async function isNotFoundPage(page: Page): Promise<boolean> {
   return pageShowsNotFound(page);
 }
 
+const JWT = /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+/g;
+const BEARER = /Bearer\s+\S+/gi;
+
+function jsonErrorText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  const o = value as Record<string, unknown>;
+  for (const key of ["message", "errorMessage", "detail", "title", "error"]) {
+    const nested = jsonErrorText(o[key]);
+    if (nested) return nested;
+  }
+  return "";
+}
+
+/** Short server error text for a finding — not the raw dump, never a JWT. */
+export function summarizeHttpErrorBody(raw: string, max = 240): string {
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  if (!collapsed) return "";
+  let text = collapsed;
+  try {
+    const fromJson = jsonErrorText(JSON.parse(raw) as unknown);
+    if (fromJson) text = fromJson;
+  } catch {
+    // plain text / HTML toast copy
+  }
+  text = text.replace(JWT, "[redacted]").replace(BEARER, "Bearer [redacted]");
+  text = text.replace(/\s+/g, " ").trim();
+  if (text.length > max) text = `${text.slice(0, max - 1)}…`;
+  return text;
+}
+
+const httpFlush = new WeakMap<Page, Promise<void>[]>();
+
+export async function flushHttpOracle(page: Page): Promise<void> {
+  const jobs = httpFlush.get(page) ?? [];
+  httpFlush.set(page, []);
+  await Promise.all(jobs);
+}
+
 export function attachHttpOracle(page: Page, push: (f: OracleFinding) => void): void {
   trackDocumentResponses(page);
   page.on("response", (response) => {
@@ -116,14 +155,25 @@ export function attachHttpOracle(page: Page, push: (f: OracleFinding) => void): 
     const url = response.url();
     if (url.includes("favicon")) return;
     const notFound = status === 404;
-    push({
-      kind: notFound ? "notFound" : "httpError",
-      message: notFound
-        ? `HTTP 404 ${response.request().method()} ${url}`
-        : `HTTP ${status} ${response.request().method()} ${url}`,
-      httpStatus: status,
-      url,
-      resourceType: type,
-    });
+    const method = response.request().method();
+    const line = notFound ? `HTTP 404 ${method} ${url}` : `HTTP ${status} ${method} ${url}`;
+    const job = (async () => {
+      let detail = "";
+      try {
+        detail = summarizeHttpErrorBody(await response.text());
+      } catch {
+        detail = "";
+      }
+      push({
+        kind: notFound ? "notFound" : "httpError",
+        message: detail ? `${line}: ${detail}` : line,
+        httpStatus: status,
+        url,
+        resourceType: type,
+      });
+    })();
+    const q = httpFlush.get(page) ?? [];
+    q.push(job);
+    httpFlush.set(page, q);
   });
 }

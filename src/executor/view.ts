@@ -176,6 +176,8 @@ async function liveFieldSnapshot(
   const target = pw ?? loc;
   const control = await resolveFieldControl(target, page, field);
   const value = pw ? await control.read(pw, field) : "";
+  // Attached rows only. Opening/probing here would re-run every typeahead after
+  // every step (the multi-minute number-fill hang).
   const options = await control.peekOptions(target, page);
   return { value, options };
 }

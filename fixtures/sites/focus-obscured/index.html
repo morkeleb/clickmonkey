@@ -98,6 +98,18 @@
         padding: 24px;
         width: 420px;
       }
+      #account-menu {
+        display: none;
+        position: fixed;
+        top: 180px;
+        left: 8px;
+        z-index: 50;
+        background: #fff;
+        border: 1px solid #ccc;
+        padding: 8px;
+        width: 220px;
+      }
+      #account-menu.open { display: block; }
     </style>
   </head>
   <body>
@@ -117,6 +129,10 @@
       <button type="button" id="continue" data-testid="continue">Continue</button>
       <a href="#continue" id="skip" style="position:absolute;left:-10000px;width:1px;height:1px">Skip to continue</a>
       <button type="button" id="below-fold" data-testid="below-fold">BelowFold</button>
+      <div id="account-menu" role="menu" aria-label="Account" data-testid="account-menu">
+        <button type="button" role="menuitem" id="user-settings">User Settings</button>
+        <button type="button" role="menuitem" id="sign-out">Sign Out</button>
+      </div>
       <div id="modal" role="dialog" aria-modal="true" aria-label="Confirm" data-testid="modal">
         <div class="dialog-card">
           <p>Centered dialog</p>

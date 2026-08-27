@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Keyboard trap</title>
+    <style>
+      body { margin: 16px; font: 16px/1.5 sans-serif; }
+      form { display: flex; flex-direction: column; gap: 12px; max-width: 20rem; }
+      label { display: flex; flex-direction: column; gap: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Keyboard trap</h1>
+      <form id="trap-form">
+        <label>Name <input id="trap-name" name="name" /></label>
+        <label>Stuck
+          <input id="trap-stuck" name="stuck" />
+        </label>
+        <button id="trap-save" type="submit">Save</button>
+      </form>
+    </main>
+    <script>
+      document.getElementById("trap-stuck").addEventListener("keydown", function (e) {
+        if (e.key === "Tab") e.preventDefault();
+      });
+    </script>
+  </body>
+</html>

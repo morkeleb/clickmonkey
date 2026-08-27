@@ -1,6 +1,7 @@
-import { FileText, Map as MapIcon, Settings2 } from "lucide-react";
+import { BookOpen, FileText, Map as MapIcon, Settings2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { UiRun, UiSnapshot } from "@schema/ui";
+import { DOCS_SITE } from "@schema/site";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -105,6 +106,17 @@ export function Sidebar({
           <MapIcon />
           Map
         </NavButton>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="h-8 w-full justify-start gap-2 px-2 font-normal"
+        >
+          <a href={DOCS_SITE} target="_blank" rel="noreferrer" aria-label="Documentation (opens in a new tab)">
+            <BookOpen />
+            Docs
+          </a>
+        </Button>
       </div>
       <Separator className="my-2" />
       <div className="px-3 pb-1 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">Runs</div>

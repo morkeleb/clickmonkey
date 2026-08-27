@@ -18,6 +18,12 @@
         margin: 24px 0;
       }
       .card { border: 1px solid #ddd; padding: 12px; min-height: 72px; }
+      .voucher-cards { display: flex; flex-direction: column; gap: 8px; width: 520px; margin: 24px 0; }
+      .voucher-cards .card { display: flex; align-items: center; min-height: 0; padding: 8px 12px; }
+      .voucher-cards h3 { margin: 0; font-size: 16px; font-weight: 600; white-space: nowrap; }
+      .voucher-cards .amt { margin: 0; }
+      .voucher-cards.inline .card { justify-content: flex-start; gap: 8px; }
+      .voucher-cards.locked .card { justify-content: space-between; }
       table { border-collapse: collapse; width: 640px; margin-top: 24px; }
       th, td { border-bottom: 1px solid #ddd; padding: 8px 12px; }
       .drift tbody tr:nth-child(2) td.vendor { padding-left: 40px; }
@@ -40,6 +46,18 @@
         <div role="listitem"><a href="#2">Beta thread</a></div>
         <div role="listitem"><a href="#3">Gamma thread</a></div>
         <div role="listitem"><a href="#4">Delta thread</a></div>
+      </div>
+      <h2>Voucher cards</h2>
+      <div class="voucher-cards inline" data-testid="voucher-cards" aria-label="Voucher cards">
+        <article class="card"><h3>Acme</h3><span class="amt">$12.00</span></article>
+        <article class="card"><h3>Very Long Vendor Name Incorporated</h3><span class="amt">$4.00</span></article>
+        <article class="card"><h3>X</h3><span class="amt">$100.00</span></article>
+      </div>
+      <h2>Locked amounts</h2>
+      <div class="voucher-cards locked" data-testid="locked-cards" aria-label="Locked amounts">
+        <article class="card"><h3>Acme</h3><span class="amt">$12.00</span></article>
+        <article class="card"><h3>Very Long Vendor Name Incorporated</h3><span class="amt">$4.00</span></article>
+        <article class="card"><h3>X</h3><span class="amt">$100.00</span></article>
       </div>
       <h2>Cards</h2>
       <div class="grid" data-testid="cards">

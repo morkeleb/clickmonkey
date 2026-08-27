@@ -52,6 +52,7 @@ try {
       ids: { type: "string" },
       reset: { type: "boolean" },
       job: { type: "string" },
+      form: { type: "string" },
     },
   });
 
@@ -89,6 +90,7 @@ try {
     ids: typeof values.ids === "string" ? values.ids : undefined,
     reset: Boolean(values.reset),
     job: typeof values.job === "string" ? values.job : undefined,
+    form: typeof values.form === "string" ? values.form : undefined,
   };
 
   const run = async (): Promise<number> => {

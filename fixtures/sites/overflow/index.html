@@ -27,9 +27,57 @@
       .card .inner, .card table { width: auto; }
       .leak { width: 400px; margin: 40px auto; overflow: visible; background: #f4f4f4; padding: 16px; }
       .leak .inner { width: 520px; background: #ddd; }
+      .fit { width: auto; max-width: 100%; }
       table { border-collapse: collapse; }
       th, td { text-align: left; padding: 4px 8px; }
       dialog { width: 320px; }
+      .phone-dialog {
+        display: none;
+        position: fixed;
+        inset: 0;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      .phone-dialog.open { display: flex; }
+      .fvs-dialog-surface {
+        width: 280px;
+        background: #fff;
+        padding: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      }
+      .skrim-demo, .menu-demo { display: none; }
+      .skrim-demo.open, .menu-demo.open { display: block; }
+      .skrim-host {
+        width: 400px;
+        margin: 40px auto;
+        position: relative;
+        height: 80px;
+        background: #f4f4f4;
+      }
+      .fvs-skrim {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 10;
+      }
+      .menu-host {
+        width: 200px;
+        margin: 40px auto;
+        position: relative;
+        background: #f4f4f4;
+        padding: 8px;
+      }
+      .fvs-menu-surface {
+        position: absolute;
+        left: 0;
+        top: 36px;
+        width: 539px;
+        background: #fff;
+        border: 1px solid #ccc;
+        padding: 8px;
+        z-index: 12;
+      }
     </style>
   </head>
   <body>
@@ -52,5 +100,27 @@
       <p>Short help</p>
       <button type="button">Close</button>
     </dialog>
+    <div id="phone-dialog" class="phone-dialog" data-testid="phone-dialog">
+      <div class="fvs-dialog-surface" role="dialog" aria-modal="true" aria-label="Filter">
+        <div class="fvs-text-field">
+          <label>Name</label>
+          <input type="text" />
+        </div>
+      </div>
+    </div>
+    <div id="skrim-demo" class="skrim-demo">
+      <div class="skrim-host">
+        <div class="fvs-skrim" data-testid="skrim"></div>
+      </div>
+    </div>
+    <div id="menu-demo" class="menu-demo">
+      <div class="menu-host">
+        <input type="text" aria-label="Search" />
+        <div class="fvs-menu-surface" data-testid="menu-surface">
+          <div>Option A</div>
+          <div>Option B</div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

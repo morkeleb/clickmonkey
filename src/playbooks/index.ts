@@ -36,8 +36,10 @@ export {
 } from "./compact.js";
 export {
   runUnleash,
+  FormLockError,
   UNLEASH_CLI_STEPS,
   UNLEASH_DEFAULT_STEPS,
+  UNLEASH_FORM_STEPS,
   MAP_CLI_STEPS,
   type UnleashResult,
   type UnleashMode,

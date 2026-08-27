@@ -3,7 +3,8 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { collectFindingCases, contextAtStep } from "../src/persist/runs.js";
+import { collectFindingCases, contextAtStep, type FindingCase } from "../src/persist/runs.js";
+import { findingHitOf } from "../src/reports/check.js";
 import { extractClickmonkeyFences } from "../src/reports/fences.js";
 import {
   caseKey,
@@ -17,6 +18,15 @@ import {
 } from "../src/reports/findings-report.js";
 import { cannedReport } from "../src/reports/canned.js";
 import { findingId, pageErrorExplanation, pageErrorTitle, validationMissExplanation } from "../src/schema/finding.js";
+
+function caseOf(c: Omit<FindingCase, "check" | "message">): FindingCase {
+  const hit = findingHitOf(c.finding, {
+    pageId: c.pageId,
+    url: c.url,
+    screenshotPath: c.screenshotPath,
+  });
+  return { ...hit, ...c, check: hit.check, message: hit.message };
+}
 
 describe("findings report", () => {
   it("renders severity groups, screenshot links, and clickmonkey fences", () => {
@@ -42,6 +52,9 @@ describe("findings report", () => {
 
     const cases = collectFindingCases([runDir]);
     assert.equal(cases.length, 1);
+    assert.equal(cases[0]?.check.rule, "expectFailed");
+    assert.equal(cases[0]?.check.code, "Q-22");
+    assert.match(cases[0]?.check.href ?? "", /^https?:\/\//);
     const out = join(root, "findings.md");
     const md = renderFindingsReport(
       cases,
@@ -393,6 +406,7 @@ describe("findings report", () => {
     const slim = collectFindingCases([runDir], { tapes: false });
     assert.equal(slim[0]?.url, "https://app.example/accounting/closing-routines");
     assert.equal(slim[0]?.pageId, "accounting_closing_routines");
+    assert.equal(slim[0]?.check.rule, "pageError");
     assert.equal(slim[0]?.tape, "");
     const cases = collectFindingCases([runDir]);
     assert.equal(cases[0]?.url, "https://app.example/accounting/closing-routines");
@@ -787,7 +801,7 @@ describe("findings report", () => {
   it("enrichWithBrain keeps only known ids", async () => {
     const extras = await enrichWithBrain(
       [
-        {
+        caseOf({
           id: "fnd_1_uiIssue",
           runId: "r",
           runDir: "/tmp",
@@ -803,7 +817,7 @@ describe("findings report", () => {
           title: "overlap",
           description: "overlap",
           tape: "screenshot ui overlap\n",
-        },
+        }),
       ],
       {
         url: "http://127.0.0.1:4173/",
@@ -829,7 +843,7 @@ describe("findings report", () => {
   it("enrichWithBrain returns empty extras on invalid JSON", async () => {
     const extras = await enrichWithBrain(
       [
-        {
+        caseOf({
           id: "fnd_1_uiIssue",
           runId: "r",
           runDir: "/tmp",
@@ -845,7 +859,7 @@ describe("findings report", () => {
           title: "overlap",
           description: "overlap",
           tape: "screenshot ui overlap\n",
-        },
+        }),
       ],
       {
         url: "http://127.0.0.1:4173/",
@@ -861,7 +875,7 @@ describe("findings report", () => {
   });
 
   it("keeps LLM extras distinct when two runs share a finding id", async () => {
-    const a = {
+    const a = caseOf({
       id: "fnd_3_expectFailed",
       runId: "sess-a",
       runDir: "/tmp/a",
@@ -877,8 +891,8 @@ describe("findings report", () => {
       title: "empty on a",
       description: "a",
       tape: "open home\n",
-    };
-    const b = { ...a, runId: "sess-b", runDir: "/tmp/b", finding: { ...a.finding, message: "empty on b" }, title: "empty on b", description: "b" };
+    });
+    const b = caseOf({ ...a, runId: "sess-b", runDir: "/tmp/b", finding: { ...a.finding, message: "empty on b" }, title: "empty on b", description: "b" });
     const extras = await enrichWithBrain(
       [a, b],
       {
@@ -936,7 +950,7 @@ describe("findings report", () => {
     };
     const md = renderFindingsReport([], meta, "/tmp/findings.md");
     assert.match(md, /## Accessibility/);
-    assert.match(md, /\*\*A-1\*\* · AA · 1\.4\.3 · `color-contrast` · error · chrome · 9 pages/);
+    assert.match(md, /\*\*WCAG 1\.4\.3 Contrast\*\* · AA · `color-contrast` · error · chrome · 9 pages/);
     assert.match(md, /## Quality/);
     assert.equal((md.match(/^#### `/gm) ?? []).length, 8);
     assert.match(md, /#### `\/p0`/);
@@ -974,8 +988,163 @@ describe("findings report", () => {
     };
     const fullIndex = renderFindingsReport([], withShell, "/tmp/findings.md");
     const byPage = fullIndex.slice(fullIndex.indexOf("## By page"));
-    assert.match(byPage, /`\/shell` — A-1/);
+    assert.match(byPage, /`\/shell` — 1 issue · WCAG 1\.4\.3 Contrast/);
     assert.doesNotMatch(fullIndex, /^#### `\/shell`/m);
+  });
+
+  it("explains spec-name labels before they appear", () => {
+    const meta = {
+      url: "http://127.0.0.1:4173/",
+      generatedAt: "t",
+      runIds: [] as string[],
+      qualityFull: true,
+      quality: {
+        schemaVersion: 1 as const,
+        pages: [
+          {
+            path: "/",
+            foundAt: "t",
+            html: [],
+            a11y: [
+              {
+                source: "a11y" as const,
+                rule: "color-contrast",
+                severity: "error" as const,
+                message: "Elements must meet minimum color contrast ratio thresholds",
+                count: 1,
+              },
+            ],
+            visual: [
+              {
+                source: "visual" as const,
+                rule: "overlap",
+                severity: "warning" as const,
+                message: "cards overlap the footer",
+                count: 1,
+              },
+            ],
+            runtime: [],
+          },
+        ],
+      },
+    };
+    const md = renderFindingsReport([], meta, "/tmp/findings.md");
+    const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
+    assert.match(summary, /### Labels/);
+    assert.match(summary, /spec name/);
+    assert.match(summary, /WCAG success criteria/);
+    assert.match(summary, /- \*\*\[WCAG 1\.4\.3 Contrast\]\([^)]+\)\*\* `color-contrast` — 1 page/);
+    assert.match(summary, /- \*\*\[Overlap\]\([^)]+V-03[^)]*\)\*\* `overlap` — 1 page/);
+    assert.ok(summary.indexOf("### Labels") < summary.indexOf("### Start here"));
+    assert.ok(md.indexOf("### Labels") < md.indexOf("WCAG 1.4.3 Contrast"));
+    assert.ok(md.indexOf("### Labels") < md.indexOf("Overlap"));
+    const byPage = md.slice(md.indexOf("## By page"));
+    assert.match(byPage, /Same spec tags as in Summary/);
+    assert.match(byPage, /Worst pages first/);
+    assert.match(byPage, /`\/` — 2 issues · Overlap, WCAG 1\.4\.3 Contrast/);
+    assert.ok(byPage.indexOf("Same spec tags") < byPage.indexOf("WCAG 1.4.3 Contrast"));
+    const withLlm = renderFindingsReport(
+      [],
+      meta,
+      "/tmp/findings.md",
+      undefined,
+      "Walked the app. Contrast is the worst.",
+    );
+    assert.ok(withLlm.indexOf("Walked the app") < withLlm.indexOf("### Labels"));
+    assert.ok(withLlm.indexOf("### Labels") < withLlm.indexOf("WCAG 1.4.3 Contrast"));
+    const empty = renderFindingsReport(
+      [],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: [] },
+      "/tmp/findings.md",
+    );
+    assert.doesNotMatch(empty, /### Labels/);
+  });
+
+  it("ranks issue classes by pages and By page by issue count", () => {
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: [],
+        qualityFull: true,
+        quality: {
+          schemaVersion: 1,
+          pages: [
+            {
+              path: "/quiet",
+              foundAt: "t",
+              html: [],
+              a11y: [
+                {
+                  source: "a11y",
+                  rule: "color-contrast",
+                  severity: "error",
+                  message: "Elements must meet minimum color contrast ratio thresholds",
+                  count: 1,
+                },
+              ],
+              visual: [],
+              runtime: [],
+            },
+            {
+              path: "/messy",
+              foundAt: "t",
+              html: [
+                {
+                  source: "html",
+                  rule: "no-dup-id",
+                  severity: "error",
+                  message: "dup ids",
+                  count: 1,
+                },
+              ],
+              a11y: [
+                {
+                  source: "a11y",
+                  rule: "color-contrast",
+                  severity: "error",
+                  message: "Elements must meet minimum color contrast ratio thresholds",
+                  count: 1,
+                },
+              ],
+              visual: [
+                {
+                  source: "visual",
+                  rule: "clip",
+                  severity: "error",
+                  message: "BILLABLE and DESCRIPTION headers are squished together",
+                  count: 1,
+                },
+                {
+                  source: "visual",
+                  rule: "overlap",
+                  severity: "warning",
+                  message: "cards overlap the footer",
+                  count: 1,
+                },
+              ],
+              runtime: [],
+            },
+          ],
+        },
+      },
+      "/tmp/findings.md",
+    );
+    const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
+    const a1 = summary.indexOf("`color-contrast` — 2 pages");
+    const vClip = summary.indexOf("`clip` — 1 page");
+    const qDup = summary.indexOf("`no-dup-id` — 1 page");
+    assert.ok(a1 >= 0, summary);
+    assert.ok(vClip >= 0, summary);
+    assert.ok(qDup >= 0, summary);
+    assert.ok(a1 < vClip, "most pages first");
+    const byPage = md.slice(md.indexOf("## By page"));
+    const messy = byPage.indexOf("`/messy` — 4 issues");
+    const quiet = byPage.indexOf("`/quiet` — 1 issue · WCAG 1.4.3 Contrast");
+    assert.ok(messy >= 0, byPage);
+    assert.ok(quiet >= 0, byPage);
+    assert.ok(messy < quiet, "worst page first");
   });
 
   it("splits accessibility vs visual by SC, including 320 overflow", () => {
@@ -1057,18 +1226,18 @@ describe("findings report", () => {
     const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Visual"));
     const visual = md.slice(md.indexOf("## Visual"), md.indexOf("## Quality") === -1 ? md.length : md.indexOf("## Quality"));
     assert.match(a11y, /`color-contrast`/);
-    assert.match(a11y, /\*\*A-\d+\*\*/);
+    assert.match(a11y, /\*\*WCAG 1\.4\.3 Contrast\*\*/);
     assert.match(a11y, /`focusVisible`/);
     assert.match(a11y, /`targetSize`/);
     assert.match(a11y, /1\.4\.10/);
     assert.match(a11y, /`overflow`/);
     assert.match(a11y, /Checked: WCAG 2\.0\/2\.1 A and AA/);
-    assert.match(a11y, /Not checked: 3\.3\.8, 2\.5\.7, AAA/);
+    assert.match(a11y, /Not checked:.*2\.5\.7.*AAA/);
     assert.match(a11y, /Fails on covered SCs: A — 0 rules; AA — 4 rules\./);
     assert.doesNotMatch(a11y, /meets AA/i);
     assert.match(a11y, /`heading-order`/);
     assert.match(visual, /`overlap`/);
-    assert.match(visual, /\*\*V-\d+\*\*/);
+    assert.match(visual, /\*\*Overlap\*\*/);
     assert.match(visual, /@ 1280px/);
     assert.doesNotMatch(visual, /`focusVisible`/);
     assert.doesNotMatch(visual, /`targetSize`/);
@@ -1131,7 +1300,7 @@ describe("findings report", () => {
 
   it("uses a brain summary when valid and falls back when JSON is invalid", async () => {
     const cases: Parameters<typeof renderFindingsReport>[0] = [
-      {
+      caseOf({
         id: "fnd_1_uiIssue",
         runId: "r",
         runDir: "/tmp",
@@ -1147,7 +1316,7 @@ describe("findings report", () => {
         title: "overlap",
         description: "overlap",
         tape: "screenshot ui overlap\n",
-      },
+      }),
     ];
     const config = {
       url: "http://127.0.0.1:4173/",
@@ -1258,7 +1427,7 @@ describe("findings report", () => {
   it("cross-links a visualIssue card to the catalog label", () => {
     const md = renderFindingsReport(
       [
-        {
+        caseOf({
           id: "fnd_2_visualIssue",
           runId: "r",
           runDir: "/tmp",
@@ -1276,7 +1445,7 @@ describe("findings report", () => {
           title: "overlap: Header controls occupy the same pixels",
           description: "overlap",
           tape: "screenshot ui overlap\n",
-        },
+        }),
       ],
       {
         url: "http://127.0.0.1:4173/",
@@ -1306,16 +1475,16 @@ describe("findings report", () => {
       },
       "/tmp/findings.md",
     );
-    assert.match(md, /see V-1/);
+    assert.match(md, /see Overlap/);
     const locAt = md.indexOf("`visualIssue` · minor · `fnd_2_visualIssue`");
-    const seeAt = md.indexOf("see V-1");
+    const seeAt = md.indexOf("see Overlap");
     assert.ok(seeAt > 0 && locAt > seeAt, "see-link before loc line");
   });
 
-  it("cross-links mixed overflow visualIssue tapes to A-n and V-n", () => {
+  it("cross-links mixed overflow visualIssue tapes to reflow and overflow tags", () => {
     const md = renderFindingsReport(
       [
-        {
+        caseOf({
           id: "fnd_2_visualIssue",
           runId: "r",
           runDir: "/tmp",
@@ -1333,7 +1502,7 @@ describe("findings report", () => {
           title: "overflow: Page is 80px wider than the viewport",
           description: "overflow",
           tape: "screenshot ui overflow\n",
-        },
+        }),
       ],
       {
         url: "http://127.0.0.1:4173/",
@@ -1364,9 +1533,216 @@ describe("findings report", () => {
       },
       "/tmp/findings.md",
     );
-    assert.match(md, /see A-1/);
-    assert.match(md, /see V-1/);
-    const see = md.slice(md.indexOf("see A-1"), md.indexOf("`visualIssue`"));
-    assert.match(see, /see A-1 · see V-1/);
+    assert.match(md, /see WCAG 1\.4\.10 Reflow/);
+    assert.match(md, /see Overflow/);
+    const see = md.slice(md.indexOf("see WCAG 1.4.10 Reflow"), md.indexOf("`visualIssue`"));
+    assert.match(see, /see WCAG 1\.4\.10 Reflow · see Overflow/);
+  });
+
+  it("explains squished headers and empty typeaheads in Expected/Actual", () => {
+    const squish = renderFindingsReport(
+      [
+        caseOf({
+          id: "fnd_13_visualIssue",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_13_visualIssue",
+            kind: "visualIssue",
+            message:
+              "clip: BILLABLE and DESCRIPTION headers are squished together — BILLABLE · DESCRIPTION in Distribution lines",
+            tapePath: "/tmp/x",
+            stepIndex: 13,
+            widgetRef: "clip",
+          },
+          severity: "major",
+          title:
+            "clip: BILLABLE and DESCRIPTION headers are squished together — BILLABLE · DESCRIPTION in Distribution lines",
+          description: "clip",
+          tape: "screenshot ui clip\n",
+        }),
+      ],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
+      "/tmp/findings.md",
+    );
+    assert.match(squish, /BILLABLE and DESCRIPTION headers are squished together/);
+    assert.match(squish, /\*\*Expected:\*\* Each column header is readable in its own column\./);
+    const empty = renderFindingsReport(
+      [
+        caseOf({
+          id: "fnd_22_expectFailed",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_22_expectFailed",
+            kind: "expectFailed",
+            message: 'Select a matter: no matching options for "beatus bos"',
+            tapePath: "/tmp/x",
+            stepIndex: 22,
+            widgetRef: "page.lineitems_0__matterid",
+          },
+          severity: "major",
+          title: 'Select a matter: no matching options for "beatus bos"',
+          description: "typeahead",
+          tape: "fill page.lineitems_0__matterid \"beatus bos\"\n",
+        }),
+      ],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
+      "/tmp/findings.md",
+    );
+    assert.match(empty, /\*\*Expected:\*\* The typeahead shows options we can pick\./);
+    assert.match(empty, /\*\*Actual:\*\* Select a matter: no matching options for "beatus bos"/);
+    assert.doesNotMatch(empty, /The field is marked invalid/);
+  });
+
+  it("labels a silent Save expectFailed as WCAG 3.3.1 Error Identification, not a quality leftover", () => {
+    const message =
+      "Save did not submit the form: no navigation, no write request, and no invalid fields were shown";
+    const md = renderFindingsReport(
+      [
+        caseOf({
+          id: "fnd_8_expectFailed",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_8_expectFailed",
+            kind: "expectFailed",
+            message,
+            tapePath: "/tmp/x",
+            stepIndex: 8,
+            widgetRef: "page.button_save",
+            url: "http://127.0.0.1:4173/vouchers/new",
+          },
+          severity: "major",
+          title: message,
+          description: message,
+          tape: "click page.button_save\n",
+          url: "http://127.0.0.1:4173/vouchers/new",
+        }),
+      ],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /\*\*WCAG 3\.3\.1 Error Identification\*\*/);
+    assert.match(md, /3\.3\.1/);
+    assert.match(md, /`silentSubmit`/);
+    assert.match(md, /see WCAG 3\.3\.1 Error Identification/);
+    assert.match(md, /\*\*Expected:\*\* Save submits, navigates, or shows invalid fields\./);
+    assert.doesNotMatch(md, /The field is marked invalid/);
+    assert.doesNotMatch(md, /\*\*Q-1\*\* `silentSubmit`/);
+  });
+
+  it("labels a write 409 as Q-01 serverRefusedSubmit, not a generic httpError leftover", () => {
+    const message = "HTTP 409 POST https://app/api/vouchers: Vendor has status Blacklisted";
+    const md = renderFindingsReport(
+      [
+        caseOf({
+          id: "fnd_22_httpError",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_22_httpError",
+            kind: "httpError",
+            message,
+            tapePath: "/tmp/x",
+            stepIndex: 22,
+            httpStatus: 409,
+            url: "http://127.0.0.1:4173/vouchers/new",
+          },
+          severity: "critical",
+          title: message,
+          description: message,
+          tape: "click page.button_save\n",
+          url: "http://127.0.0.1:4173/vouchers/new",
+        }),
+      ],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /\*\*Server refused submit\*\*/);
+    assert.match(md, /`serverRefusedSubmit`/);
+    assert.match(md, /see Server refused submit/);
+    assert.match(md, /findings\/Q-01/);
+    assert.match(md, /\*\*Expected:\*\* The UI only sends values the server will store\./);
+    assert.doesNotMatch(md, /The resource loads/);
+    assert.doesNotMatch(md, /\*\*Q-01\*\* `serverRefusedSubmit`/);
+    assert.doesNotMatch(md, /\*\*Q-1\*\*/);
+  });
+
+  it("labels accepted empty/junk as Q-02 acceptedInvalid", () => {
+    const message = "Required field `page.name` accepted empty";
+    const md = renderFindingsReport(
+      [
+        caseOf({
+          id: "fnd_9_expectFailed",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_9_expectFailed",
+            kind: "expectFailed",
+            message,
+            tapePath: "/tmp/x",
+            stepIndex: 9,
+            widgetRef: "page.name",
+            url: "http://127.0.0.1:4173/clients/new",
+          },
+          severity: "major",
+          title: message,
+          description: message,
+          tape: "fill page.name \"\"\nclick page.button_save\n",
+          url: "http://127.0.0.1:4173/clients/new",
+        }),
+      ],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /\*\*Invalid input accepted\*\*/);
+    assert.match(md, /`acceptedInvalid`/);
+    assert.match(md, /see Invalid input accepted/);
+    assert.match(md, /findings\/Q-02/);
+    assert.match(md, /\*\*Expected:\*\* The field is marked invalid\./);
+    assert.doesNotMatch(md, /\*\*Q-02\*\* `acceptedInvalid`/);
+  });
+
+  it("labels a junk-crash pageError as Q-03 throwInsteadOfInvalid", () => {
+    const message =
+      "ClickMonkey had just filled `page.from_date` with \"%00\". The page threw an uncaught JS error instead of rejecting the input. That means validation is missing or does not wrap parsing.";
+    const md = renderFindingsReport(
+      [
+        caseOf({
+          id: "fnd_3_pageError",
+          runId: "r",
+          runDir: "/tmp",
+          finding: {
+            schemaVersion: 1,
+            id: "fnd_3_pageError",
+            kind: "pageError",
+            message,
+            tapePath: "/tmp/x",
+            stepIndex: 3,
+            widgetRef: "page.from_date",
+            url: "http://127.0.0.1:4173/clients/new",
+          },
+          severity: "critical",
+          title: "Uncaught JavaScript error: Invalid time value",
+          description: message,
+          tape: "fill page.from_date \"%00\"\n",
+          url: "http://127.0.0.1:4173/clients/new",
+        }),
+      ],
+      { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
+      "/tmp/findings.md",
+    );
+    assert.match(md, /\*\*Threw instead of invalid\*\*/);
+    assert.match(md, /`throwInsteadOfInvalid`/);
+    assert.match(md, /see Threw instead of invalid/);
+    assert.match(md, /findings\/Q-03/);
+    assert.match(md, /\*\*Expected:\*\* The page stays usable, and junk in a field shows as a field error\./);
+    assert.doesNotMatch(md, /\*\*Q-03\*\* `throwInsteadOfInvalid`/);
   });
 });

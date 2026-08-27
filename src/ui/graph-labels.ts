@@ -44,11 +44,20 @@ export function sectionKey(path: string): string | undefined {
   return pathSegments(path)[0];
 }
 
+/** Last segments that are not a unique room name (`/vendors/new` vs `/vouchers/new`). */
+const GENERIC_LEAF = new Set(["new", "edit", "create", "add", "form", "show", "index", "settings"]);
+
 export function prettyPageLabel(path: string, fallback: string): { title: string; kicker?: string } {
   const segs = pathSegments(path).filter((s) => !s.startsWith(":"));
   if (segs.length === 0) {
     return { title: fallback === "home" ? "Home" : titleCaseSegment(fallback) };
   }
   if (segs.length === 1) return { title: titleCaseSegment(segs[0]!) };
-  return { title: titleCaseSegment(segs[segs.length - 1]!), kicker: titleCaseSegment(segs[0]!) };
+  const kicker = titleCaseSegment(segs[0]!);
+  const rest = segs.slice(1);
+  const leaf = rest[rest.length - 1]!.toLowerCase();
+  if (rest.length >= 2 && GENERIC_LEAF.has(leaf)) {
+    return { title: rest.map(titleCaseSegment).join(" / "), kicker };
+  }
+  return { title: titleCaseSegment(segs[segs.length - 1]!), kicker };
 }

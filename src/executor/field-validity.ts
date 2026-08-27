@@ -70,6 +70,29 @@ export function requestLooksLikeWrite(req: WatchedRequest): boolean {
   return Boolean(req.postData);
 }
 
+/** WCAG 3.3.1: Save stayed put with no write and no accessible invalid. */
+export const SILENT_SUBMIT_MESSAGE =
+  "Save did not submit the form: no navigation, no write request, and no invalid fields were shown";
+
+export function isSilentSubmitMessage(message: string): boolean {
+  return /did not submit the form: no navigation, no write request, and no invalid fields/i.test(
+    message,
+  );
+}
+
+/** True when a submit click left the user with no send, no leave, and no invalid marks. */
+export function shouldReportSilentSubmit(opts: {
+  urlChanged: boolean;
+  submitVisible: boolean;
+  requests: readonly WatchedRequest[];
+  validity: readonly FieldValidity[];
+}): boolean {
+  if (opts.urlChanged || !opts.submitVisible) return false;
+  if (opts.requests.some(requestLooksLikeWrite)) return false;
+  if (opts.validity.some(fieldLooksInvalid)) return false;
+  return true;
+}
+
 export function validationMissesToReport(opts: {
   unmarked: TrackedFill[];
   gone: TrackedFill[];
@@ -81,6 +104,32 @@ export function validationMissesToReport(opts: {
     return f.value.trim().length < MIN_SENT_NEEDLE && writes.length > 0;
   });
   return [...sent, ...opts.gone];
+}
+
+/** Any visible field the browser already marked invalid (including ones we never filled). */
+export async function pageHasBlockingInvalid(page: Page): Promise<boolean> {
+  return page
+    .evaluate(() => {
+      const g = globalThis as unknown as {
+        document: {
+          querySelector(sel: string): unknown;
+          querySelectorAll(sel: string): ArrayLike<{
+            validity?: { valid?: boolean };
+            form?: { noValidate?: boolean } | null;
+          }>;
+        };
+      };
+      if (g.document.querySelector('[aria-invalid="true"]')) return true;
+      const nodes = g.document.querySelectorAll("input, select, textarea");
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i]!;
+        if (node.validity?.valid !== false) continue;
+        if (node.form?.noValidate) continue;
+        return true;
+      }
+      return false;
+    })
+    .catch(() => false);
 }
 
 export async function readFieldValidity(

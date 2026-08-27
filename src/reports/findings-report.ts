@@ -13,7 +13,6 @@ import type { Config } from "../schema/config.js";
 import { formatExplorePlanItemLine, type UiExploreOutline } from "../schema/ui.js";
 import {
   findingReportTitle,
-  pageErrorDetail,
   severityForKind,
   type FindingSeverity,
 } from "../schema/finding.js";
@@ -24,17 +23,16 @@ import type { QualityReport } from "../schema/quality.js";
 import { joinWheres, qualityLedgerItems } from "../schema/quality.js";
 import type { TestabilityReport } from "../schema/testability.js";
 import { wrapClickmonkeyFence } from "./fences.js";
-import { assignClassLabels } from "./labels.js";
+import { labelLegendLines } from "./labels.js";
 import {
   chapterOf,
   compareSc,
   coverageLines,
   splitOverflowByViewport,
-  wcagOf,
   type OverflowViewport,
   type ReportChapter,
 } from "./wcag.js";
-import { whyFinding, whyRule } from "./why.js";
+import { checkOf, type Check } from "./check.js";
 
 const SEV_ORDER: FindingSeverity[] = ["critical", "major", "minor", "suggestion"];
 
@@ -67,17 +65,19 @@ export function caseKey(c: Pick<FindingCase, "runId" | "id">): string {
 
 /** Collapse the same product bug seen in several runs (or twice in one run). */
 export function findingFingerprint(c: FindingCase): string {
-  const kind = c.finding.kind;
+  const rule = c.check.rule;
   const path = pathOfHref(c.finding.url ?? c.url ?? "") ?? "";
-  if (kind === "notFound") return `notFound\t${path}`;
-  if (kind === "httpError") return `httpError\t${c.finding.httpStatus ?? ""}\t${path}`;
-  if (kind === "visualIssue") {
+  if (rule === "notFound") return `notFound\t${path}`;
+  if (rule === "httpError" || rule === "serverRefusedSubmit") {
+    return `${rule}\t${c.finding.httpStatus ?? ""}\t${path}`;
+  }
+  if (c.finding.kind === "visualIssue") {
     return visualFindingKey(c.finding);
   }
   const msg = c.finding.message.replace(/\s+/g, " ").trim();
   const harness = /^(locator\.|Timeout \d+ms exceeded)/i.test(msg);
-  if (harness) return `${kind}\t${msg.split("(")[0]!.trim()}`;
-  return `${kind}\t${msg}\t${path}`;
+  if (harness) return `${rule}\t${msg.split("(")[0]!.trim()}`;
+  return `${rule}\t${msg}\t${path}`;
 }
 
 export type FindingCluster = { primary: FindingCase; copies: FindingCase[] };
@@ -136,39 +136,14 @@ function pathOfHref(href: string): string | undefined {
 }
 
 function expectedActual(c: FindingCase): { expected?: string; actual?: string } {
-  const kind = c.finding.kind;
-  const message = c.finding.message.trim();
-  const title = findingReportTitle(kind, c.title || message).trim();
-  switch (kind) {
-    case "pageError": {
-      const junk = /validation is missing|junk value that crashes|was not marked invalid/i.test(message);
-      return {
-        expected: junk
-          ? "The page stays usable, and junk in a field shows as a field error."
-          : "The page stays usable.",
-        actual: `Uncaught JavaScript \`${pageErrorDetail(message)}\`.`,
-      };
-    }
-    case "expectFailed": {
-      if (/was not found|Timeout \d+ms exceeded|locator\./i.test(message)) {
-        return { actual: message };
-      }
-      if (/\bis disabled\b/i.test(message)) {
-        return { expected: "The action is enabled.", actual: message };
-      }
-      return {
-        expected: "The field is marked invalid.",
-        actual: "The form sent or left without rejecting the input.",
-      };
-    }
-    case "httpError":
-    case "notFound":
-      return { expected: "The resource loads.", actual: message };
-    case "visualIssue":
-      return { expected: "The control is readable and clickable.", actual: message };
-    default:
-      return message && message !== title ? { actual: message } : {};
-  }
+  const message = (c.message || c.finding.message).trim();
+  const title = findingReportTitle(c.finding.kind, c.title || message).trim();
+  const expected = (c.expected !== undefined ? c.expected : c.check.expected)?.trim() || undefined;
+  const actual =
+    (c.actual !== undefined ? c.actual.trim() : undefined) ||
+    c.check.actual ||
+    (expected ? message : message && message !== title ? message : undefined);
+  return { expected, actual };
 }
 
 type ClassCatalog = {
@@ -181,24 +156,27 @@ function visualIssueWhere(message: string): { core: string; where?: string } {
   return { core: message.slice(0, idx), where: message.slice(idx + 3) };
 }
 
+function checkLink(check: Check): string {
+  return `[${check.title}](${check.href})`;
+}
+
 function seeClassLabel(c: FindingCase, catalog?: ClassCatalog): string | undefined {
-  if (!catalog || c.finding.kind !== "visualIssue") return undefined;
-  const rule = c.finding.widgetRef || c.finding.message.split(":")[0]?.trim();
-  if (!rule) return undefined;
-  const { core, where } = visualIssueWhere(c.finding.message);
-  const viewports: OverflowViewport[] | undefined =
-    rule === "overflow"
-      ? [
-          ...new Set(
-            splitOverflowByViewport(where, core).map((s) => s.viewport),
-          ),
-        ].sort((a, b) => Number(b === "320") - Number(a === "320"))
-      : undefined;
-  const chapters = viewports
-    ? viewports.map((viewport) =>
-        chapterOf(rule, { source: "visual", message: core, where, viewport }),
-      )
-    : [chapterOf(rule, { source: "visual", message: core, where })];
+  if (!catalog) return undefined;
+  const rule = c.check.rule;
+  const chapters: ReportChapter[] = [];
+  if (rule === "overflow") {
+    const { core, where } = visualIssueWhere(c.finding.message);
+    const segs = splitOverflowByViewport(where, core);
+    const viewports: OverflowViewport[] = [
+      ...new Set(segs.map((s) => s.viewport)),
+    ].sort((a, b) => Number(b === "320") - Number(a === "320"));
+    for (const viewport of viewports) {
+      const check = checkOf(rule, { source: "visual", message: core, where, viewport });
+      if (check) chapters.push(check.chapter);
+    }
+  } else {
+    chapters.push(c.check.chapter);
+  }
   const labels: string[] = [];
   const seen = new Set<string>();
   for (const chapter of chapters) {
@@ -233,7 +211,8 @@ function renderCase(
   const canned = expectedActual(c);
   const expected = extra?.expected?.trim() || canned.expected;
   const actual = extra?.actual?.trim() || canned.actual;
-  const why = (extra?.why?.trim() || whyFinding(c.finding.kind, c.finding.message)).trim();
+  const check = c.check;
+  const why = (extra?.why?.trim() || c.why || check.why).trim();
   const loc: string[] = [
     `\`${c.finding.kind}\` · ${c.severity}${seen ? ` · ${seen}` : ""} · \`${c.id}\``,
   ];
@@ -245,7 +224,9 @@ function renderCase(
   if (head) lines.push(head, "");
   if (expected) lines.push(`**Expected:** ${expected}`, "");
   if (actual) lines.push(`**Actual:** ${actual}`, "");
-  if (why) lines.push(`**Why it matters:** ${why}`, "");
+  if (why) {
+    lines.push(`**Why it matters:** ${why} ${checkLink(check)}`, "");
+  }
   const shot = shotMarkdown(c.screenshotPath, reportPath);
   if (shot) lines.push(shot, "");
   if (c.tape.trim()) {
@@ -300,6 +281,7 @@ type DigestRow = {
   chapter: ReportChapter;
   label?: string;
   viewport?: OverflowViewport;
+  check?: Check;
 };
 
 function digestKey(row: Pick<DigestRow, "source" | "rule" | "severity" | "message" | "viewport">): string {
@@ -339,10 +321,10 @@ function pageCountTrail(row: Pick<DigestRow, "pages">): string {
 }
 
 function formatLedgerRow(row: DigestRow, scope: StartScope, page?: string): string {
-  const wcag = wcagOf(row.rule, rowExtras(row));
+  const check = row.check ?? checkOf(row.rule, rowExtras(row));
   const bits = [row.label ? `**${row.label}**` : undefined];
-  if (wcag.level) bits.push(wcag.level);
-  if (wcag.sc) bits.push(wcag.sc);
+  if (check?.level) bits.push(check.level);
+  if (check?.sc && !row.label?.includes(check.sc)) bits.push(check.sc);
   bits.push(`\`${row.rule}\``);
   bits.push(row.severity);
   if (scope === "chrome") bits.push("chrome", pageCountTrail(row));
@@ -350,10 +332,9 @@ function formatLedgerRow(row: DigestRow, scope: StartScope, page?: string): stri
   else bits.push("page", page ? `\`${page}\`` : pageCountTrail(row));
   const head = `- ${bits.filter(Boolean).join(" · ")}`;
   const detail = [shortQualityMessage(row.message), shortWhere(row.where)].filter(Boolean).join(" · ");
-  const why = whyRule(row.rule);
   const lines = [head];
   if (detail) lines.push(`  ${detail}`);
-  if (why) lines.push(`  Why it matters: ${why}`);
+  if (check) lines.push(`  Why it matters: ${check.why} ${checkLink(check)}`);
   return lines.join("\n");
 }
 
@@ -394,16 +375,18 @@ function formatStartItem(row: DigestRow, scope: StartScope): string {
       : family
         ? `${wherePages(row)}, mostly \`${family}\``
         : wherePages(row);
-  const hint = whyRule(row.rule);
+  const check = row.check ?? checkOf(row.rule, rowExtras(row));
   const msg = shortQualityMessage(row.message);
   const scopeLabel =
     scope === "chrome" ? "shared shell" : scope === "cluster" ? "same component" : "this page only";
   const head = `Fix \`${row.rule}\` (${scopeLabel}, ${where})`;
   const detail: string[] = [];
   if (row.message.includes("<")) detail.push(msg.replace(/\.$/, ""));
-  else if (!hint) detail.push(msg.replace(/\.$/, ""));
+  else if (!check) detail.push(msg.replace(/\.$/, ""));
   if (row.where) detail.push(`Look at ${markdownSafeQualityMessage(row.where)}`);
-  if (hint) detail.push(hint.replace(/\.$/, ""));
+  if (check) {
+    detail.push(`${check.why.replace(/\.$/, "")} ${checkLink(check)}`);
+  }
   return detail.length > 0 ? `${head} — ${detail.join(". ")}.` : head;
 }
 
@@ -478,9 +461,7 @@ function sortDigestRows<T extends { severity: string; rule: string; message: str
 
 function sortA11yRows(rows: DigestRow[]): DigestRow[] {
   return [...rows].sort((a, b) => {
-    const wa = wcagOf(a.rule, rowExtras(a));
-    const wb = wcagOf(b.rule, rowExtras(b));
-    const sc = compareSc(wa.sc, wb.sc);
+    const sc = compareSc(a.check?.sc, b.check?.sc);
     if (sc !== 0) return sc;
     const sev = Number(b.severity === "error") - Number(a.severity === "error");
     if (sev !== 0) return sev;
@@ -490,13 +471,13 @@ function sortA11yRows(rows: DigestRow[]): DigestRow[] {
 }
 
 function scGroupLabel(row: DigestRow): string {
-  const wcag = wcagOf(row.rule, rowExtras(row));
-  if (wcag.sc) {
-    const title = wcag.title && wcag.title !== "Best practice" ? ` ${wcag.title}` : "";
-    const level = wcag.level ? ` (${wcag.level})` : "";
-    return `${wcag.sc}${title}${level}`;
+  const check = row.check ?? checkOf(row.rule, rowExtras(row));
+  if (check?.sc) {
+    const title = check.scTitle && check.scTitle !== "Best practice" ? ` ${check.scTitle}` : "";
+    const level = check.level ? ` (${check.level})` : "";
+    return `${check.sc}${title}${level}`;
   }
-  return wcag.title || "Best practice";
+  return check?.scTitle || "Best practice";
 }
 
 type Catalog = {
@@ -513,14 +494,19 @@ type Catalog = {
 function collectDigestRows(
   testability?: TestabilityReport,
   quality?: QualityReport,
+  findings?: FindingCase[],
 ): { rows: DigestRow[]; pageCount: number } {
   quality = quality ? applyDuplicateTitles(quality) : quality;
   const byKey = new Map<string, DigestRow>();
-  const add = (pageKey: string, row: Omit<DigestRow, "pages" | "pageSet" | "chapter" | "label">) => {
+  const classify = (row: Pick<DigestRow, "rule" | "message" | "where" | "source" | "viewport">) => {
+    const extras = rowExtras(row);
+    const check = checkOf(row.rule, extras);
+    return { check, chapter: check?.chapter ?? chapterOf(row.rule, extras), label: check?.title };
+  };
+  const add = (pageKey: string, row: Omit<DigestRow, "pages" | "pageSet" | "chapter" | "label" | "check">) => {
     if (row.severity === "warning" && isNoisyQualityMessage(row.message)) return;
-    const extras = { message: row.message, where: row.where, source: row.source, viewport: row.viewport };
-    const chapter = chapterOf(row.rule, extras);
-    const keyed = { ...row, chapter };
+    const { check, chapter, label } = classify(row);
+    const keyed = { ...row, chapter, ...(check ? { check } : {}), ...(label ? { label } : {}) };
     const key = digestKey(keyed);
     const prev = byKey.get(key);
     if (prev) {
@@ -529,7 +515,10 @@ function collectDigestRows(
       prev.pages = prev.pageSet.size;
       const where = joinWheres(prev.where, row.where);
       if (where) prev.where = where;
-      prev.chapter = chapterOf(prev.rule, rowExtras(prev));
+      const next = classify(prev);
+      prev.chapter = next.chapter;
+      if (next.check) prev.check = next.check;
+      if (next.label) prev.label = next.label;
       return;
     }
     const pageSet = new Set([pageKey]);
@@ -576,22 +565,29 @@ function collectDigestRows(
       });
     }
   }
+  for (const c of findings ?? []) {
+    const rule = c.check.rule;
+    // Finding cards already list the hit. Digest only when the oracle kind remapped
+    // to a class (`expectFailed` → silentSubmit). visualIssue is on the quality ledger.
+    if (c.finding.kind === "visualIssue" || rule === c.finding.kind) continue;
+    const href = c.finding.url ?? c.url ?? "";
+    const pageKey = pathOfHref(href) ?? c.pageId ?? c.finding.pageId ?? "/";
+    add(pageKey, {
+      source: c.check.chapter === "accessibility" ? "a11y" : "quality",
+      rule,
+      severity: "error",
+      message: c.finding.message.split("\n")[0]!.trim(),
+      count: 1,
+      ...(c.finding.widgetRef ? { where: c.finding.widgetRef } : {}),
+    });
+  }
 
   const rows = [...byKey.values()];
-  const labels = assignClassLabels(
-    rows.map((r) => ({
-      chapter: r.chapter,
-      severity: r.severity,
-      pages: r.pages,
-      rule: r.rule,
-      message: r.message,
-      key: digestKey(r),
-    })),
-  );
-  for (const row of rows) row.label = labels.get(digestKey(row));
-  const pageCount = new Set(
-    [...(testability?.pages ?? []), ...(quality?.pages ?? [])].map((p) => qualityHeading(p)),
-  ).size;
+  const pageCount = new Set([
+    ...(testability?.pages ?? []).map((p) => qualityHeading(p)),
+    ...(quality?.pages ?? []).map((p) => qualityHeading(p)),
+    ...rows.flatMap((r) => [...r.pageSet]),
+  ]).size;
   return { rows, pageCount };
 }
 
@@ -608,7 +604,13 @@ function leftoverPageOrder(uniqueRows: DigestRow[]): string[] {
   }
   return [...pageScores.entries()]
     .filter(([, score]) => score.errors + score.warnings > 0)
-    .sort((a, b) => b[1].errors - a[1].errors || b[1].warnings - a[1].warnings || a[0].localeCompare(b[0]))
+    .sort((a, b) => {
+      const totalB = b[1].errors + b[1].warnings;
+      const totalA = a[1].errors + a[1].warnings;
+      if (totalB !== totalA) return totalB - totalA;
+      if (b[1].errors !== a[1].errors) return b[1].errors - a[1].errors;
+      return a[0].localeCompare(b[0]);
+    })
     .map(([page]) => page);
 }
 
@@ -616,8 +618,9 @@ function buildCatalog(
   testability?: TestabilityReport,
   quality?: QualityReport,
   leftoverCap = LEFTOVER_PAGE_CAP,
+  findings?: FindingCase[],
 ): Catalog {
-  const { rows, pageCount } = collectDigestRows(testability, quality);
+  const { rows, pageCount } = collectDigestRows(testability, quality, findings);
   const chrome = sortDigestRows(rows.filter((r) => isChromeRow(r, pageCount)));
   const clusters = sortDigestRows(rows.filter((r) => isClusterRow(r, pageCount)));
   const uniqueRows = rows.filter((r) => !isChromeRow(r, pageCount) && !isClusterRow(r, pageCount));
@@ -693,20 +696,90 @@ function renderChapter(
   return lines;
 }
 
+function hasClassLabels(catalog: Catalog): boolean {
+  return catalog.rows.some((r) => r.label);
+}
+
+function compareLabel(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true });
+}
+
+function issueCountTrail(n: number): string {
+  return `${n} issue${n === 1 ? "" : "s"}`;
+}
+
+function pageLabels(catalog: Catalog, page: string): string[] {
+  return catalog.rows
+    .filter((r) => r.pageSet.has(page) && r.label)
+    .map((r) => r.label!)
+    .filter((v, i, all) => all.indexOf(v) === i)
+    .sort(compareLabel);
+}
+
+/** Ranked spec-name list — most pages first, so a chrome class reads as the biggest fix. */
+function renderLabelCounts(catalog: Catalog): string[] {
+  const byLabel = new Map<string, { rule: string; pages: Set<string>; row: DigestRow }>();
+  for (const r of catalog.rows) {
+    if (!r.label) continue;
+    const cur = byLabel.get(r.label);
+    if (!cur) {
+      byLabel.set(r.label, { rule: r.rule, pages: new Set(r.pageSet), row: r });
+      continue;
+    }
+    for (const page of r.pageSet) cur.pages.add(page);
+  }
+  const sorted = [...byLabel.entries()].sort((a, b) => {
+    if (b[1].pages.size !== a[1].pages.size) return b[1].pages.size - a[1].pages.size;
+    return compareLabel(a[0], b[0]);
+  });
+  return sorted.map(([label, { rule, pages, row }]) => {
+    const check = row.check ?? checkOf(rule, rowExtras(row));
+    const tag = check ? checkLink(check) : label;
+    return `- **${tag}** \`${rule}\` — ${pageCountTrail({ pages: pages.size })}`;
+  });
+}
+
+function pagesByIssueCount(pages: readonly string[], catalog: Catalog): string[] {
+  return [...pages].sort((a, b) => {
+    const nb = pageLabels(catalog, b).length;
+    const na = pageLabels(catalog, a).length;
+    if (nb !== na) return nb - na;
+    return a.localeCompare(b);
+  });
+}
+
+function labelIndexLines(catalog: Catalog): string[] {
+  return [...labelLegendLines(), "", ...renderLabelCounts(catalog)];
+}
+
+/** Put the spec-name key before Start here (or after an LLM paragraph). */
+function withLabelLegend(summaryLines: string[], catalog: Catalog): string[] {
+  if (!hasClassLabels(catalog)) return summaryLines;
+  const legend = labelIndexLines(catalog);
+  const startIdx = summaryLines.findIndex((l) => l === "### Start here");
+  if (startIdx >= 0) {
+    return [...summaryLines.slice(0, startIdx), ...legend, "", ...summaryLines.slice(startIdx)];
+  }
+  return [...summaryLines, "", ...legend];
+}
+
 function renderByPage(catalog: Catalog, qualityFull?: boolean): string[] {
-  const pages = qualityFull
-    ? [...new Set(catalog.rows.flatMap((r) => [...r.pageSet]))].sort()
+  const raw = qualityFull
+    ? [...new Set(catalog.rows.flatMap((r) => [...r.pageSet]))]
     : catalog.leftoverPages;
+  const pages = pagesByIssueCount(raw, catalog);
   if (pages.length === 0) return [];
   const lines = ["## By page", ""];
+  if (hasClassLabels(catalog)) {
+    lines.push(
+      "Same spec tags as in Summary — jump to that class in the chapters above. Worst pages first.",
+      "",
+    );
+  }
   for (const page of pages) {
-    const labels = catalog.rows
-      .filter((r) => r.pageSet.has(page) && r.label)
-      .map((r) => r.label!)
-      .filter((v, i, all) => all.indexOf(v) === i)
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const labels = pageLabels(catalog, page);
     if (labels.length === 0) continue;
-    lines.push(`- \`${page}\` — ${labels.join(", ")}`);
+    lines.push(`- \`${page}\` — ${issueCountTrail(labels.length)} · ${labels.join(", ")}`);
   }
   if (lines.length === 2) return [];
   lines.push("");
@@ -767,6 +840,9 @@ function fallbackSummary(
 function renderCatalogChapters(catalog: Catalog, includeStartHere: boolean): string[] {
   if (catalog.rows.length === 0) return [];
   const lines: string[] = [];
+  if (hasClassLabels(catalog)) {
+    lines.push(...labelIndexLines(catalog), "");
+  }
   if (includeStartHere && catalog.start.length > 0) {
     lines.push("### Start here", "");
     catalog.start.forEach((item, i) => {
@@ -833,10 +909,11 @@ export function renderFindingsReport(
 ): string {
   const clusters = collapseFindingCases(cases);
   const leftoverCap = meta.qualityFull ? Number.POSITIVE_INFINITY : LEFTOVER_PAGE_CAP;
-  const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap);
-  const summaryLines = summary?.trim()
-    ? [summary.trim()]
-    : fallbackSummary(clusters, catalog, meta);
+  const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap, cases);
+  const summaryLines = withLabelLegend(
+    summary?.trim() ? [summary.trim()] : fallbackSummary(clusters, catalog, meta),
+    catalog,
+  );
   const lines = [
     "# Findings report",
     "",
@@ -942,7 +1019,7 @@ export async function writeRunsReport(opts: {
   if (opts.config.brain) {
     try {
       const leftoverCap = opts.qualityFull ? Number.POSITIVE_INFINITY : LEFTOVER_PAGE_CAP;
-      const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap);
+      const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap, cases);
       const digest = fallbackSummary(collapseFindingCases(cases), catalog, meta).join("\n");
       const enriched = await enrichWithBrain(cases, opts.config, chat, digest);
       if (!summary) summary = enriched.summary || undefined;

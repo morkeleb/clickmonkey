@@ -1,10 +1,13 @@
 import { join } from "node:path";
 import { chat } from "../brains/chat.js";
 import { decideUnleashNasty } from "../brains/nasty.js";
-import { LOOT_EXPLORE_STEPS } from "../brains/form-hunt.js";
+import { LOOT_EXPLORE_STEPS, parseFormLock } from "../brains/form-hunt.js";
+import { formatLiveLine } from "../executor/nav-log.js";
 import {
   clickWasNoop,
+  FORM_COMMIT_RETRIES,
   formSubmitActions,
+  isPrimaryFormCommit,
   rememberClick,
   mapBrain,
   unleashBrain,
@@ -30,7 +33,15 @@ import { pickSeedPageId, resetToSeed } from "./seed.js";
 
 export const UNLEASH_DEFAULT_STEPS = 50;
 export const UNLEASH_CLI_STEPS = 200;
+export const UNLEASH_FORM_STEPS = 40;
 export const MAP_CLI_STEPS = 200;
+
+export class FormLockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FormLockError";
+  }
+}
 
 export type UnleashMode = "navigate" | "mutate";
 
@@ -40,6 +51,10 @@ export interface UnleashResult {
   log: Log;
   logPath: string;
   stepsUsed: number;
+  /** `--form` page. Set when the walk was pinned to one create form. */
+  lockForm?: string;
+  /** Submit left the locked form. */
+  submitted?: { from: string; to: string };
 }
 
 export async function runUnleash(opts: {
@@ -53,6 +68,9 @@ export async function runUnleash(opts: {
   nasty?: boolean;
   mode?: UnleashMode;
   verbose?: boolean;
+  /** Map page id (`clients_new`) — hunt there, fill, submit, stop when the page changes. */
+  form?: string;
+  echo?: { write(chunk: string): unknown };
 }): Promise<UnleashResult> {
   const steps = opts.steps ?? UNLEASH_DEFAULT_STEPS;
   const mode = opts.mode ?? "mutate";
@@ -64,8 +82,9 @@ export async function runUnleash(opts: {
         ? { name: "unleash-nasty", decide: (ctx) => decideUnleashNasty(ctx) }
         : unleashBrain);
   const logPath = join(opts.outDir, "log.txt");
-  requireVisionShots(opts.config);
-  const vision = resolveVision(opts.config.vision, opts.config.brain);
+  const config = opts.form ? { ...opts.config, vision: undefined } : opts.config;
+  requireVisionShots(config);
+  const vision = resolveVision(config.vision, config.brain);
   if (vision?.issues) {
     let apiKey: string | undefined;
     if (vision.apiKeyEnv) {
@@ -86,7 +105,7 @@ export async function runUnleash(opts: {
 
   try {
     return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
-    const state = await bootRun(handle, opts.config, opts.outDir, {
+    const state = await bootRun(handle, config, opts.outDir, {
       configPath: opts.configPath,
       verbose: opts.verbose,
       brain: brain.name,
@@ -121,13 +140,23 @@ export async function runUnleash(opts: {
       ...(job ? jobFogTimes(pages, job) : pageFogTimes(pages)),
     };
     const modeFog: Record<string, string> = { ...modeFogTimes(pages) };
-    let huntTarget: string | undefined;
+    const lockForm = opts.form ? parseFormLock(opts.form).pageId : undefined;
+    if (lockForm && !state.model.pages.some((p) => p.id === lockForm)) {
+      throw new FormLockError(`unknown --form ${opts.form} (not a map page)`);
+    }
+    if (lockForm) {
+      opts.echo?.write(`${formatLiveLine(`form-loop lock ${lockForm}`)}\n`);
+    }
+    let huntTarget: string | undefined = lockForm ? `${lockForm}/page` : undefined;
     let lootSteps = 0;
+    let submitted: UnleashResult["submitted"];
+    let stayedSaves = 0;
     while (stepsUsed < steps) {
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
         : undefined;
       const onPage = view.page;
+      const urlAtStart = state.page.url();
       const hereKey = `${view.page}/${view.surface}`;
       pageVisits[hereKey] = (pageVisits[hereKey] ?? 0) + 1;
       pageFog[view.page] = new Date().toISOString();
@@ -146,6 +175,7 @@ export async function runUnleash(opts: {
         ...(job ? { job } : {}),
         ...(huntTarget ? { huntTarget } : {}),
         ...(lootSteps > 0 ? { lootSteps } : {}),
+        ...(lockForm ? { lockForm } : {}),
       });
       if (state.navMeta) {
         if (decision.mode) state.navMeta.mode = decision.mode;
@@ -154,8 +184,9 @@ export async function runUnleash(opts: {
       const formKey = `${view.page}/${view.surface}`;
       const filledForm = isFormWorkNote(decision.note);
       if (decision.huntTarget) huntTarget = decision.huntTarget;
-      if (filledForm) huntTarget = undefined;
+      if (filledForm && !lockForm) huntTarget = undefined;
       let formOk = false;
+      let saveLine: string | undefined;
       for (const line of decisionLines(decision)) {
         if (stepsUsed >= steps) break;
         const parsed = parseLine(line);
@@ -172,6 +203,7 @@ export async function runUnleash(opts: {
         stepsUsed += 1;
         if (parsed && !("comment" in parsed) && parsed.kind === "click") {
           clicksByPage.set(onPage, rememberClick(clicksByPage.get(onPage) ?? [], parsed.id));
+          if (submitIds?.has(parsed.id) && isPrimaryFormCommit(parsed)) saveLine = line;
           if (
             beforeClick &&
             result.ok &&
@@ -181,21 +213,26 @@ export async function runUnleash(opts: {
           ) {
             const dead = noopsByPage.get(onPage) ?? [];
             if (!dead.includes(parsed.id)) noopsByPage.set(onPage, [...dead, parsed.id]);
-            if (decision.note === "form hunt") huntTarget = undefined;
+            if (decision.note === "form hunt" && !lockForm) huntTarget = undefined;
           }
         }
         if (result.finding && shouldPersistFinding(result.finding.kind)) {
           findings.push(result.finding);
-          view = await resetToSeed(exec, state, seedPageId);
-          huntTarget = undefined;
-          lootSteps = 0;
+          const crash = result.finding.kind === "pageError";
+          if (!lockForm || crash) {
+            view = await resetToSeed(exec, state, seedPageId);
+            huntTarget = lockForm ? `${lockForm}/page` : undefined;
+            lootSteps = 0;
+          }
           formOk = false;
           break;
         }
         if (result.bounced || !result.ok) {
-          if (result.bounced) view = await resetToSeed(exec, state, seedPageId);
-          huntTarget = undefined;
-          lootSteps = 0;
+          if (result.bounced || !lockForm) {
+            if (result.bounced) view = await resetToSeed(exec, state, seedPageId);
+            huntTarget = lockForm ? `${lockForm}/page` : undefined;
+            lootSteps = 0;
+          }
           formOk = false;
           break;
         }
@@ -207,7 +244,33 @@ export async function runUnleash(opts: {
         recordMode(state, onPage, decision.mode);
       }
       if (filledForm && formOk) formHits[formKey] = (formHits[formKey] ?? 0) + 1;
+      const leftForm =
+        Boolean(lockForm && saveLine) &&
+        (view.page !== onPage || state.page.url() !== urlAtStart);
+      if (leftForm) {
+        submitted = { from: onPage, to: view.page };
+        opts.echo?.write(
+          `${formatLiveLine(`form-loop submitted ${onPage} → ${view.page} (${state.page.url()})`)}\n`,
+        );
+        break;
+      }
+      if (lockForm && saveLine && !leftForm) {
+        stayedSaves += 1;
+        const why = view.last?.finding ?? (view.last?.ok === false ? "failed" : "stayed");
+        opts.echo?.write(`${formatLiveLine(`form-loop still ${lockForm} after ${saveLine} (${why})`)}\n`);
+        if (stayedSaves > FORM_COMMIT_RETRIES) {
+          opts.echo?.write(
+            `${formatLiveLine(`form-loop gave up after ${stayedSaves} Saves still on ${lockForm}`)}\n`,
+          );
+          break;
+        }
+      }
       if (isFormCommitNote(decision.note) && formOk && view.page !== onPage) {
+        if (lockForm) {
+          submitted = { from: onPage, to: view.page };
+          opts.echo?.write(`${formatLiveLine(`form-loop submitted ${onPage} → ${view.page}`)}\n`);
+          break;
+        }
         lootSteps = LOOT_EXPLORE_STEPS;
         huntTarget = undefined;
       } else if (lootSteps > 0) {
@@ -224,12 +287,18 @@ export async function runUnleash(opts: {
     };
     writeLog(logPath, log);
 
+    if (lockForm && !submitted) {
+      opts.echo?.write(`${formatLiveLine(`form-loop stopped on ${view.page} after ${stepsUsed} steps`)}\n`);
+    }
+
     return {
-      ok: findings.length === 0,
+      ok: lockForm ? Boolean(submitted) : findings.length === 0,
       findings,
       log,
       logPath,
       stepsUsed,
+      ...(lockForm ? { lockForm } : {}),
+      ...(submitted ? { submitted } : {}),
     };
     });
   } finally {

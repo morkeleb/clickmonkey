@@ -1,6 +1,5 @@
-import type { ReportChapter } from "./wcag.js";
-
-export type LabelClass = "T" | "A" | "V" | "Q";
+import { checkOf } from "./check.js";
+import type { ChapterExtras, ReportChapter } from "./wcag.js";
 
 export type LabelInput = {
   chapter: ReportChapter;
@@ -8,46 +7,39 @@ export type LabelInput = {
   pages: number;
   rule: string;
   message?: string;
+  where?: string;
+  viewport?: import("./wcag.js").OverflowViewport;
   key: string;
 };
 
-const PREFIX: Record<ReportChapter, LabelClass> = {
-  testability: "T",
-  accessibility: "A",
-  visual: "V",
-  quality: "Q",
-};
+function extrasOf(row: LabelInput): ChapterExtras {
+  return {
+    ...(row.message ? { message: row.message } : {}),
+    ...(row.where ? { where: row.where } : {}),
+    ...(row.viewport ? { viewport: row.viewport } : {}),
+    source: row.chapter === "accessibility" ? "a11y" : row.chapter === "visual" ? "visual" : row.chapter,
+  };
+}
 
-function isError(severity: string): boolean {
-  return severity === "error" || severity === "block" || severity === "critical";
+/** WCAG / HTML / catalog title for a digest row. Catalog ids stay on GitHub Pages. */
+export function classLabelFor(row: LabelInput): string {
+  return checkOf(row.rule, extrasOf(row))?.title ?? row.rule;
+}
+
+/** Markdown for the findings report: spec names, not T-01 / Q-1. */
+export function labelLegendLines(): string[] {
+  return [
+    "### Labels",
+    "",
+    "Issues are tagged by **spec name**: WCAG success criteria, HTML authoring (html-validate or the HTML spec), or ClickMonkey catalog titles ([catalog](https://morkeleb.github.io/clickmonkey/findings/)). The list is pages affected — fixing one class can clear many routes.",
+  ];
 }
 
 export function assignClassLabels(rows: readonly LabelInput[]): Map<string, string> {
-  const buckets = new Map<LabelClass, LabelInput[]>();
-  for (const row of rows) {
-    const prefix = PREFIX[row.chapter];
-    const list = buckets.get(prefix) ?? [];
-    list.push(row);
-    buckets.set(prefix, list);
-  }
   const out = new Map<string, string>();
-  for (const prefix of ["T", "A", "V", "Q"] as const) {
-    const list = buckets.get(prefix);
-    if (!list?.length) continue;
-    list.sort((a, b) => {
-      const sev = Number(isError(b.severity)) - Number(isError(a.severity));
-      if (sev !== 0) return sev;
-      if (b.pages !== a.pages) return b.pages - a.pages;
-      const rule = a.rule.localeCompare(b.rule);
-      if (rule !== 0) return rule;
-      return (a.message ?? "").localeCompare(b.message ?? "");
-    });
-    let n = 1;
-    for (const row of list) {
-      if (out.has(row.key)) continue;
-      out.set(row.key, `${prefix}-${n}`);
-      n += 1;
-    }
+  for (const row of rows) {
+    if (out.has(row.key)) continue;
+    out.set(row.key, classLabelFor(row));
   }
   return out;
 }

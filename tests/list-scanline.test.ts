@@ -7,7 +7,7 @@ import { withPage } from "./helpers/with-page.js";
 const html = fileURLToPath(new URL("../fixtures/sites/list-scanline/index.html", import.meta.url));
 
 describe("scanListScanline", () => {
-  it("flags ragged list titles, not a 3-col card grid or table cells", async () => {
+  it("flags ragged list titles and width-shifted card values, not a 3-col grid or locked amounts", async () => {
     await withPage(html, async (page) => {
       const issues = await scanListScanline(page);
       const lines = issues.filter((i) => i.rule === "scanline");
@@ -18,6 +18,14 @@ describe("scanListScanline", () => {
             /thread/i.test(i.where ?? ""),
         ),
         `expected scanline on list titles, got ${JSON.stringify(issues)}`,
+      );
+      assert.ok(
+        lines.some(
+          (i) =>
+            i.message === "Row values do not share a left edge" &&
+            /voucher/i.test(i.where ?? ""),
+        ),
+        `expected scanline when title width shoves card amounts, got ${JSON.stringify(issues)}`,
       );
       assert.ok(
         lines.some((i) => i.confidence === "high"),
@@ -31,8 +39,12 @@ describe("scanListScanline", () => {
         `tables are owned by scanTableLayout, got ${JSON.stringify(issues)}`,
       );
       assert.ok(
-        lines.every((i) => !/card/i.test(`${i.where} ${i.message}`)),
+        lines.every((i) => (i.where ?? "") !== "cards"),
         `3-col cards must not be scanline, got ${JSON.stringify(issues)}`,
+      );
+      assert.ok(
+        lines.every((i) => !/locked/i.test(`${i.where} ${i.message}`)),
+        `right-locked amounts are a column, got ${JSON.stringify(issues)}`,
       );
       assert.ok(
         lines.every((i) => !/overflow|primary|menu/i.test(`${i.where} ${i.message}`)),

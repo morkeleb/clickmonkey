@@ -61,6 +61,26 @@ describe("scanFocusObscured", () => {
     });
   });
 
+  it("skips an open account menu covering the page", async () => {
+    await withPage(html, async (page) => {
+      await page.evaluate(() => {
+        document.getElementById("account-menu")!.classList.add("open");
+      });
+      const issues = await scanFocusObscured(page);
+      const hits = issues.filter((i) => i.rule === "focusObscured");
+      assert.equal(
+        hits.some((i) => /Continue/.test(`${i.where ?? ""} ${i.message}`)),
+        false,
+        `open menu covering Continue must skip, got ${JSON.stringify(hits)}`,
+      );
+      assert.equal(
+        hits.some((i) => /User Settings|Sign Out/.test(`${i.where ?? ""} ${i.message}`)),
+        false,
+        `menu items must not be flagged as obscured, got ${JSON.stringify(hits)}`,
+      );
+    });
+  });
+
   it("skips an open modal covering the page", async () => {
     await withPage(html, async (page) => {
       await page.evaluate(() => {

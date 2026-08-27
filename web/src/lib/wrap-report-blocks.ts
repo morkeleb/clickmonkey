@@ -4,7 +4,7 @@ export function wrapShotFrames(html: string): string {
 }
 
 const HEADING = /(<h[2-4]\b[^>]*>[\s\S]*?<\/h[2-4]>)/i;
-const DIGEST_H3 = /^(start here|chrome|on several pages|pages)$/i;
+const DIGEST_H3 = /^(start here|labels|chrome|on several pages|pages)$/i;
 
 function headingText(tag: string): string {
   return tag.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();

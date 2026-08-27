@@ -1,5 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { trackDocumentResponses } from "../oracles/http.js";
+import { DEFAULT_ACTION_TIMEOUT_MS, rememberActionTimeout } from "./timeout.js";
 
 export interface RunHandle {
   browser: Browser;
@@ -7,13 +8,11 @@ export interface RunHandle {
   page: Page;
 }
 
-const DEFAULT_TIMEOUT = 30_000;
-
 export async function withRun<T>(
   opts: { headed?: boolean; timeout?: number; storageState?: string },
   fn: (h: RunHandle) => Promise<T>,
 ): Promise<T> {
-  const timeout = opts.timeout ?? DEFAULT_TIMEOUT;
+  const timeout = opts.timeout ?? DEFAULT_ACTION_TIMEOUT_MS;
   const browser = await chromium.launch({ headless: !opts.headed });
   let context: BrowserContext | undefined;
   let page: Page | undefined;
@@ -23,6 +22,7 @@ export async function withRun<T>(
       storageState: opts.storageState,
     });
     context.setDefaultTimeout(timeout);
+    rememberActionTimeout(context, timeout);
     page = await context.newPage();
     trackDocumentResponses(page);
     return await fn({ browser, context, page });

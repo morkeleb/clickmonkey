@@ -146,6 +146,25 @@ describe("nasty payloads", () => {
     assert.equal(pool.includes(value), false);
   });
 
+  it("fills a masked date with a real date, not catalog XSS", () => {
+    const field = {
+      id: "invoicedate",
+      value: "",
+      type: "text" as const,
+      constraints: { placeholder: "MM/DD/YYYY" },
+    };
+    const value = pickNastyFill(field, () => 0.3);
+    assert.match(value, /^\d{2}\/\d{2}\/\d{4}$|^\d{4}-\d{2}-\d{2}$/);
+    const catalog = loadPayloads();
+    const pool = [
+      ...(catalog.xss ?? []),
+      ...(catalog.sqli ?? []),
+      ...(catalog.format ?? []),
+      ...(catalog.overlong ?? []),
+    ];
+    assert.equal(pool.includes(value), false);
+  });
+
   it("hops when the view is empty instead of reopening the same page", () => {
     const view = viewOf({
       page: "settings",

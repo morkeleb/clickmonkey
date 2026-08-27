@@ -11,7 +11,7 @@ export const HEIGHT_TOL_PX = 12;
 export const ROW_TOP_PX = 8;
 export const MAX_HITS = 8;
 
-export type ListScanKind = "titles" | "icons" | "actions";
+export type ListScanKind = "titles" | "icons" | "actions" | "values";
 
 export type ListScanBox = {
   left: number;
@@ -140,6 +140,71 @@ const COLLECT_SRC = `(() => {
     return last;
   }
 
+  function slotsOf(el) {
+    var kids = [];
+    var ch = el.children || [];
+    var i;
+    for (i = 0; i < ch.length; i++) {
+      if (!shown(ch[i]) || skipHost(ch[i])) continue;
+      kids.push({ el: ch[i], box: ch[i].getBoundingClientRect() });
+    }
+    if (kids.length < 2) return null;
+    kids.sort(function (a, b) { return a.box.left - b.box.left; });
+    var seed = kids[0];
+    var row = [seed];
+    for (i = 1; i < kids.length; i++) {
+      var overlap = Math.min(seed.box.bottom, kids[i].box.bottom) - Math.max(seed.box.top, kids[i].box.top);
+      if (overlap > 4) row.push(kids[i]);
+    }
+    return row.length >= 2 ? row : null;
+  }
+
+  function pickTrack(item) {
+    var s = slotsOf(item);
+    if (s) return s;
+    var ch = item.children || [];
+    var i;
+    for (i = 0; i < ch.length; i++) {
+      if (!shown(ch[i]) || skipHost(ch[i])) continue;
+      s = slotsOf(ch[i]);
+      if (s) return s;
+    }
+    return null;
+  }
+
+  /** Trailing token on the row — amounts/meta shoved by a variable-width title. */
+  function pickValue(item) {
+    var title = pickTitle(item);
+    var action = pickAction(item);
+    var icon = pickIcon(item);
+    var track = pickTrack(item);
+    var last = track && track.length >= 2 ? track[track.length - 1].el : null;
+    if (last && last !== title && last !== action && last !== icon && last !== item) {
+      var t = (last.innerText || "").replace(/\\s+/g, " ").trim();
+      if (t) return last;
+    }
+    if (!title) return null;
+    var tr = title.getBoundingClientRect();
+    var nodes = item.querySelectorAll("span, p, time, data, strong, em, small, b");
+    var best = null;
+    var bestLeft = -Infinity;
+    var i;
+    for (i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (!shown(el) || skipHost(el) || el === title || el === action || el === icon) continue;
+      if (title.contains && title.contains(el)) continue;
+      var r = el.getBoundingClientRect();
+      if (r.left < tr.right + 4) continue;
+      var txt = (el.innerText || "").replace(/\\s+/g, " ").trim();
+      if (!txt || txt.length > 40) continue;
+      if (r.left > bestLeft) {
+        bestLeft = r.left;
+        best = el;
+      }
+    }
+    return best;
+  }
+
   function pushGroup(kind, where, rows, pick) {
     var boxes = [];
     var feats = [];
@@ -161,6 +226,7 @@ const COLLECT_SRC = `(() => {
     pushGroup("titles", where, rows, pickTitle);
     pushGroup("icons", where, rows, pickIcon);
     pushGroup("actions", where, rows, pickAction);
+    pushGroup("values", where, rows, pickValue);
   }
 
   function visibleRows(nodes) {
@@ -292,6 +358,7 @@ export function isStaggeredGrid(lefts: number[]): boolean {
 function kindLabel(kind: ListScanKind): string {
   if (kind === "icons") return "Row icons";
   if (kind === "actions") return "Row actions";
+  if (kind === "values") return "Row values";
   return "Row titles";
 }
 
@@ -302,6 +369,23 @@ export function listScanlineIssue(sample: ListScanSample): QualityIssue | undefi
   if (isHorizontalRow(similar)) return undefined;
   const rowLefts = similar.map((b) => (typeof b.rowLeft === "number" ? b.rowLeft : b.left));
   if (isStaggeredGrid(rowLefts)) return undefined;
+  if (sample.kind === "values") {
+    const leftSpread = edgeSpread(similar.map((b) => b.left));
+    const rightSpread = edgeSpread(similar.map((b) => b.right));
+    // Right-locked amounts (space-between / grid) share a right edge while
+    // lefts move with title width — that is a column, not a break.
+    if (rightSpread <= SCAN_PX || leftSpread <= SCAN_PX) return undefined;
+    const where = sample.where?.trim() || "row values";
+    return {
+      source: "visual",
+      rule: "scanline",
+      severity: "warning",
+      confidence: Math.max(leftSpread, rightSpread) >= HIGH_PX ? "high" : "medium",
+      count: 1,
+      where,
+      message: `${kindLabel("values")} do not share a left edge`,
+    };
+  }
   const edge = sample.kind === "actions" ? "right" : "left";
   const values = similar.map((b) => (edge === "right" ? b.right : b.left));
   const spread = edgeSpread(values);
@@ -339,7 +423,7 @@ export async function scanListScanline(page: Page): Promise<QualityIssue[]> {
   if (!Array.isArray(raw)) return [];
   const samples: ListScanSample[] = [];
   for (const s of raw) {
-    if (!s || (s.kind !== "titles" && s.kind !== "icons" && s.kind !== "actions")) continue;
+    if (!s || (s.kind !== "titles" && s.kind !== "icons" && s.kind !== "actions" && s.kind !== "values")) continue;
     if (!Array.isArray(s.boxes)) continue;
     samples.push(s);
   }

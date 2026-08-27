@@ -161,25 +161,53 @@ export function severityForVisualIssue(issue: Pick<QualityIssue, "severity">): F
   return issue.severity === "error" ? "major" : "minor";
 }
 
+export type VisualIssueScreenshot = { where: string; screenshotPath: string };
+
+export type PersistVisualIssueCtx = {
+  stepIndex: number;
+  url?: string;
+  pageId?: string;
+  screenshotPath?: string;
+  /** Focused clip PNGs. `focusVisible` never uses the step page shot. */
+  issueScreenshots?: ReadonlyArray<VisualIssueScreenshot>;
+  tapePath: string;
+  replayLog?: string;
+};
+
+export function visualIssueScreenshotPath(
+  issue: Pick<QualityIssue, "rule" | "where">,
+  ctx: Pick<PersistVisualIssueCtx, "screenshotPath" | "issueScreenshots">,
+): string | undefined {
+  if (issue.rule === "focusVisible") {
+    const shots = ctx.issueScreenshots;
+    if (!shots?.length) return undefined;
+    const where = issue.where?.replace(/\s+/g, " ").trim() ?? "";
+    if (where) {
+      const parts = new Set(where.split(" · ").map((s) => s.trim()).filter(Boolean));
+      const hit = shots.find((s) => s.where === where || parts.has(s.where));
+      if (hit) return hit.screenshotPath;
+    }
+    return undefined;
+  }
+  return ctx.screenshotPath;
+}
+
 /** File high-confidence visual issues as findings. Medium stays on the quality ledger. */
 export function persistVisualIssueFindings(
   outDir: string,
   issues: QualityIssue[],
-  ctx: {
-    stepIndex: number;
-    url?: string;
-    pageId?: string;
-    screenshotPath?: string;
-    tapePath: string;
-    replayLog?: string;
-  },
+  ctx: PersistVisualIssueCtx,
 ): PersistFindingResult[] {
   const high = issues.filter((i) => i.source === "visual" && i.confidence === "high");
+  const persistable = high.filter(
+    (issue) => issue.rule !== "focusVisible" || visualIssueScreenshotPath(issue, ctx),
+  );
   const results: PersistFindingResult[] = [];
-  for (const [i, issue] of high.entries()) {
+  for (const [i, issue] of persistable.entries()) {
+    const shot = visualIssueScreenshotPath(issue, ctx);
     const finding: Finding = {
       schemaVersion: 1,
-      id: findingId(ctx.stepIndex, "visualIssue", high.length === 1 ? undefined : i),
+      id: findingId(ctx.stepIndex, "visualIssue", persistable.length === 1 ? undefined : i),
       kind: "visualIssue",
       severity: severityForVisualIssue(issue),
       message: visualIssueMessage(issue),
@@ -188,11 +216,11 @@ export function persistVisualIssueFindings(
       widgetRef: issue.rule,
       ...(ctx.url ? { url: ctx.url } : {}),
       ...(ctx.pageId ? { pageId: ctx.pageId } : {}),
-      ...(ctx.screenshotPath ? { screenshotPath: ctx.screenshotPath } : {}),
+      ...(shot ? { screenshotPath: shot } : {}),
     };
     results.push(
       persistFinding(outDir, finding, {
-        screenshotPath: ctx.screenshotPath,
+        screenshotPath: shot,
         replayLog: ctx.replayLog,
         keepScreenshotSource: true,
       }),

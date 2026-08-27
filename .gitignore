@@ -1,3 +1,9 @@
+# Local Grok MCP (F2 leash path + Auth0 tokens)
+.grok/config.toml
+.grok/f2.env
+.grok/run-mcp.sh
+.grok/rules/f2-mcp.md
+
 # Logs
 logs
 *.log

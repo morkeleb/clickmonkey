@@ -76,6 +76,38 @@ function typeaheadConfig(url: string): Config {
                   value: "matter",
                   status: "ok",
                 },
+                {
+                  id: "emptyVendor",
+                  required: false,
+                  type: "text",
+                  by: "testId",
+                  value: "empty-vendor",
+                  status: "ok",
+                },
+                {
+                  id: "party",
+                  required: true,
+                  type: "text",
+                  by: "testId",
+                  value: "party",
+                  status: "ok",
+                },
+                {
+                  id: "ownerid",
+                  required: false,
+                  type: "text",
+                  by: "testId",
+                  value: "ownerid",
+                  status: "ok",
+                },
+                {
+                  id: "region",
+                  required: false,
+                  type: "text",
+                  by: "testId",
+                  value: "region",
+                  status: "ok",
+                },
               ],
               actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
             },
@@ -191,6 +223,78 @@ describe("typeahead fill", () => {
         assert.equal(miss.ok, true, miss.finding?.message);
         const matter = await handle.page.locator("#matterId").inputValue();
         assert.match(matter, /Alpha Matter|Beta Matter|Gamma Matter/, matter);
+      });
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+      await close();
+    }
+  });
+
+  it("fails when the open list has no clickable rows", async () => {
+    const { baseUrl, close } = await serveSite("typeahead-form");
+    const outDir = mkdtempSync(join(tmpdir(), "cm-typeahead-empty-"));
+    try {
+      await withRun({ timeout: 20_000 }, async (handle) => {
+        const state = await bootRun(handle, typeaheadConfig(baseUrl), outDir);
+        const exec = createExecutor(state);
+        const miss = await exec.runLine('fill page.emptyVendor "beatus bos"');
+        assert.equal(miss.ok, false);
+        assert.match(miss.finding?.message ?? "", /no matching options|could not click a listed option|no options to pick/);
+        assert.match(miss.finding?.message ?? "", /Empty vendor|emptyVendor/);
+        assert.equal(await handle.page.locator('[data-testid="empty-vendor"]').inputValue(), "");
+      });
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+      await close();
+    }
+  });
+
+  it("misses a required Select-prompt chip that never commits a row", async () => {
+    const { baseUrl, close } = await serveSite("typeahead-form");
+    const outDir = mkdtempSync(join(tmpdir(), "cm-typeahead-party-"));
+    try {
+      await withRun({ timeout: 20_000 }, async (handle) => {
+        const state = await bootRun(handle, typeaheadConfig(baseUrl), outDir);
+        const exec = createExecutor(state);
+        const miss = await exec.runLine('fill page.party "beatus bos"');
+        assert.equal(miss.ok, false, miss.finding?.message ?? "expected a required listed miss");
+        assert.match(miss.finding?.message ?? "", /no matching options|no options to pick|could not click a listed option/);
+        assert.equal(await handle.page.locator('[data-testid="party"]').inputValue(), "");
+      });
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+      await close();
+    }
+  });
+
+  it("skips an optional empty listed *id picker", async () => {
+    const { baseUrl, close } = await serveSite("typeahead-form");
+    const outDir = mkdtempSync(join(tmpdir(), "cm-typeahead-owner-"));
+    try {
+      await withRun({ timeout: 20_000 }, async (handle) => {
+        const state = await bootRun(handle, typeaheadConfig(baseUrl), outDir);
+        const exec = createExecutor(state);
+        const skip = await exec.runLine('fill page.ownerid "beatus bos"');
+        assert.equal(skip.ok, true, skip.finding?.message);
+        assert.equal(await handle.page.locator('[data-testid="ownerid"]').inputValue(), "");
+      });
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+      await close();
+    }
+  });
+
+  it("clicks a role=option row even when the option has pointer-events none", async () => {
+    const { baseUrl, close } = await serveSite("typeahead-form");
+    const outDir = mkdtempSync(join(tmpdir(), "cm-typeahead-region-"));
+    try {
+      await withRun({ timeout: 20_000 }, async (handle) => {
+        const state = await bootRun(handle, typeaheadConfig(baseUrl), outDir);
+        const exec = createExecutor(state);
+        const hit = await exec.runLine('fill page.region "beatus bos"');
+        assert.equal(hit.ok, true, hit.finding?.message);
+        const region = await handle.page.locator("#regionId").inputValue();
+        assert.match(region, /North|South/, region);
       });
     } finally {
       rmSync(outDir, { recursive: true, force: true });

@@ -8,13 +8,25 @@ export function slug(raw: string): string {
   return s;
 }
 
+/** "Active tabs: 12" is the same control as "Active tabs". */
+export function stableAccName(name: string): string {
+  const trimmed = name.trim();
+  if (/^active tabs\b/i.test(trimmed)) return "Active tabs";
+  return trimmed;
+}
+
+/** Overflow-tab chrome (`active_tabs`, `active_tabs_12`) — one control, not a map room. */
+export function isActiveTabsSurfaceId(id: string): boolean {
+  return id === "active_tabs" || /^active_tabs_/.test(id);
+}
+
 export function mintedBase(c: {
   by: LocatorBy;
   value: string;
   name?: string;
 }): string {
   if (c.by === "role") {
-    return c.name ? `${slug(c.value)}_${slug(c.name)}` : slug(c.value);
+    return c.name ? `${slug(c.value)}_${slug(stableAccName(c.name))}` : slug(c.value);
   }
   return slug(c.value);
 }

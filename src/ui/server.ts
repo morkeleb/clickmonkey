@@ -15,7 +15,7 @@ import { isSafeReportId, readReport } from "../persist/reports.js";
 import { formatUiFault, snapshotFailNotice, sourceNewerThanStarted, staleUiNotice } from "./fault.js";
 import { clearUiPid, spawnDetachedUi, writeUiPid } from "./pid.js";
 import { buildRunDetail, isSafeRunId } from "./run-detail.js";
-import { buildUiSnapshot, refreshUiSnapshot } from "./snapshot.js";
+import { buildUiSnapshot, expireLiveRuns, livePatchKey, refreshUiSnapshot } from "./snapshot.js";
 
 export const UI_DEFAULT_PORT = 4174;
 const HEARTBEAT_MS = 15_000;
@@ -160,6 +160,7 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
   let debounce: ReturnType<typeof setTimeout> | undefined;
   let pendingType: UiEventType = "run";
   let lastSnapshot: ReturnType<typeof buildUiSnapshot> | undefined;
+  let lastNavKey: string | undefined;
   try {
     lastSnapshot = buildUiSnapshot(configPath);
   } catch {
@@ -181,26 +182,33 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
     }
   };
 
+  const sendNav = (snapshot: UiSnapshotT): void => {
+    const key = livePatchKey(snapshot);
+    if (key === lastNavKey) return;
+    lastNavKey = key;
+    const event: UiEvent = {
+      type: "nav",
+      runs: snapshot.runs,
+      lastFog: Object.fromEntries(
+        snapshot.graph.nodes.flatMap((n) => {
+          const patch = {
+            ...(n.fogAt ? { at: n.fogAt } : {}),
+            ...n.jobFog,
+          };
+          return Object.keys(patch).length > 0 ? ([[n.pageId, patch]] as const) : [];
+        }),
+      ),
+    };
+    for (const client of clients) writeSse(client, event);
+  };
+
   const broadcast = (type: UiEventType): void => {
     if (type === "map") lastSnapshot = undefined;
     else if (lastSnapshot) {
       try {
         if (type === "nav") {
           lastSnapshot = refreshUiSnapshot(lastSnapshot, configPath, "runs");
-          const event: UiEvent = {
-            type,
-            runs: lastSnapshot.runs,
-            lastFog: Object.fromEntries(
-              lastSnapshot.graph.nodes.flatMap((n) => {
-                const patch = {
-                  ...(n.fogAt ? { at: n.fogAt } : {}),
-                  ...n.jobFog,
-                };
-                return Object.keys(patch).length > 0 ? ([[n.pageId, patch]] as const) : [];
-              }),
-            ),
-          };
-          for (const client of clients) writeSse(client, event);
+          sendNav(lastSnapshot);
           return;
         }
         if (type === "quality") {
@@ -222,6 +230,7 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
     }
     const { snapshot } = liveSnapshot();
     if (!snapshot) return;
+    lastNavKey = livePatchKey(snapshot);
     const event: UiEvent = { type, snapshot };
     for (const client of clients) writeSse(client, event);
   };
@@ -458,7 +467,13 @@ export async function startUiServer(opts: UiServerOpts): Promise<UiServer> {
   process.stdout.write(`${url}\n`);
   if (opts.open) openBrowser(url);
 
-  const poll = setInterval(() => schedule("run"), 1000);
+  const poll = setInterval(() => {
+    if (!lastSnapshot) return;
+    const next = expireLiveRuns(lastSnapshot, configPath);
+    if (!next.changed) return;
+    lastSnapshot = next.snapshot;
+    sendNav(lastSnapshot);
+  }, 1000);
   poll.unref();
 
   let settleStopped: () => void = () => undefined;

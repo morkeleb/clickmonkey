@@ -5,37 +5,9 @@ import { nastyIgnoreSamples, textContainsNastyPayload } from "../brains/nasty.js
 import { VisionError } from "../schema/config.js";
 import { FOG_FRESH_MS } from "../schema/fog.js";
 import type { QualityConfidence, QualityIssue } from "../schema/quality.js";
+import { VISUAL_RULES, type VisualRule } from "./visual-rules.js";
 
-/**
- * Screenshot-only defects a user would notice. Closed list: VLMs invent
- * bugs when the taxonomy is open. Contrast here is "unreadable in the
- * pixels", not a WCAG ratio (axe already owns that). DOM scanners own
- * geometry; the VLM must not re-file those rules.
- */
-export const VISUAL_RULES = [
-  "overlap",
-  "overflow",
-  "clip",
-  "zIndex",
-  "align",
-  "scanline",
-  "sparse",
-  "targetSize",
-  "contrast",
-  "broken",
-  "focusObscured",
-  "focusVisible",
-  "textOcclusion",
-  "fontSize",
-  "textSpacing",
-  "deadHash",
-  "implicitSubmit",
-  "noopener",
-  "scrollPadding",
-  "pointerEvents",
-  "other",
-] as const;
-export type VisualRule = (typeof VISUAL_RULES)[number];
+export { VISUAL_RULES, type VisualRule };
 
 /** Geometry + hit targets the DOM already measured. parseVisualReply drops these. */
 export const DOM_OWNED_VISUAL_RULES = [
@@ -115,11 +87,11 @@ export const VISUAL_PROMPT = [
   "- leftover lorem / \"TODO\" / \"lorem ipsum\" / debug copy in the main pane",
   "- missing fade/mask on a scrolling list (items cut with a hard edge, no gradient)",
   "- contrast: type is unreadable in this screenshot (too faint on its background)",
-  "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px, not a stacked label above its field)",
+  "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px, not masonry, not a stacked label above its field)",
   "",
   "Rules (file only these):",
   "- contrast: type is unreadable in this image (too faint on its background)",
-  "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px taste, not a stacked label above its field)",
+  "- align: one control in a row of the same kind is obviously stepped vs its siblings (not 1px taste, not masonry, not a stacked label above its field)",
   "- other: a user-visible rendering defect that does not fit the list (empty-vs-broken, toast chrome, missing mapped widget, icon collision, canvas hole, abnormal ellipsis, mojibake/tofu, chart labels, leftover lorem/TODO, missing scroll fade)",
   "",
   "Type defects are contrast (unreadable in this image). Not font-family, brand preference, or body copy size (DOM already measured font-size).",
@@ -192,7 +164,7 @@ function extractJsonObject(raw: string): unknown {
 
 /** Geometry words next to these hunts are still pixel-only (toast, chart labels, icon collision). */
 const PIXEL_OTHER_KEEP =
-  /\b(?:toast|snackbar|ellipsis|mojibake|tofu|replacement.?glyph|lorem|todo|(?:chart|canvas)(?:\s+axis)?\s+labels?|failed.?load|icons?\s+collision|missing fade|scroll(?:ing)?\s+(?:fade|mask))\b|(?:icons?.{0,40}collid|collid.{0,40}icons?)/i;
+  /\b(?:toast|snackbar|ellipsis|mojibake|tofu|replacement.?glyph|lorem|todo|(?:chart|canvas)(?:\s+axis)?\s+labels?|failed.?load|icons?\s+collision|missing fade|scroll(?:ing)?\s+(?:fade|mask)|(?:calendar|search)\s+icons?)\b|(?:(?:icons?|svgs?|adornments?|suffix(?:es)?).{0,40}(?:collid|running\s+into)|(?:collid|running\s+into).{0,40}(?:icons?|svgs?|adornments?|suffix(?:es)?)|\b(?:clip(?:ped|s|ping)?|cut(?:s|ting|\s+off)?|shear(?:ed|s)?).{0,40}(?:by|into).{0,30}(?:icons?|svgs?|adornments?|suffix(?:es)?|trailing\s*[$%]|[$%]\s*(?:suffix|icons?)))/i;
 /** Geometry restated as `other`, and product-chrome clip of junk (dropPayloadContentVisual). */
 const LAYOUT_DEFECT =
   /\b(?:overflow(?:ing|s)?|clip(?:ped|s)?|overlap(?:ping|s)?|z-?index|scanline|unreadable|cover(?:ed|ing)|leaking|cut off|collid(?:e|es|ed|ing)|misalign|shear(?:ed|s)?|ragged|gutter|truncated|too small to read)\b/i;
@@ -329,6 +301,49 @@ export function visionPass(opts: {
   if (shouldSkipVision({ staleMs: opts.staleMs, unchanged: opts.pngUnchanged })) return "skip";
   if (opts.triedThisRun) return "skip";
   return "call";
+}
+
+/** Why inspect skipped the VLM or dropped its issues. Harness log only. */
+export type VisionSkipReason =
+  | "no-config"
+  | "no-shot"
+  | "replay"
+  | "loading-html"
+  | "fog-fresh"
+  | "tried-this-run"
+  | "hash-match"
+  | "model-fail"
+  | "loading-frame"
+  | "empty"
+  | "no-persist"
+  | "ok";
+
+/** Classify a vision attempt from flags/status. First matching skip wins. */
+export function visionOutcome(opts: {
+  replay?: boolean;
+  noShot?: boolean;
+  loadingHtml?: boolean;
+  noConfig?: boolean;
+  fogFresh?: boolean;
+  triedThisRun?: boolean;
+  hashMatch?: boolean;
+  status?: "skip" | "fail" | "ok";
+  loadingFrame?: boolean;
+  persist?: boolean;
+  issueCount?: number;
+}): VisionSkipReason {
+  if (opts.replay) return "replay";
+  if (opts.noShot) return "no-shot";
+  if (opts.loadingHtml) return "loading-html";
+  if (opts.noConfig) return "no-config";
+  if (opts.fogFresh) return "fog-fresh";
+  if (opts.triedThisRun) return "tried-this-run";
+  if (opts.hashMatch || opts.status === "skip") return "hash-match";
+  if (opts.status === "fail") return "model-fail";
+  if (opts.loadingFrame) return "loading-frame";
+  if (opts.persist === false) return "no-persist";
+  if ((opts.issueCount ?? 0) === 0) return "empty";
+  return "ok";
 }
 
 export async function examineScreenshot(opts: {

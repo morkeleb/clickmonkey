@@ -10,7 +10,7 @@ import type {
 } from "../schema/page-model.js";
 import { locatorIdentity, type Locator } from "../schema/locator.js";
 import { readyKey } from "../schema/refs.js";
-import { mintedBase, uniqueMint } from "./ids.js";
+import { mintedBase, uniqueMint, stableAccName } from "./ids.js";
 import { mergePageFog } from "../schema/fog.js";
 import { descriptionRank } from "./describe.js";
 import { pageIdFromPath } from "./ready.js";
@@ -24,7 +24,8 @@ export function identityKey(
   nth?: number,
 ): string {
   const n = nth && nth > 0 ? String(nth) : "";
-  return `${surfaceId}\0${by}\0${value}\0${name ?? ""}\0${n}`;
+  const stable = name ? stableAccName(name) : (name ?? "");
+  return `${surfaceId}\0${by}\0${value}\0${stable}\0${n}`;
 }
 
 export function widgetIdentityKey(
@@ -61,7 +62,14 @@ export interface MergeResult {
   createdSurface: boolean;
 }
 
+function roleNameBits(c: { by: string; name?: string }): { name?: string; nameExact?: boolean } {
+  if (c.by !== "role" || !c.name) return {};
+  const name = stableAccName(c.name);
+  return name === "Active tabs" ? { name, nameExact: false } : { name };
+}
+
 export function toFieldOrAction(id: string, c: Candidate): Field | Action {
+  const roleName = roleNameBits(c);
   if (c.kind === "field") {
     return Field.parse({
       id,
@@ -69,7 +77,7 @@ export function toFieldOrAction(id: string, c: Candidate): Field | Action {
       type: c.type ?? "text",
       by: c.by,
       value: c.value,
-      ...(c.by === "role" && c.name ? { name: c.name } : {}),
+      ...roleName,
       ...(c.nth && c.nth > 0 ? { nth: c.nth } : {}),
       status: "ok",
     });
@@ -78,7 +86,7 @@ export function toFieldOrAction(id: string, c: Candidate): Field | Action {
     id,
     by: c.by,
     value: c.value,
-    ...(c.by === "role" && c.name ? { name: c.name } : {}),
+    ...roleName,
     ...(c.nth && c.nth > 0 ? { nth: c.nth } : {}),
     status: "ok",
   });
@@ -447,6 +455,11 @@ export function mergePageModel(model: PageModel, input: MergeInput): MergeResult
     if (found) {
       found.status = c.resolves ? "ok" : "unresolved";
       if (c.resolves) delete found.previousLabel;
+      const roleName = roleNameBits(c);
+      if (roleName.name) {
+        found.name = roleName.name;
+        if (roleName.nameExact === false) found.nameExact = false;
+      }
       continue;
     }
     if (!c.resolves) continue;

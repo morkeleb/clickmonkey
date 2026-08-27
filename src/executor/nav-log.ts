@@ -97,6 +97,16 @@ export function logSight(path: string, info: { line: string; sight: string }): v
   });
 }
 
+export function logVision(path: string, info: { reason: string; path?: string; issues?: number }): void {
+  appendEvent(path, {
+    ts: new Date().toISOString(),
+    type: "vision",
+    reason: info.reason,
+    ...(info.path ? { path: info.path } : {}),
+    ...(info.issues !== undefined ? { issues: info.issues } : {}),
+  });
+}
+
 export function logStepStart(
   path: string,
   info: {

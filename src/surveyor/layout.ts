@@ -3,10 +3,14 @@ import { mergeQualityIssues, type QualityIssue } from "../schema/quality.js";
 import { scanBroken } from "./broken.js";
 import { scanDeadHash } from "./dead-hash.js";
 import { scanFocusObscured } from "./focus-obscured.js";
-import { scanFocusVisible } from "./focus-visible.js";
+import { scanFocusVisible, type FocusVisibleClip } from "./focus-visible.js";
+import { scanFormTab } from "./form-tab.js";
 import { scanFontSize } from "./font-size.js";
 import { scanImplicitSubmit } from "./implicit-submit.js";
+import { scanAdornmentClip } from "./adornment-clip.js";
+import { scanFormScanline } from "./form-scanline.js";
 import { scanListScanline } from "./list-scanline.js";
+import { scanTabScanline } from "./tab-scanline.js";
 import { scanNoopener } from "./noopener.js";
 import { scanOverlap } from "./overlap.js";
 import {
@@ -36,7 +40,23 @@ async function runScan(
   }
 }
 
-export type LayoutScan = { issues: QualityIssue[]; complete: boolean };
+async function runFocusVisible(
+  page: Page,
+): Promise<{ issues: QualityIssue[]; clips: FocusVisibleClip[] } | undefined> {
+  try {
+    const scanned = await scanFocusVisible(page);
+    if (!scanned || !Array.isArray(scanned.issues)) return undefined;
+    return { issues: scanned.issues, clips: Array.isArray(scanned.clips) ? scanned.clips : [] };
+  } catch {
+    return undefined;
+  }
+}
+
+export type LayoutScan = {
+  issues: QualityIssue[];
+  complete: boolean;
+  focusVisibleClips?: FocusVisibleClip[];
+};
 
 /**
  * DOM layout extras (no VLM). Serial on one Playwright page. Focus, then
@@ -46,10 +66,16 @@ export type LayoutScan = { issues: QualityIssue[]; complete: boolean };
 export async function scanLayout(page: Page): Promise<LayoutScan> {
   const issues: QualityIssue[] = [];
   let complete = true;
+  let focusVisibleClips: FocusVisibleClip[] = [];
   const take = async (scan: (page: Page) => Promise<QualityIssue[]>): Promise<void> => {
     const hits = await runScan(scan, page);
     if (hits === undefined) complete = false;
-    else issues.push(...hits);
+    else {
+      for (const hit of hits) {
+        if (!hit.via) hit.via = "dom";
+      }
+      issues.push(...hits);
+    }
   };
   for (const scan of [
     scanTableLayout,
@@ -58,6 +84,9 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
     scanTextClip,
     scanOverlap,
     scanListScanline,
+    scanTabScanline,
+    scanFormScanline,
+    scanAdornmentClip,
     scanTargetSize,
     scanTextOcclusion,
     scanFontSize,
@@ -76,7 +105,18 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
   const sx = Number.isFinite(scroll.x) ? scroll.x : 0;
   const sy = Number.isFinite(scroll.y) ? scroll.y : 0;
   await take(scanFocusObscured);
-  await take(scanFocusVisible);
+  {
+    const hits = await runFocusVisible(page);
+    if (hits === undefined) complete = false;
+    else {
+      for (const hit of hits.issues) {
+        if (!hit.via) hit.via = "dom";
+      }
+      issues.push(...hits.issues);
+      if (hits.clips.length > 0) focusVisibleClips = hits.clips;
+    }
+  }
+  await take(scanFormTab);
   const unspaced = issues.filter((i) => i.rule === "clip" || i.rule === "overflow");
   await take((p) => scanTextSpacing(p, unspaced));
   const desktopPagePx = issues
@@ -96,5 +136,6 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
   return {
     issues: mergeQualityIssues(issues).map((i) => ({ ...i, via: "dom" as const })),
     complete,
+    ...(focusVisibleClips.length > 0 ? { focusVisibleClips } : {}),
   };
 }

@@ -331,6 +331,30 @@ describe("unleash brain", () => {
     assert.equal(decideUnleash({ view: ready, stepsUsed: 2, writePolicy: "allow" }).line, "click page.submit");
   });
 
+  it("fills every empty field then Save, but only the first repeating child row", () => {
+    const shown = [
+      ...Array.from({ length: 13 }, (_, i) => ({ id: `f${i}`, value: "", type: "text" as const })),
+      { id: "lineitems_0__amount", value: "", type: "text" as const },
+      { id: "lineitems_1__amount", value: "", type: "text" as const },
+    ];
+    const view = viewOf({
+      shown,
+      actions: [
+        { id: "button_add_line", label: "Add Line" },
+        { id: "submit", label: "Save" },
+      ],
+    });
+    const first = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
+    assert.equal(first.mode, "form");
+    const text = (first.lines ?? [first.line]).join("\n");
+    assert.equal(first.lines?.filter((l) => l.startsWith("fill ")).length, 14);
+    assert.match(text, /fill page\.f12 /);
+    assert.match(text, /fill page\.lineitems_0__amount /);
+    assert.doesNotMatch(text, /lineitems_1__/);
+    assert.doesNotMatch(text, /add_line|Add Line/);
+    assert.equal(first.lines?.at(-1), "click page.submit");
+  });
+
   it("treats Create as form submit without blocking map from opening Add", () => {
     assert.equal(formSubmitAction([{ id: "button_add_customer" }]), undefined);
     assert.equal(formSubmitAction([{ id: "add_bank_account", label: "Add bank account" }]), undefined);

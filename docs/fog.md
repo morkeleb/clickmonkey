@@ -52,6 +52,7 @@ clickmonkey fog --reset --job nasty # drop only the nasty clock; `at` stays
 `--job` leaves `at` and the other job/mode clocks, so vision skip and dashboard
 haze can still look fresh. Full `--reset` is the “force a full retest” path.
 The dashboard paints haze / heat pips from `page.fog`. It stays read-only.
+How to read those marks: [map.md](map.md).
 
 ## Clocks do not share
 
@@ -129,7 +130,8 @@ Dashboard haze uses `at` (last land, including explore/mcp), opacity when
 recently, red when it is hungry. **explore** and **mcp** have no job clock,
 so no heat pip. Live units on a page are a **colored letter**
 (instance hue): m / u / n / **e** explore / **c** mcp. Tooltip is
-`mcp · amber-otter` so two of the same kind still tell apart.
+`mcp · amber-otter` so two of the same kind still tell apart. How the
+dashboard draws that: [map.md](map.md).
 
 ## Vision
 

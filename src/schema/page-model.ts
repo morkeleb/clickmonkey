@@ -10,6 +10,7 @@ export const FieldType = z.enum([
   "checkbox",
   "radio",
   "select",
+  "combobox",
   "date",
   "datetime",
 ]);
@@ -23,7 +24,7 @@ export const Id = z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/, {
 });
 
 const locatorNameRefine = (
-  widget: { by: LocatorBy; name?: string },
+  widget: { by: LocatorBy; name?: string; nameExact?: boolean },
   ctx: z.RefinementCtx,
 ) => {
   if (widget.by !== "role" && widget.name !== undefined) {
@@ -31,6 +32,13 @@ const locatorNameRefine = (
       code: z.ZodIssueCode.custom,
       message: 'name is only valid when by is "role"',
       path: ["name"],
+    });
+  }
+  if (widget.by !== "role" && widget.nameExact !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'nameExact is only valid when by is "role"',
+      path: ["nameExact"],
     });
   }
 };

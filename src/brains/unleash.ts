@@ -1,7 +1,7 @@
 import { formatStep } from "../schema/dsl.js";
 import type { Page } from "../schema/page-model.js";
 import type { ShownAction, ShownField, View } from "../schema/view.js";
-import { planControlFill } from "../executor/field-control.js";
+import { looksLikeListedPicker, planControlFill } from "../executor/field-control.js";
 import { fakerFill } from "./faker-fill.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
 import { detectWalkerMode } from "./walker-mode.js";
@@ -168,14 +168,79 @@ export function legalUnleashActions(view: View, pages?: readonly Page[]): ShownA
   return live.filter((a) => !isEmptyStateAction(a));
 }
 
+/** Repeating line/split rows to fill (`lineitems_0__…`, `items[0].…`). Do not spawn more. */
+export const FORM_CHILD_ROWS = 1;
+
 /**
  * In-page controls, including links styled as buttons and unique hops like
  * "New migration". Landmark chrome and table-row hops wait.
  */
 export function stayActions(view: View, pages?: readonly Page[]): ShownAction[] {
-  return legalUnleashActions(view, pages).filter(
-    (a) => !looksLikeNavWidget(a) && !isRecordRowAction(a),
+  const rows = repeatingRowCount(view);
+  const hasCommit = Boolean(
+    formSubmitAction(view.actions, view.surface, view) ?? mappedPrimaryCommits(view, pages)[0],
   );
+  const holdForm = looksLikeUnfinishedForm(view) || looksLikeMidForm(view) || hasCommit;
+  return legalUnleashActions(view, pages).filter((a) => {
+    if (looksLikeNavWidget(a) || isRecordRowAction(a)) return false;
+    if (isAddRepeatingRowAction(a) && rows >= FORM_CHILD_ROWS) return false;
+    if (holdForm && /(_remove_|_add_row)/i.test(a.id)) return false;
+    if (holdForm && isTabAction(a)) return false;
+    return true;
+  });
+}
+
+/** `lineitems_0__amount`, `items[0].name`, `row_0_qty` — not `invoice_1099_tax`. */
+export function repeatingRowIndex(id: string): number | undefined {
+  const bracket = id.match(/\[(\d+)\]/);
+  if (bracket) return Number(bracket[1]);
+  const dunder = id.match(/(?:^|_)(\d+)__/);
+  if (dunder) return Number(dunder[1]);
+  const row = id.match(/(?:^|_)row[_-](\d+)(?:[_-]|$)/i);
+  if (row) return Number(row[1]);
+  return undefined;
+}
+
+export function repeatingRowCount(view: Pick<View, "shown">): number {
+  let max = -1;
+  for (const f of view.shown) {
+    const i = repeatingRowIndex(f.id);
+    if (i !== undefined) max = Math.max(max, i);
+  }
+  return max + 1;
+}
+
+export function isAddRepeatingRowAction(action: { id: string; label?: string }): boolean {
+  if (/(^|_)add_(row|line|item|entry|split)(_|$)/i.test(action.id)) return true;
+  return /\badd (?:a )?(?:row|line|item|entry)\b/i.test(action.label ?? "");
+}
+
+export function skipRepeatingChildField(id: string): boolean {
+  const i = repeatingRowIndex(id);
+  return i !== undefined && i >= FORM_CHILD_ROWS;
+}
+
+/** Open listbox rows. Leftover listed rows keep form mode so we Save; fillTypeahead clicks the row for the field being filled. */
+export function isListedTypeaheadOption(action: ShownAction): boolean {
+  if ((action.role ?? "").toLowerCase() === "option") return true;
+  return action.id.toLowerCase().startsWith("option_");
+}
+
+export function listedTypeaheadOptions(actions: readonly ShownAction[]): ShownAction[] {
+  return actions.filter(isListedTypeaheadOption);
+}
+
+/**
+ * True when a currently live listed row was already clicked — same open list.
+ * A new list (industry gone, attorney options appear) is not this.
+ */
+export function alreadyPickedListedOption(
+  view: Pick<View, "actions">,
+  recentClicks?: readonly string[],
+): boolean {
+  if (!recentClicks?.length) return false;
+  const recent = new Set(recentClicks);
+  return listedTypeaheadOptions(view.actions).some((a) => recent.has(a.id));
 }
 
 const SORT_TOGGLE_ID = /sorted[_-]?(ascending|descending)/i;
@@ -225,6 +290,19 @@ export function looksLikeSearchField(field: ShownField): boolean {
 }
 
 /**
+ * Landmark search (Lois, bare `q`/`search`) — not a form body picker like
+ * `vendortype_search`. Form fill skips only this.
+ */
+export function looksLikePageSearch(field: ShownField): boolean {
+  const id = field.id.toLowerCase();
+  const label = (field.label ?? "").toLowerCase();
+  const blob = `${id.replace(/[_-]+/g, " ")} ${label}`;
+  if (/\blois\b|\btalk to\b/.test(blob)) return true;
+  const stem = id.replace(/^(textbox|input|field)_/, "");
+  return /^(q|query|search|filter|find)(_input)?$/.test(stem);
+}
+
+/**
  * TanStack/shadcn row checkboxes share one aria-label and vanish when the
  * table is empty. Not a form field; filling them is a false "not found".
  */
@@ -236,6 +314,82 @@ export function looksLikeRowSelectCheckbox(field: {
   if (field.type && field.type !== "checkbox") return false;
   const blob = `${field.id} ${field.label ?? ""}`.toLowerCase();
   return /row.?selection|toggle_row_selection|press_space_to_toggle/.test(blob);
+}
+
+function isBodyField(field: ShownField): boolean {
+  return field.type !== "checkbox" && !looksLikePageSearch(field) && !looksLikeRowSelectCheckbox(field);
+}
+
+const SELECT_PLACEHOLDER = /^(select|choose|pick|search)\b/i;
+
+/** Blank, password mask, leftover placeholder, or a "Select…" chip with no choice. */
+export function looksLikeEmptyValue(field: ShownField): boolean {
+  const v = field.value.trim();
+  if (!v || v === "••••") return true;
+  const ph = field.constraints?.placeholder?.trim();
+  if (ph && v === ph) return true;
+  if (SELECT_PLACEHOLDER.test(v)) return true;
+  return false;
+}
+
+export { looksLikeListedPicker };
+
+function lastFailedFillId(view: View): string | undefined {
+  const last = view.last;
+  if (!last || last.ok) return undefined;
+  const m = /^fill \S+\.(\S+)/.exec(last.step);
+  return m?.[1];
+}
+
+function commitTried(ctx?: Pick<BrainContext, "recentClicks">): boolean {
+  return (ctx?.recentClicks ?? []).some((id) => isPrimaryFormCommit({ id }));
+}
+
+function commitFailed(ctx?: Pick<BrainContext, "last">): boolean {
+  return Boolean(ctx?.last && ctx.last.ok === false);
+}
+
+function isFormFillCandidate(
+  field: ShownField,
+  skipId: string | undefined,
+  checkboxes: boolean,
+): boolean {
+  if (looksLikePageSearch(field) || looksLikeRowSelectCheckbox(field) || skipRepeatingChildField(field.id)) {
+    return false;
+  }
+  if (skipId && field.id === skipId) return false;
+  if (field.type === "checkbox") return checkboxes;
+  return looksLikeEmptyValue(field);
+}
+
+/** Empty body fields on this form, required first. Listed pickers are fields too. */
+export function formFieldsToFill(
+  view: View,
+  ctx?: Pick<BrainContext, "recentClicks" | "last">,
+  opts?: { checkboxes?: boolean },
+): ShownField[] {
+  void ctx;
+  const skipId = lastFailedFillId(view);
+  const candidates = view.shown.filter((f) => isFormFillCandidate(f, skipId, opts?.checkboxes !== false));
+  return candidates.sort((a, b) => Number(Boolean(b.required)) - Number(Boolean(a.required)));
+}
+
+/** Type-in / select fields that are not search or row-select chrome. */
+export function emptyBodyFields(view: Pick<View, "shown">): ShownField[] {
+  return view.shown.filter((f) => isBodyField(f) && looksLikeEmptyValue(f));
+}
+
+/** Create-style pages often disable Save until dirty; still treat them as a form. */
+export const UNFINISHED_FORM_EMPTY = 4;
+
+export function looksLikeUnfinishedForm(view: Pick<View, "shown">): boolean {
+  return emptyBodyFields(view).length >= UNFINISHED_FORM_EMPTY;
+}
+
+/** Started filling (some body values) and still has empties — do not hop tabs. */
+export function looksLikeMidForm(view: Pick<View, "shown">): boolean {
+  const filled = view.shown.filter((f) => isBodyField(f) && f.value.trim() && f.value !== "••••");
+  return filled.length > 0 && emptyBodyFields(view).length > 0;
 }
 
 /** Empty-list CTA (“Create your first …”). Hidden once a filter/search has a value. */
@@ -332,13 +486,14 @@ const SUBMIT_ID = /(^|_)(submit|save|create|apply|publish|send|update|confirm|ru
 const SUBMIT_LABEL =
   /\b(submit|save|create|apply|publish|send|update|confirm|run|next|continue|done|finish)\b|^ok$/i;
 
-export const FORM_BURST_MAX = 12;
 /** After filling, click Cancel/Close this often; otherwise submit. Cancel rarely finds bugs. */
 export const FORM_DISMISS_RATE = 0.2;
 /** Last N clicks on this page. Oldest drop off; not cache LRU (least-recently-used). */
 export const RECENT_CLICK_WINDOW = 8;
 /** Skip a widget after this many appearances in the window. */
 export const RECENT_CLICK_LIMIT = 2;
+/** Extra Save clicks after stay/fail. Total Saves = 1 + this. Not a loop. */
+export const FORM_COMMIT_RETRIES = 2;
 /** List filters/sort/pager: one sample each, then a row. */
 export const LIST_CHROME_LIMIT = 1;
 
@@ -469,10 +624,12 @@ export function isFormSubmit(
   listPager: boolean,
 ): boolean {
   if (a.opens && !isSelfOpen(a, surface)) return false;
+  if (/(^|_)open_/.test(a.id)) return false;
   if (isDismissAction(a) || isLeaveAction(a)) return false;
   if (isSortToggleAction(a)) return false;
   if (isPaginationAction(a) && listPager) return false;
-  if (/(^|_)add_(row|filter|item|line)(_|$)/i.test(a.id)) return false;
+  if (isAddRepeatingRowAction(a)) return false;
+  if (/(^|_)add_filter(_|$)/i.test(a.id)) return false;
   if (isEmptyStateAction(a)) return false;
   const blob = `${a.id} ${a.label ?? ""}`;
   if (DESTRUCTIVE.test(blob)) return false;
@@ -492,6 +649,55 @@ function submitRank(a: ShownAction): number {
     return 1;
   }
   return 2;
+}
+
+/** Save first, then Create/Publish, then Submit. Executor falls back to native submit if Save stays disabled. */
+export function commitKindRank(action: { id: string; label?: string }): number {
+  const blob = `${action.id} ${action.label ?? ""}`.toLowerCase();
+  if (/(^|_)save(_|$)/.test(action.id) || /\bsave\b/.test(blob)) return 0;
+  if (/(^|_)(create|publish)(_|$)/.test(action.id) || /\b(create|publish)\b/.test(blob)) return 1;
+  if (/(^|_)submit(_|$)/.test(action.id) || /\bsubmit\b/.test(blob)) return 2;
+  return 3;
+}
+
+/** Save/Create/Submit/Publish — not Apply/Next/filter, and never Close. */
+export function isPrimaryFormCommit(action: { id: string; label?: string; name?: string }): boolean {
+  const label = action.label ?? action.name;
+  const bare = { id: action.id, ...(label ? { label } : {}) };
+  if (isLeaveAction(bare) || isDismissAction(bare)) return false;
+  return submitRank(bare) === 0;
+}
+
+/** Mapped Save/Create/Submit even when the live control is disabled (omitted from the view). */
+export function mappedPrimaryCommits(view: View, pages?: readonly Page[]): ShownAction[] {
+  if (!pages || pages.length === 0) return [];
+  const page = pages.find((p) => p.id === view.page);
+  if (!page) return [];
+  const surfaces = page.surfaces.filter((s) => s.id === view.surface || s.kind === "page");
+  const out: ShownAction[] = [];
+  const seen = new Set<string>();
+  for (const surface of surfaces) {
+    for (const a of surface.actions) {
+      if (a.status !== "ok") continue;
+      if (!isPrimaryFormCommit(a)) continue;
+      if (seen.has(a.id)) continue;
+      seen.add(a.id);
+      out.push({ id: a.id, ...(a.opens ? { opens: a.opens } : {}) });
+    }
+  }
+  return out;
+}
+
+function formCommitActions(
+  view: View,
+  liveActions: readonly ShownAction[],
+  pages?: readonly Page[],
+): ShownAction[] {
+  const live = formSubmitActions(liveActions, view.surface, view);
+  const byId = new Map<string, ShownAction>();
+  for (const a of mappedPrimaryCommits(view, pages)) byId.set(a.id, a);
+  for (const a of live) byId.set(a.id, a);
+  return [...byId.values()].sort((a, b) => commitKindRank(a) - commitKindRank(b) || submitRank(a) - submitRank(b));
 }
 
 /** Submit/save/create on this surface — not a page hop and not a delete. */
@@ -521,17 +727,30 @@ export function decideForm(
   actions: ShownAction[],
   rng: () => number,
   fill: FillFn,
-  ctx?: Pick<BrainContext, "recentClicks" | "noopIds">,
+  ctx?: Pick<BrainContext, "recentClicks" | "noopIds" | "pages" | "last" | "lockForm">,
 ): BrainDecision | undefined {
   const fields = view.shown;
-  const submits = formSubmitActions(actions, view.surface, view);
-  if (fields.length === 0 || submits.length === 0) return undefined;
-  const submitFresh = usableClicks(submits, ctx);
-  if (submitFresh.length === 0) return undefined;
-  const empty = fields.filter((f) => f.type === "checkbox" || !f.value.trim() || f.value === "••••");
-  const formFields = empty.filter((f) => !looksLikeSearchField(f) && !looksLikeRowSelectCheckbox(f));
-  const toFill = formFields.slice(0, FORM_BURST_MAX);
-  const lines: string[] = toFill.map((field) =>
+  const commits = formCommitActions(view, actions, ctx?.pages);
+  // Leftover option_* rows (previous combobox, painted NAICS, a chip) are not
+  // the current field. fillTypeahead clicks the listed row for the control
+  // being filled. Clicking a leftover option hops chrome or covers Save.
+  if (fields.length === 0 || commits.length === 0) return undefined;
+  const live = formSubmitActions(actions, view.surface, view);
+  const liveFresh = usableClicks(live, ctx).sort((a, b) => commitKindRank(a) - commitKindRank(b));
+  const mappedOnly = commits.filter((c) => !live.some((l) => l.id === c.id));
+  const mappedFresh = usableClicks(mappedOnly, ctx).sort((a, b) => commitKindRank(a) - commitKindRank(b));
+  let finishPool = liveFresh.length > 0 ? liveFresh : mappedFresh;
+  const stayedAfterCommit = Boolean(ctx?.last?.ok === true && commitTried(ctx));
+  if (commitFailed(ctx) || (stayedAfterCommit && finishPool.length === 0)) {
+    const saveLimit = 1 + FORM_COMMIT_RETRIES;
+    const retry = live
+      .filter((a) => clickCountInRecent(ctx?.recentClicks ?? [], a.id) < saveLimit)
+      .sort((a, b) => commitKindRank(a) - commitKindRank(b));
+    if (retry.length > 0) finishPool = retry;
+  }
+  if (finishPool.length === 0) return undefined;
+  const ranked = formFieldsToFill(view, ctx);
+  const lines: string[] = ranked.map((field) =>
     formatStep({
       kind: "fill",
       surface: view.surface,
@@ -541,14 +760,17 @@ export function decideForm(
   );
   const dismiss = formDismissAction(view.actions);
   const dismissOk = Boolean(
-    dismiss && rng() < FORM_DISMISS_RATE && withoutNoops([dismiss], ctx?.noopIds).length > 0,
+    !ctx?.lockForm &&
+      dismiss &&
+      rng() < FORM_DISMISS_RATE &&
+      withoutNoops([dismiss], ctx?.noopIds).length > 0,
   );
-  const finish = dismissOk && dismiss ? dismiss : submitFresh[0]!;
+  const finish = dismissOk && dismiss ? dismiss : finishPool[0]!;
   lines.push(formatClick(view.surface, finish));
   return {
     line: lines[0]!,
     lines,
-    note: finish.id === dismiss?.id ? "form dismiss" : toFill.length > 0 ? "form" : "form submit",
+    note: finish.id === dismiss?.id ? "form dismiss" : ranked.length > 0 ? "form" : "form submit",
   };
 }
 

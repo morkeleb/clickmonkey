@@ -151,6 +151,51 @@ describe("listScanlineIssue", () => {
     assert.equal(issue.confidence, "high");
   });
 
+  it("flags trailing values shoved by variable-width titles", () => {
+    const issue = listScanlineIssue({
+      kind: "values",
+      where: "Voucher cards",
+      boxes: [
+        box(120, 10, { right: 160, rowLeft: 20 }),
+        box(280, 40, { right: 320, rowLeft: 20 }),
+        box(80, 70, { right: 140, rowLeft: 20 }),
+      ],
+    });
+    assert.ok(issue);
+    assert.equal(issue.message, "Row values do not share a left edge");
+    assert.equal(issue.confidence, "high");
+  });
+
+  it("does not flag right-locked amounts whose lefts move with title width", () => {
+    assert.equal(
+      listScanlineIssue({
+        kind: "values",
+        where: "Locked amounts",
+        boxes: [
+          box(200, 10, { right: 240, rowLeft: 20 }),
+          box(80, 40, { right: 240, rowLeft: 20 }),
+          box(300, 70, { right: 240, rowLeft: 20 }),
+        ],
+      }),
+      undefined,
+    );
+  });
+
+  it("does not flag left-aligned values that only grow to the right", () => {
+    assert.equal(
+      listScanlineIssue({
+        kind: "values",
+        where: "meta",
+        boxes: [
+          box(200, 10, { right: 240, rowLeft: 20 }),
+          box(200, 40, { right: 320, rowLeft: 20 }),
+          box(200, 70, { right: 260, rowLeft: 20 }),
+        ],
+      }),
+      undefined,
+    );
+  });
+
   it("flags row icons on the left edge", () => {
     const issue = listScanlineIssue({
       kind: "icons",

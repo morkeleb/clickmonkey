@@ -3,7 +3,14 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { formatClock, formatLiveLine, formatNavLine, logStepDone, logStepStart } from "../src/executor/nav-log.js";
+import {
+  formatClock,
+  formatLiveLine,
+  formatNavLine,
+  logStepDone,
+  logStepStart,
+  logVision,
+} from "../src/executor/nav-log.js";
 
 describe("formatClock", () => {
   it("prints UTC time from an ISO instant", () => {
@@ -90,6 +97,38 @@ describe("logStepStart", () => {
       ) as { mode?: string; type: string };
       assert.equal(old.mode, undefined);
       assert.equal(old.type, "step");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("logVision", () => {
+  it("writes a vision event with reason, optional path, and issue count", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-nav-vision-"));
+    const path = join(dir, "nav.jsonl");
+    try {
+      logVision(path, { reason: "empty" });
+      logVision(path, { reason: "empty", path: "/invoices", issues: 0 });
+      logVision(path, { reason: "model-fail", path: "/invoices" });
+      const events = readFileSync(path, "utf8")
+        .trim()
+        .split("\n")
+        .map(
+          (line) =>
+            JSON.parse(line) as { type: string; reason: string; path?: string; issues?: number; ts: string },
+        );
+      assert.equal(events.length, 3);
+      assert.equal(events[0]?.type, "vision");
+      assert.equal(events[0]?.reason, "empty");
+      assert.equal("path" in events[0]!, false);
+      assert.equal("issues" in events[0]!, false);
+      assert.equal(typeof events[0]?.ts, "string");
+      assert.equal(events[1]?.path, "/invoices");
+      assert.equal(events[1]?.issues, 0);
+      assert.equal(events[2]?.reason, "model-fail");
+      assert.equal(events[2]?.path, "/invoices");
+      assert.equal("issues" in events[2]!, false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

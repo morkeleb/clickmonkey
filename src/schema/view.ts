@@ -23,6 +23,7 @@ export const ShownFieldConstraints = z
     autocomplete: z.string().min(1).optional(),
     inputMode: z.string().min(1).optional(),
     htmlType: z.string().min(1).optional(),
+    placeholder: z.string().min(1).optional(),
   })
   .strict();
 export type ShownFieldConstraints = z.infer<typeof ShownFieldConstraints>;

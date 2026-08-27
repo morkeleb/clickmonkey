@@ -10,7 +10,9 @@ import {
   hashPngFile,
   parseVisualReply,
   shouldSkipVision,
+  visionOutcome,
   visionPass,
+  type VisionSkipReason,
   VISUAL_BLURB_PROMPT,
   VISUAL_PROMPT,
 } from "../src/surveyor/vision.js";
@@ -346,6 +348,80 @@ describe("parseVisualReply", () => {
     );
   });
 
+  it("keeps other when an icon or suffix is the thing doing the clipping", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Tab title Profitability is clipped by the dollar icon",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Value is cut off by the trailing % suffix",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "Date is clipped by the calendar icon",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.deepEqual(
+      out.issues.map((i) => i.message),
+      [
+        "Tab title Profitability is clipped by the dollar icon",
+        "Value is cut off by the trailing % suffix",
+        "Date is clipped by the calendar icon",
+      ],
+    );
+  });
+
+  it("drops overflow/scanline restated as other and DOM-owned clip", () => {
+    const out = parseVisualReply(
+      JSON.stringify({
+        issues: [
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "table overflow is cutting the filter icon",
+          },
+          {
+            rule: "other",
+            severity: "warning",
+            confidence: "high",
+            message: "scanline: labels ragged",
+          },
+          {
+            rule: "clip",
+            severity: "warning",
+            confidence: "high",
+            message: "Date is clipped by the calendar icon",
+          },
+          {
+            rule: "contrast",
+            severity: "warning",
+            confidence: "high",
+            message: "Hint is faint",
+          },
+        ],
+      }),
+    );
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.issues.length, 1);
+    assert.equal(out.issues[0]?.rule, "contrast");
+  });
+
   it("keeps a clipboard other that is not clip geometry", () => {
     const out = parseVisualReply(
       JSON.stringify({
@@ -628,6 +704,48 @@ describe("visionPass", () => {
       }),
       "skip",
     );
+  });
+});
+
+describe("visionOutcome", () => {
+  it("classifies each skip/fail/empty reason", () => {
+    const cases: Array<[VisionSkipReason, Parameters<typeof visionOutcome>[0]]> = [
+      ["replay", { replay: true }],
+      ["no-shot", { noShot: true }],
+      ["loading-html", { loadingHtml: true }],
+      ["no-config", { noConfig: true }],
+      ["fog-fresh", { fogFresh: true }],
+      ["tried-this-run", { triedThisRun: true }],
+      ["hash-match", { hashMatch: true }],
+      ["hash-match", { status: "skip" }],
+      ["model-fail", { status: "fail" }],
+      ["loading-frame", { status: "ok", loadingFrame: true, persist: true, issueCount: 0 }],
+      ["empty", { status: "ok", persist: true, issueCount: 0 }],
+      ["no-persist", { status: "ok", persist: false, issueCount: 0 }],
+      ["ok", { status: "ok", persist: true, issueCount: 2 }],
+    ];
+    for (const [reason, opts] of cases) {
+      assert.equal(visionOutcome(opts), reason, JSON.stringify(opts));
+    }
+  });
+
+  it("applies early-return priority", () => {
+    assert.equal(visionOutcome({ replay: true, noShot: true, noConfig: true }), "replay");
+    assert.equal(visionOutcome({ noShot: true, loadingHtml: true, noConfig: true }), "no-shot");
+    assert.equal(visionOutcome({ loadingHtml: true, noConfig: true, fogFresh: true }), "loading-html");
+    assert.equal(visionOutcome({ noConfig: true, fogFresh: true, triedThisRun: true }), "no-config");
+    assert.equal(visionOutcome({ fogFresh: true, triedThisRun: true }), "fog-fresh");
+    assert.equal(visionOutcome({ triedThisRun: true, status: "fail" }), "tried-this-run");
+    assert.equal(visionOutcome({ hashMatch: true, status: "fail" }), "hash-match");
+    assert.equal(visionOutcome({ status: "skip", loadingFrame: true }), "hash-match");
+    assert.equal(visionOutcome({ status: "fail", persist: true, issueCount: 0 }), "model-fail");
+    assert.equal(
+      visionOutcome({ status: "ok", loadingFrame: true, persist: false, issueCount: 3 }),
+      "loading-frame",
+    );
+    assert.equal(visionOutcome({ status: "ok", persist: false, issueCount: 3 }), "no-persist");
+    assert.equal(visionOutcome({ status: "ok", persist: true, issueCount: 0 }), "empty");
+    assert.equal(visionOutcome({ persist: true, issueCount: 1 }), "ok");
   });
 });
 

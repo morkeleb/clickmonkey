@@ -4,9 +4,11 @@
     <meta charset="utf-8" />
     <title>Scanline</title>
     <style>
-      body { font: 16px/1.4 sans-serif; margin: 24px; }
-      table { border-collapse: collapse; width: 640px; }
-      th, td { border-bottom: 1px solid #ddd; padding: 8px 12px; }
+      body { font: 16px/1.3 sans-serif; margin: 12px; }
+      main { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: flex-start; }
+      h1 { flex: 1 0 100%; margin: 0 0 4px; }
+      table { border-collapse: collapse; width: 580px; margin: 0; }
+      th, td { border-bottom: 1px solid #ddd; padding: 4px 10px; text-align: left; }
       .clip td.vendor {
         max-width: 96px;
         overflow: hidden;
@@ -22,7 +24,37 @@
       .drift tbody td.vendor:nth-child(2) { padding-left: 12px; }
       .drift tbody tr:nth-child(2) td.vendor { padding-left: 40px; }
       .drift tbody tr:nth-child(3) td.vendor { padding-left: 8px; }
-      label { display: block; margin: 16px 0 8px; }
+      .header-drift thead th.vendor { padding-left: 48px; }
+      .text-indent thead th.amount span { padding-left: 48px; }
+      .inner-clip td.vendor { max-width: 96px; }
+      .inner-clip td.vendor span {
+        display: block;
+        max-width: 96px;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+      .editors thead th { padding-left: 4px; }
+      .editors tbody td { padding-left: 28px; }
+      .editors tbody td input {
+        width: 96px;
+        padding: 8px 12px;
+        box-sizing: border-box;
+      }
+      .editors-clip tbody td { max-width: 80px; }
+      .editors-clip tbody td input {
+        width: 80px;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+      .amounts th.amt-h { text-align: left; }
+      .amounts td.amt { text-align: left; }
+      .amounts td.amt span { display: block; text-align: right; }
+      .squish { table-layout: fixed; width: 280px; }
+      .squish th { overflow: visible; white-space: nowrap; padding: 4px 2px; }
+      .squish th.bill, .squish th.desc { width: 40px; }
+      .wraphead { table-layout: fixed; width: 420px; }
+      .wraphead th.date { width: 52px; white-space: normal; }
+      label { display: block; flex: 1 0 100%; margin: 8px 0; }
       input.cut {
         width: 120px;
         padding-right: 28px;
@@ -43,6 +75,16 @@
           <tr><td>VCH-3</td><td class="vendor">Office Supplies Company International</td><td>OSC-11234</td></tr>
         </tbody>
       </table>
+      <table class="inner-clip" data-testid="inner-clip">
+        <caption>Inner clip</caption>
+        <thead>
+          <tr><th>Voucher</th><th>Vendor</th><th>Reference</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>VCH-10</td><td class="vendor"><span>Expert Witness Services LLC</span></td><td>INV-10</td></tr>
+          <tr><td>VCH-11</td><td class="vendor"><span>Acme Office Supplies International</span></td><td>INV-11</td></tr>
+        </tbody>
+      </table>
       <table class="ellipsis" data-testid="ellipsis">
         <caption>Ellipsis ok</caption>
         <thead>
@@ -61,6 +103,95 @@
           <tr><td>VCH-4</td><td class="vendor">Alpha</td><td>A-1</td></tr>
           <tr><td>VCH-5</td><td class="vendor">Beta</td><td>B-1</td></tr>
           <tr><td>VCH-6</td><td class="vendor">Gamma</td><td>C-1</td></tr>
+        </tbody>
+      </table>
+      <table class="header-drift" data-testid="header-drift">
+        <caption>Line items</caption>
+        <thead>
+          <tr><th>GL</th><th class="vendor">Amount</th><th>Office</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1010</td><td class="vendor">12.00</td><td>Seed</td></tr>
+          <tr><td>1020</td><td class="vendor">8.00</td><td>Main</td></tr>
+        </tbody>
+      </table>
+      <table class="text-indent" data-testid="text-indent">
+        <caption>Ink indent</caption>
+        <thead>
+          <tr><th>GL</th><th class="amount"><span>Amount</span></th><th>Office</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>2010</td><td class="amount">12.00</td><td>Seed</td></tr>
+          <tr><td>2020</td><td class="amount">8.00</td><td>Main</td></tr>
+        </tbody>
+      </table>
+      <table class="editors" data-testid="editors">
+        <caption>Distribution lines</caption>
+        <thead>
+          <tr><th>GL ACCOUNT</th><th>TRANSACTION DATE</th><th>AMOUNT</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><input value="10100.001" /></td>
+            <td><input placeholder="MM/DD/YYYY" /></td>
+            <td><input value="32.00" /></td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="editors-clip" data-testid="editors-clip">
+        <caption>Select account</caption>
+        <thead>
+          <tr><th>Account</th><th>Office</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><input value="10100.001 - Citibank Money Market" /></td>
+            <td>Seed</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="squish" data-testid="squish">
+        <caption>Line item headers</caption>
+        <thead>
+          <tr>
+            <th>GL</th>
+            <th class="bill">BILLABLE</th>
+            <th class="desc">DESCRIPTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td><input type="checkbox" /></td>
+            <td><input value="notes" /></td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="wraphead" data-testid="wraphead">
+        <caption>Wrapped date header</caption>
+        <thead>
+          <tr>
+            <th>GL ACCOUNT</th>
+            <th class="date">DUE DATE</th>
+            <th>AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1010</td>
+            <td>May 1</td>
+            <td>12.00</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="amounts" data-testid="amounts">
+        <caption>Trial figures</caption>
+        <thead>
+          <tr><th>Account</th><th class="amt-h">Beginning Balance</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1010</td><td class="amt"><span>$0.00</span></td></tr>
+          <tr><td>1020</td><td class="amt"><span>$12.00</span></td></tr>
         </tbody>
       </table>
       <label>Due date <input class="cut" data-testid="due" value="' UNION SELECT NULL--" /></label>

@@ -23,7 +23,7 @@ Commands:
   step        Run one DSL line and append it to the log
   playbook    Run a named playbook (empty-required)
   map         Grow the sitemap: unseen doors, then stale pages. Never fill/submit
-  unleash     Hunt mapped forms, fill and submit
+  unleash     Hunt mapped forms, fill and submit [--form page]
   nasty       Same hunt with junk payloads on the nasty fog clock (site you own)
   explore     Charter-driven LLM walk of legal map ids (needs brain)
   mcp         Host-LLM walk + spec freeze/replay (stdio)

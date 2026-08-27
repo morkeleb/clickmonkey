@@ -14,6 +14,7 @@ import {
   selectActables,
   skipAriaHidden,
   skipCoveringDialog,
+  skipCoveringOverlay,
   skipDisabled,
   type FocusObscuredHit,
   type ProbeHit,
@@ -119,6 +120,14 @@ describe("focusObscured helpers", () => {
     );
     assert.equal(
       skipCoveringDialog({ controlInsideDialog: false, coverInsideDialog: false }),
+      false,
+    );
+    assert.equal(
+      skipCoveringOverlay({ controlInsideOverlay: false, coverInsideOverlay: true }),
+      true,
+    );
+    assert.equal(
+      skipCoveringOverlay({ controlInsideOverlay: true, coverInsideOverlay: true }),
       false,
     );
   });

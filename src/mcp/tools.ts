@@ -5,12 +5,13 @@ import { z } from "zod";
 import { defaultExploreSkills, EXPLORE_PLAN_SYSTEM, parseExplorePlanReply } from "../brains/explore.js";
 import { listCatalogs, pickNastyFill, SAMPLE_MAX_CHARS, samplePayloads } from "../brains/nasty.js";
 import { resolveConfigPath, resolveOutDir } from "../cli/common.js";
-import { loadConfig, saveConfig } from "../persist/config.js";
+import { reclaimMcpPresence } from "../persist/presence.js";
+import { configWithMap, loadConfig, saveConfig } from "../persist/config.js";
 import { loadQualityReport, qualityReportPath } from "../persist/quality.js";
 import { readLog } from "../persist/log.js";
 import { collectFindingCases } from "../persist/runs.js";
 import { loadTestabilityReport, testabilityReportPath } from "../persist/testability.js";
-import { mapPath } from "../persist/workspace.js";
+import { mapPath, runsDir } from "../persist/workspace.js";
 import {
   ExploreSession,
   EXPLORE_REPORT_PROMPT,
@@ -52,7 +53,17 @@ export type McpToolResult = {
 
 export type McpSession = Pick<
   ExploreSession,
-  "start" | "visit" | "step" | "setPlan" | "advancePlan" | "addNote" | "addGood" | "finish" | "abort" | "tape"
+  | "start"
+  | "visit"
+  | "pageState"
+  | "step"
+  | "setPlan"
+  | "advancePlan"
+  | "addNote"
+  | "addGood"
+  | "finish"
+  | "abort"
+  | "tape"
 > & {
   started?: boolean;
   outDir?: string;
@@ -96,6 +107,8 @@ export type McpHost = {
   lastWalk?: McpLastWalk;
   /** Test seam; defaults to playbook runSpecs (live browser). */
   runSpecs?: (opts: Parameters<typeof runSpecs>[0]) => Promise<SpecRunResult>;
+  /** Map file loaded for this process (`explore_start` `map`). */
+  mapPath?: string;
 };
 
 const HOST_TEXT_MAX = 8000;
@@ -141,7 +154,8 @@ export const CLICKMONKEY_GUIDE = [
   "",
   "## MCP loop",
   "",
-  "explore_start (charter) → explore_set_plan from sitemap cards → explore_step / nasty_fill → explore_note / explore_good / explore_finding → explore_finish with summary.",
+  "explore_start (charter, optional map= path to map.json) → explore_set_plan from sitemap cards → explore_step / nasty_fill → explore_note / explore_good / explore_finding → explore_finish with summary.",
+  "explore_visit is the compact token-saving snapshot (default). Pass full=true for every mapped widget including disabled Save.",
   "Read prompt spec_writer before freezing. Then spec_save (title) → spec_check → spec_run. Do not invent widget ids. Map, unleash, and nasty stay CLI.",
 ].join("\n");
 
@@ -265,7 +279,7 @@ export async function handleExploreInit(
 
 export async function handleExploreStart(
   host: McpHost,
-  args: { charter?: string; skills?: string; headed?: boolean; config?: string },
+  args: { charter?: string; skills?: string; headed?: boolean; config?: string; map?: string },
 ): Promise<McpToolResult> {
   const configPath = configPathOf(host, args.config);
   if (!existsSync(configPath)) {
@@ -277,11 +291,18 @@ export async function handleExploreStart(
   let config: Config;
   try {
     config = loadConfig(configPath);
+    if (args.map) {
+      config = configWithMap(config, args.map, configPath);
+      host.mapPath = isAbsolute(args.map) ? args.map : resolve(dirname(configPath), args.map);
+    } else {
+      host.mapPath = mapPath(configPath);
+    }
   } catch (err) {
     return textResult(errText(err), true);
   }
   const outDir = resolveOutDir(undefined, configPath);
   mkdirSync(outDir, { recursive: true });
+  reclaimMcpPresence(runsDir(configPath), { pid: process.pid });
   const session = ensureSession(host);
   try {
     const visit = await session.start({
@@ -295,7 +316,9 @@ export async function handleExploreStart(
     });
     host.reported = false;
     host.pendingReport = undefined;
-    return textResult(`${formatVisitText(visit, session)}\n\n${startExtras(visit, config.map.pages.length)}`);
+    const mapNote = args.map ? `map: ${host.mapPath}` : undefined;
+    const extras = [startExtras(visit, config.map.pages.length), mapNote].filter(Boolean).join("\n");
+    return textResult(`${formatVisitText(visit, session)}\n\n${extras}`);
   } catch (err) {
     if (session.started) {
       try {
@@ -330,10 +353,25 @@ export async function handleExploreStep(
   return textResult(text);
 }
 
-export async function handleExploreVisit(host: McpHost): Promise<McpToolResult> {
+export async function handleExploreVisit(
+  host: McpHost,
+  args?: { full?: boolean },
+): Promise<McpToolResult> {
   const session = requireLive(host);
   if (isToolResult(session)) return session;
   try {
+    if (args?.full) {
+      const dump = await session.pageState();
+      const runId = runIdOf(session);
+      const header = [
+        runId ? `run: ${runId}` : undefined,
+        session.livePageUrl ? `url: ${session.livePageUrl}` : undefined,
+        "detail: full (mapped widgets, including disabled)",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      return textResult(`${header}\n\n${dump}`);
+    }
     const visit = await session.visit();
     return textResult(formatVisitText(visit, session));
   } catch (err) {
@@ -813,6 +851,11 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
         skills: z.string().min(1).optional(),
         headed: z.boolean().optional(),
         config: z.string().min(1).optional(),
+        map: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Sitemap JSON to load instead of clickmonkey/map.json (absolute or next to the leash)."),
       }),
     },
     async (args) => handleExploreStart(host, args),
@@ -833,10 +876,13 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
   server.registerTool(
     "explore_visit",
     {
-      description: "Snapshot the current surface as a compact visit (no HTML, no PNG).",
-      inputSchema: z.object({}),
+      description:
+        "Snapshot the current surface. Default is the compact token-saving visit (no HTML, no PNG). full=true lists every mapped widget including disabled Save.",
+      inputSchema: z.object({
+        full: z.boolean().optional(),
+      }),
     },
-    async () => handleExploreVisit(host),
+    async (args) => handleExploreVisit(host, args),
   );
   server.registerTool(
     "explore_shot",
@@ -1103,7 +1149,11 @@ export function registerMcpResources(server: McpServer, host: McpHost): void {
     "clickmonkey://map",
     { title: "Sitemap", mimeType: "application/json" },
     async (uri) => {
-      const path = mapPath(configPathOf(host));
+      const liveMap = liveSession(host)?.config?.map;
+      if (liveMap) {
+        return { contents: [{ uri: uri.href, text: `${JSON.stringify(liveMap, null, 2)}\n` }] };
+      }
+      const path = host.mapPath ?? mapPath(configPathOf(host));
       const text = existsSync(path) ? readFileSync(path, "utf8") : "{}\n";
       return { contents: [{ uri: uri.href, text }] };
     },

@@ -15,8 +15,8 @@ export function isSafeReportId(id: string): boolean {
 export function reportTitle(runIds: readonly string[], findingCount: number): string {
   const findings = `${findingCount} finding${findingCount === 1 ? "" : "s"}`;
   if (runIds.length === 0) return findings;
-  if (runIds.length === 1) return `${findings} · ${runIds[0]}`;
-  return `${findings} · ${runIds.length} runs`;
+  const runs = `${runIds.length} run${runIds.length === 1 ? "" : "s"}`;
+  return `${findings} · ${runs}`;
 }
 
 export function countFindingsInMarkdown(markdown: string): number {
@@ -164,7 +164,10 @@ export function listReports(configPath: string): ReportMeta[] {
       if (!existsSync(join(root, name, "findings.md"))) continue;
       const fromJson = metaFromJson(configPath, name);
       if (fromJson) {
-        items.push(fromJson);
+        items.push({
+          ...fromJson,
+          title: reportTitle(fromJson.runIds, fromJson.findingCount),
+        });
         continue;
       }
       const loaded = readReport(configPath, name);

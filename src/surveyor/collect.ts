@@ -33,6 +33,7 @@ type WidgetRead = {
   required: boolean;
   tag: string;
   inputType: string;
+  combobox: boolean;
   contentEditable: boolean;
   insideDialog: boolean;
 };
@@ -66,6 +67,12 @@ function readWidget(el: BrowserEl): WidgetRead {
       else if (inputType === "submit" || inputType === "button") role = "button";
     }
   }
+  const ac = (el.getAttribute("aria-autocomplete") || "").toLowerCase();
+  const popup = (el.getAttribute("aria-haspopup") || "").toLowerCase();
+  const inCombo = Boolean(el.closest('[role="combobox"]'));
+  const combobox =
+    tag !== "select" &&
+    (role === "combobox" || ac === "list" || ac === "both" || popup === "listbox" || inCombo);
 
   let accName = "";
   const aria = el.getAttribute("aria-label");
@@ -128,6 +135,7 @@ function readWidget(el: BrowserEl): WidgetRead {
     required: Boolean(el.required) || el.getAttribute("aria-required") === "true",
     tag,
     inputType,
+    combobox,
     contentEditable: el.getAttribute("contenteditable") === "true",
     insideDialog: (() => {
       const host = el.closest("dialog, [role='dialog'], [aria-modal='true']");
@@ -136,9 +144,10 @@ function readWidget(el: BrowserEl): WidgetRead {
   };
 }
 
-function fieldTypeOf(info: WidgetRead): FieldType {
+export function fieldTypeOf(info: Pick<WidgetRead, "tag" | "inputType" | "contentEditable" | "combobox">): FieldType {
   if (info.tag === "textarea") return "textarea";
   if (info.tag === "select") return "select";
+  if (info.combobox) return "combobox";
   if (info.contentEditable) return "text";
   const t = info.inputType;
   if (

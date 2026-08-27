@@ -1025,7 +1025,8 @@ describe("createExploreBrain", () => {
     });
     const decision = await brain.decide({ view, stepsUsed: 0 });
     assert.match(prompt, /Mode: form/);
-    assert.match(prompt, /Finish the form before leaving/);
+    assert.match(prompt, /Fill empties then Save/);
+    assert.match(prompt, /leftover option_\*/);
     assert.equal(decision.mode, "form");
     assert.match(exampleExploreLine(view), /^fill createDialog\.name /);
   });
@@ -1290,7 +1291,7 @@ describe("applyExploreStep", () => {
   it("stamps mode fog on a form fill", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "cm-explore-mode-stamp-"));
     const configPath = join(tmp, "clickmonkey.json");
-    saveConfig(configPath, emptyConfig("http://127.0.0.1/"));
+    saveConfig(configPath, Config.parse({ url: "http://127.0.0.1/", map: homeMap }));
     const view = viewOf({
       shown: [{ id: "name", value: "", type: "text" }],
       actions: [{ id: "submit" }],

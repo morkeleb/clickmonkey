@@ -23,6 +23,18 @@ export function formGoalKey(goal: { pageId: string; surfaceId: string }): string
   return `${goal.pageId}/${goal.surfaceId}`;
 }
 
+/** `--form clients_new` or `--form clients_new/page`. */
+export function parseFormLock(raw: string): { pageId: string; surfaceId: string } {
+  const trimmed = raw.trim();
+  const slash = trimmed.indexOf("/");
+  if (slash <= 0) return { pageId: trimmed, surfaceId: "page" };
+  return { pageId: trimmed.slice(0, slash), surfaceId: trimmed.slice(slash + 1) || "page" };
+}
+
+export function isOnFormLock(ctx: Pick<BrainContext, "view" | "lockForm">): boolean {
+  return Boolean(ctx.lockForm && ctx.view.page === ctx.lockForm);
+}
+
 function okAction(action: { status?: string }): boolean {
   return (action.status ?? "ok") === "ok";
 }
@@ -66,19 +78,27 @@ export function mapFormGoals(pages: readonly Page[]): FormGoal[] {
 export function decideFormHunt(ctx: BrainContext, rng: () => number): BrainDecision | undefined {
   const pages = ctx.pages;
   if (!pages || pages.length === 0) return undefined;
-  const forms = mapFormGoals(pages);
-  if (forms.length === 0) return undefined;
+  if (ctx.lockForm && isOnFormLock(ctx)) return undefined;
+  const mapped = mapFormGoals(pages);
+  const forms = ctx.lockForm
+    ? mapped.filter((g) => g.pageId === ctx.lockForm)
+    : mapped;
+  const locked =
+    ctx.lockForm && forms.length === 0
+      ? [{ pageId: ctx.lockForm, surfaceId: "page", fields: 1 }]
+      : forms;
+  if (locked.length === 0) return undefined;
   const here = npcKey({ page: ctx.view.page, surface: ctx.view.surface });
-  if (forms.some((g) => formGoalKey(g) === here)) return undefined;
+  if (locked.some((g) => formGoalKey(g) === here)) return undefined;
   const plan = planNpc({
     ctx,
-    goals: forms.map((g) => ({
+    goals: locked.map((g) => ({
       key: formGoalKey(g),
       hunger: npcHunger(ctx.formHits?.[formGoalKey(g)] ?? 0, staleMsForPage(ctx.pageFog, g.pageId)),
     })),
     rng,
-    committed: ctx.huntTarget,
-    rethink: FORM_HUNT_RETHINK,
+    committed: ctx.lockForm ? formGoalKey(locked[0]!) : ctx.huntTarget,
+    rethink: ctx.lockForm ? 0 : FORM_HUNT_RETHINK,
   });
   if (!plan) return undefined;
   return {

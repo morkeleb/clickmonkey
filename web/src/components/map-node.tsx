@@ -74,13 +74,6 @@ export function MapNode({ data, selected }: NodeProps<GraphNode>) {
             <div className={cn("truncate font-medium leading-5", dialog ? "text-[11px]" : "text-[13px]")}>{data.title}</div>
             {data.blurb ? (
               <div className="truncate text-[10px] leading-4 text-zinc-400" title={data.blurb}>
-                {data.describedBy === "vision"
-                  ? "vision · "
-                  : data.describedBy === "explore"
-                    ? "explore · "
-                    : data.describedBy === "inspect"
-                      ? "inspect · "
-                      : ""}
                 {data.blurb}
               </div>
             ) : null}

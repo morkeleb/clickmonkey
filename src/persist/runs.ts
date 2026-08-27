@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
+import { findingHitOf, type FindingHit } from "../reports/check.js";
 import { formatLog, parseLog } from "../schema/dsl.js";
 import { Finding, severityForKind, type FindingSeverity } from "../schema/finding.js";
 import { runsDir } from "./workspace.js";
@@ -11,7 +12,8 @@ export interface RunSummary {
   findingCount: number;
 }
 
-export interface FindingCase {
+/** Persisted finding plus the Check class and where this hit was. */
+export type FindingCase = FindingHit & {
   id: string;
   runId: string;
   runDir: string;
@@ -20,10 +22,7 @@ export interface FindingCase {
   title: string;
   description: string;
   tape: string;
-  screenshotPath?: string;
-  pageId?: string;
-  url?: string;
-}
+};
 
 type NavEv = { type?: unknown; pageId?: unknown; from?: unknown; to?: unknown; url?: unknown };
 
@@ -199,8 +198,13 @@ export function collectFindingCases(
           ? finding.screenshotPath
           : undefined;
       const ctx = ctxByStep.get(finding.stepIndex) ?? {};
-      const url = finding.url ?? ctx.url;
+      const hit = findingHitOf(finding, {
+        pageId: finding.pageId ?? ctx.pageId,
+        url: finding.url ?? ctx.url,
+        screenshotPath: shot,
+      });
       cases.push({
+        ...hit,
         id: finding.id,
         runId,
         runDir,
@@ -209,9 +213,6 @@ export function collectFindingCases(
         title: finding.message,
         description,
         tape,
-        ...(shot ? { screenshotPath: shot } : {}),
-        ...(finding.pageId ?? ctx.pageId ? { pageId: finding.pageId ?? ctx.pageId } : {}),
-        ...(url ? { url } : {}),
       });
     }
   }

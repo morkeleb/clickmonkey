@@ -58,6 +58,18 @@ describe("PageModel schema", () => {
     assert.equal(loc.nth, 1);
   });
 
+  it("accepts nameExact false on a role locator", () => {
+    const loc = Locator.parse({
+      by: "role",
+      value: "dialog",
+      name: "Active tabs",
+      nameExact: false,
+    });
+    assert.equal(loc.nameExact, false);
+    const exact = Locator.parse({ by: "role", value: "dialog", name: "Active tabs: 1" });
+    assert.equal(exact.nameExact, undefined);
+  });
+
   it("accepts nth on a duplicate action", () => {
     const model = PageModel.parse({
       schemaVersion: 1,

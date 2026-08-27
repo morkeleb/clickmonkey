@@ -4,7 +4,10 @@ Five monkeys (working names): **map**, **unleash**, **nasty**, **explore**, **mc
 `clickmonkey explore` is unattended exploratory testing (needs `brain`). **mcp**
 is a different monkey: you (Grok, Claude, Cursor, …) walk, then freeze/replay
 a spec. ClickMonkey still owns the browser, fence, map, and tape. Visits are
-compact (pagemap, mode, look) — no page HTML. `config.brain` is not required.
+compact (pagemap, mode, look) — no page HTML. That compact visit is the default.
+`explore_visit` with `full: true` lists every mapped widget, including disabled
+Save. `explore_start` can load a sitemap other than `clickmonkey/map.json` via
+`map`. `config.brain` is not required.
 
 That freeze+replay is why you would use MCP instead of explore-only. Map,
 unleash, and nasty stay CLI. Monkeys and modes: [walkers.md](walkers.md). Fog:
@@ -113,7 +116,7 @@ not a second charter and not a substitute for these prompts. Copy
 
 Charter = the job (ticket, `git log`), not test steps.
 
-1. `explore_start` with a charter (optional `skills`, `headed`)
+1. `explore_start` with a charter (optional `skills`, `headed`, `map` path to a sitemap JSON)
 2. `explore_set_plan` from sitemap cards (`clickmonkey://map`) — goal plus 2–6 items
 3. `explore_step` with one legal DSL line from the visit (`Mode:` is wizard / form / list / tab / dialog / empty / nav). Optional `note` / `good` / `done`
 4. `explore_note` / `explore_good` when you are not stepping. `explore_finding` to file a product bug with a screenshot (resets to the seed page)
@@ -164,9 +167,9 @@ Commit `clickmonkey.json`, `clickmonkey/map.json`, `clickmonkey/specs/`, and
 | Tool | When |
 |---|---|
 | `explore_init` | Create the leash if `clickmonkey.json` is missing |
-| `explore_start` | Open the browser. Presence name is `mcp` |
+| `explore_start` | Open the browser. Presence name is `mcp`. Optional `map` loads that sitemap JSON instead of `clickmonkey/map.json` |
 | `explore_step` | One DSL line on the live session |
-| `explore_visit` | Compact snapshot (no HTML, no PNG) |
+| `explore_visit` | Compact snapshot (default, no HTML, no PNG). `full: true` dumps mapped fields/actions including disabled |
 | `explore_shot` | Latest (or given) PNG |
 | `explore_set_plan` / `explore_advance` | Plan items |
 | `explore_note` / `explore_good` | Oracle / positive observation |
@@ -213,7 +216,9 @@ Gitignore it. No sidecar → the leash `url` is used as written.
 - **Wrong folder.** MCP cwd is not the app → it creates or reads a different
   `clickmonkey.json`. Pass `--config` or set `cwd`.
 - **Thin map.** `explore_start` will say so. Run `clickmonkey map` before
-  walking.
+  walking. Pass `map` to `explore_start` to use a different sitemap JSON.
+- **Disabled Save.** Compact visit hides disabled controls. `explore_visit` with
+  `full: true` after filling the form shows `button_save  [disabled]`.
 - **Invented ids.** Only `open` / `click` / `fill` ids from the visit or
   `clickmonkey://map`. Sight and page blurbs are context, not locators.
 - **Empty or intro-only tape.** `spec_save` refuses. Walk the contract,

@@ -102,12 +102,22 @@ export function skipDisabled(opts: {
   return Boolean(opts.disabled) || opts.ariaDisabled === "true";
 }
 
-/** User-opened dialog covering the page — not author chrome on the focused control. */
+/** User-opened dialog/menu/popover covering the page — not sticky chrome on the focused control. */
+export function skipCoveringOverlay(opts: {
+  controlInsideOverlay: boolean;
+  coverInsideOverlay: boolean;
+}): boolean {
+  return opts.coverInsideOverlay && !opts.controlInsideOverlay;
+}
+
 export function skipCoveringDialog(opts: {
   controlInsideDialog: boolean;
   coverInsideDialog: boolean;
 }): boolean {
-  return opts.coverInsideDialog && !opts.controlInsideDialog;
+  return skipCoveringOverlay({
+    controlInsideOverlay: opts.controlInsideDialog,
+    coverInsideOverlay: opts.coverInsideDialog,
+  });
 }
 
 /** Main first, then the rest, capped. */
@@ -313,18 +323,32 @@ const COLLECT_SRC = `(() => {
     return tag;
   }
 
-  function openDialogOf(node) {
+  function openOverlayOf(node) {
     if (!node || !node.closest) return null;
-    var d = node.closest("dialog, [role='dialog'], [aria-modal='true']");
+    var d = node.closest(
+      "dialog, [role='dialog'], [aria-modal='true'], [role='menu'], [role='listbox'], [role='popover']",
+    );
     if (!d) return null;
     var tag = d.tagName ? d.tagName.toLowerCase() : "";
+    var role = ((d.getAttribute && d.getAttribute("role")) || "").toLowerCase();
     if (tag === "dialog" && !(d.open || d.hasAttribute("open"))) return null;
     if (d.getAttribute("aria-hidden") === "true") return null;
+    if (d.getAttribute("aria-expanded") === "false") return null;
     if (!shown(d) && tag !== "dialog") {
       var cs = window.getComputedStyle(d);
       if (cs.display === "none" || cs.visibility === "hidden") return null;
     }
+    if ((role === "menu" || role === "listbox" || role === "popover") && !shown(d)) return null;
     return d;
+  }
+
+  function namedChromeCover(phrase) {
+    return (
+      phrase === "the sticky header" ||
+      phrase === "the sticky footer" ||
+      phrase === "the cookie banner" ||
+      phrase === "the chat widget"
+    );
   }
 
   function isSelfOrDescendant(el, top) {
@@ -405,13 +429,18 @@ const COLLECT_SRC = `(() => {
       if (!coverNode) coverNode = top;
     }
     if (landed === 0 || selfHits > 0 || !coverNode) return null;
-    var coverDlg = openDialogOf(coverNode);
-    var controlDlg = openDialogOf(el);
-    if (coverDlg && coverDlg !== controlDlg) return null;
+    var coverOver = openOverlayOf(coverNode);
+    var controlOver = openOverlayOf(el);
+    if (coverOver && coverOver !== controlOver) return null;
+    var phrase = coverPhraseOf(coverNode);
+    var coverActable =
+      coverNode.closest &&
+      coverNode.closest("button, a[href], [role='button'], [role='menuitem'], [role='option']");
+    if (coverActable && !isSelfOrDescendant(el, coverActable) && !namedChromeCover(phrase)) return null;
     return {
       name: widgetName(el) || "Control",
       where: describeWhere(el),
-      by: coverPhraseOf(coverNode),
+      by: phrase,
     };
   }
 
