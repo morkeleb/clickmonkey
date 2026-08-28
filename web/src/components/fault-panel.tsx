@@ -110,7 +110,7 @@ export function NoticeBanner({ notice }: { notice: UiNotice }) {
       ? "border-red-500/40 bg-red-950/40 text-red-100"
       : "border-amber-500/40 bg-amber-950/40 text-amber-100";
   return (
-    <div className={`flex items-start gap-3 border-b px-4 py-2 text-sm ${tone}`}>
+    <div className={`flex items-start gap-3 border-b px-4 py-2 text-sm print:hidden ${tone}`}>
       <div className="min-w-0 flex-1">
         <div className="font-medium">{notice.title}</div>
         <div className="mt-0.5 text-xs opacity-90">{notice.message}</div>

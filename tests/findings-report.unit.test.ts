@@ -816,6 +816,120 @@ describe("findings report", () => {
     assert.ok(start.indexOf("click lives on a div") < start.indexOf("discernible text"), start);
   });
 
+  it("Start here sorts by chapter then page count", () => {
+    const pages = Array.from({ length: 12 }, (_, i) => ({
+      path: `/p${i}`,
+      foundAt: "t",
+      html:
+        i < 2
+          ? [
+              {
+                source: "html" as const,
+                rule: "no-multiple-main",
+                severity: "error" as const,
+                message: "dup main",
+                count: 1,
+              },
+            ]
+          : [],
+      a11y:
+        i < 4
+          ? [
+              {
+                source: "a11y" as const,
+                rule: "clickableNonWidget",
+                severity: "error" as const,
+                message: "div",
+                count: 1,
+              },
+            ]
+          : [],
+      visual: [
+        ...(i < 8
+          ? [
+              {
+                source: "visual" as const,
+                rule: "clip",
+                severity: "error" as const,
+                message: "clip hit",
+                count: 1,
+              },
+            ]
+          : []),
+        ...(i < 3
+          ? [
+              {
+                source: "visual" as const,
+                rule: "overlap",
+                severity: "error" as const,
+                message: "overlap hit",
+                count: 1,
+              },
+            ]
+          : []),
+      ],
+      runtime:
+        i === 0
+          ? [
+              {
+                source: "pageError" as const,
+                rule: "pageError",
+                severity: "error" as const,
+                message: "Ga(...) is not a function",
+                count: 1,
+                firstSeen: "t",
+                lastSeen: "t",
+              },
+            ]
+          : [],
+    }));
+    const testability = {
+      schemaVersion: 1 as const,
+      pages: pages.map((p) => ({
+        path: p.path,
+        foundAt: "t",
+        insufficient: false,
+        issues: [
+          {
+            code: "missingStableId" as const,
+            severity: "warn" as const,
+            tag: "save",
+          },
+        ],
+      })),
+    };
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: [],
+        qualityFull: true,
+        quality: { schemaVersion: 1, pages },
+        testability,
+      },
+      "/tmp/findings.md",
+    );
+    const start = md.slice(md.indexOf("### Start here"), md.indexOf("## Findings"));
+    const numbered = [...start.matchAll(/^\d+\. /gm)].map((m) => m.index ?? 0);
+    const pos = (needle: string) => {
+      const i = start.indexOf(needle);
+      assert.ok(i >= 0, `missing ${needle}\n${start}`);
+      return i;
+    };
+    const qualityWide = pos("More than one main landmark");
+    const qualityNarrow = pos("pageerror");
+    const visualWide = pos("cut off mid-glyph");
+    const visualNarrow = pos("Two things occupy the same pixels");
+    const a11y = pos("click lives on a div");
+    assert.ok(qualityWide < qualityNarrow, start);
+    assert.ok(qualityNarrow < visualWide, start);
+    assert.ok(visualWide < visualNarrow, start);
+    assert.ok(visualNarrow < a11y, start);
+    assert.doesNotMatch(start, /no stable id/);
+    assert.equal(numbered.length, 5, start);
+  });
+
   it("Start here lists five items and leads with why", () => {
     const rules = ["clip", "overlap", "scanline", "zIndex", "sparse", "textOcclusion"] as const;
     const pages = rules.map((rule, i) => ({

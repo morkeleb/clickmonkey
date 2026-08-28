@@ -16,7 +16,7 @@ There is no W3C or ISO table that ranks these four ClickMonkey chapters. What do
 | 3 | Accessibility | Keyboard / AT users on that same job | Page-level block (trap, no keyboard) is do-now; component noise is next release |
 | 4 | Testability | The team, next walk or spec | Dev-facing debt: fix after user-facing work unless it blocks finding (1)–(3) |
 
-**Start here** still ranks by error and path-family clusters, not by this chapter list. A keyboard trap can outrank an html-validate chrome row even though Quality is chapter 1.
+**Start here** uses this chapter list, then how many pages the finding hits. A two-page Quality crash outranks an eight-page Visual clip. A seventy-page Testability row waits until Quality, Visual, and Accessibility have had their turn.
 
 ## Why not Testability before Accessibility
 
@@ -28,6 +28,6 @@ Missing `data-testid` is how the team gets better. A keyboard trap or unlabeled 
 
 ## Quality is a mix
 
-Uncaught JS, a 409 on Save, and silent submit are rank 1. `html-validate no-multiple-main` on seventy pages is chrome hygiene — closer to Testability than “the product is bad.” The chapter still opens Quality-first so runtime and refused submits sit at the top of the digest; chrome html-validate rides along. Use Start here when the 70-page html-validate row is not the thing to fix today.
+Uncaught JS, a 409 on Save, and silent submit are rank 1. `html-validate no-multiple-main` on seventy pages is chrome hygiene — closer to Testability than “the product is bad.” The chapter still opens Quality-first so runtime and refused submits sit at the top of the digest; chrome html-validate rides along. Start here will still list that 70-page html-validate row first when it is the widest Quality hit.
 
 Issue classes the walker harvests: [issue-classes](issue-classes/). Finding catalog: [findings](findings/).

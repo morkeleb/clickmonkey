@@ -409,47 +409,40 @@ function formatStartItem(row: DigestRow, scope: StartScope): string {
   return `${why}.\n   ${title} · ${loc.join(" · ")}`;
 }
 
-function rankStartClusters(clusters: DigestRow[]): DigestRow[] {
-  return [...clusters].sort((a, b) => {
-    const sev = Number(b.severity === "error") - Number(a.severity === "error");
-    if (sev !== 0) return sev;
-    const fa = pathFamily(a.pageSet) ? 1 : 0;
-    const fb = pathFamily(b.pageSet) ? 1 : 0;
-    if (fb !== fa) return fb - fa;
-    if (b.pages !== a.pages) return b.pages - a.pages;
-    return a.rule.localeCompare(b.rule) || a.message.localeCompare(b.message);
-  });
+function chapterIndex(chapter: ReportChapter): number {
+  const i = CHAPTER_ORDER.indexOf(chapter);
+  return i < 0 ? CHAPTER_ORDER.length : i;
 }
 
-function pickStartHere(
-  chrome: DigestRow[],
-  clusters: DigestRow[],
-  uniqueRows: DigestRow[],
-): Array<{ row: DigestRow; scope: StartScope }> {
+function startScopeOf(row: DigestRow, pageCount: number): StartScope {
+  if (isChromeRow(row, pageCount)) return "chrome";
+  if (isClusterRow(row, pageCount)) return "cluster";
+  return "page";
+}
+
+/** Quality → Visual → Accessibility → Testability, then how many pages (then instances). */
+function compareStartRows(a: DigestRow, b: DigestRow): number {
+  const ch = chapterIndex(a.chapter) - chapterIndex(b.chapter);
+  if (ch !== 0) return ch;
+  if (b.pages !== a.pages) return b.pages - a.pages;
+  if (b.count !== a.count) return b.count - a.count;
+  const sev = Number(b.severity === "error") - Number(a.severity === "error");
+  if (sev !== 0) return sev;
+  const fa = pathFamily(a.pageSet) ? 1 : 0;
+  const fb = pathFamily(b.pageSet) ? 1 : 0;
+  if (fb !== fa) return fb - fa;
+  return a.rule.localeCompare(b.rule) || a.message.localeCompare(b.message);
+}
+
+function pickStartHere(rows: DigestRow[], pageCount: number): Array<{ row: DigestRow; scope: StartScope }> {
   const out: Array<{ row: DigestRow; scope: StartScope }> = [];
   const seen = new Set<string>();
-  const push = (row: DigestRow, scope: StartScope) => {
+  for (const row of [...rows].sort(compareStartRows)) {
     const key = digestKey(row);
-    if (seen.has(key) || out.length >= START_HERE) return;
+    if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ row, scope });
-  };
-  const chromeErrors = chrome.filter((r) => r.severity === "error");
-  const chromeWarns = chrome.filter((r) => r.severity !== "error");
-  const hasLocal = clusters.length > 0 || uniqueRows.length > 0;
-  const chromeSlots = hasLocal ? 2 : START_HERE;
-  for (const row of chromeErrors) {
-    if (out.length >= chromeSlots) break;
-    push(row, "chrome");
-  }
-  for (const row of chromeWarns) {
-    if (out.length >= chromeSlots) break;
-    push(row, "chrome");
-  }
-  for (const row of rankStartClusters(clusters)) push(row, "cluster");
-  for (const row of sortDigestRows(uniqueRows)) {
+    out.push({ row, scope: startScopeOf(row, pageCount) });
     if (out.length >= START_HERE) break;
-    push(row, "page");
   }
   return out;
 }
@@ -653,7 +646,7 @@ function buildCatalog(
     uniqueRows,
     leftoverPages,
     leftoverTotal: leftoverAll.length,
-    start: pickStartHere(chrome, clusters, uniqueRows),
+    start: pickStartHere(rows, pageCount),
   };
 }
 
