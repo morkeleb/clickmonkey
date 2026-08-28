@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { CHECKS } from "../src/reports/check-catalog.js";
 import { CHECK_SOURCES, checkOf, findingHitOf, mustCheck, ruleForFinding } from "../src/reports/check.js";
+import { enabledAxeRules } from "../src/reports/wcag.js";
 import { specLink } from "../src/reports/spec-links.js";
 
 describe("check (finding class)", () => {
@@ -13,6 +14,7 @@ describe("check (finding class)", () => {
       ...CHECK_SOURCES.htmlValidate,
       ...CHECK_SOURCES.axeExtra,
       ...CHECK_SOURCES.catalog,
+      ...enabledAxeRules(),
     ]);
     for (const rule of rules) {
       const hit = checkOf(rule);

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { mustCheck } from "../src/reports/check.js";
 import {
   axeRows,
   catalogIndexMarkdown,
@@ -49,11 +50,18 @@ describe("catalog lists", () => {
   it("points each list at the original spec, not a parallel catalog", () => {
     const contrast = axeRows().find((r) => r.rule === "color-contrast");
     assert.equal(contrast?.title, "AXE color-contrast");
+    assert.equal(contrast?.id, "axe-color-contrast");
     assert.equal(contrast?.href, "https://dequeuniversity.com/rules/axe/4.13/color-contrast");
     const keyboard = wcagRows().find((r) => r.rule === "clickableNonWidget");
     assert.equal(keyboard?.title, "WCAG 2.1.1 Keyboard");
     assert.match(keyboard?.href ?? "", /Understanding\/keyboard/);
     assert.equal(keyboard?.id, "A-2.1.1");
+    assert.equal(wcagRows().find((r) => r.rule === "focusVisible")?.id, "A-2.4.7");
+    for (const row of catalogListRows()) {
+      const check = mustCheck(row.rule);
+      assert.equal(check.title, row.title, row.rule);
+      assert.equal(check.href, row.href, row.rule);
+    }
     const dup = htmlValidateRows().find((r) => r.rule === "no-dup-id");
     assert.equal(dup?.title, "html-validate no-dup-id");
     assert.equal(dup?.id, "html-validate-no-dup-id");
@@ -73,7 +81,10 @@ describe("catalog lists", () => {
     assert.match(md, /^## html-validate$/m);
     assert.match(md, /^## HTML$/m);
     assert.ok(md.indexOf("## ClickMonkey") < md.indexOf("## AXE"));
+    assert.match(md, /\[AXE color-contrast\]\(axe-color-contrast\/\)/);
     assert.match(md, /\[AXE color-contrast\]\(https:\/\/dequeuniversity\.com\/rules\/axe\/4\.13\/color-contrast\)/);
+    assert.match(md, /\[WCAG 2\.1\.1 Keyboard\]\(A-2\.1\.1\/\)/);
+    assert.match(md, /\[WCAG 2\.4\.7 Focus visible\]\(A-2\.4\.7\/\)/);
     assert.match(md, /\[WCAG 2\.1\.1 Keyboard\]\(https:\/\/www\.w3\.org\/WAI\/WCAG22\/Understanding\/keyboard\.html\)/);
     const clickStart = md.indexOf("## ClickMonkey");
     const axeStart = md.indexOf("## AXE");

@@ -55,8 +55,16 @@ export const HTMLVALIDATE_RULES = [
 export type HtmlValidateRule = (typeof HTMLVALIDATE_RULES)[number];
 const HTMLVALIDATE_SET = new Set<string>(HTMLVALIDATE_RULES);
 
-/** axe extras with no WCAG SC — Deque rule pages stand in for Understanding docs. */
-export const AXE_EXTRA_RULES = ["tabindex", "heading-order", "empty-heading", "label-title-only"] as const;
+/** axe extras inspect enables on top of wcag2a/aa (must match surveyor EXTRA_RULES). */
+export const AXE_EXTRA_RULES = [
+  "tabindex",
+  "heading-order",
+  "skip-link",
+  "empty-heading",
+  "label-title-only",
+  "aria-dialog-name",
+  "label-content-name-mismatch",
+] as const;
 export type AxeExtraRule = (typeof AXE_EXTRA_RULES)[number];
 
 export type SpecLink = { label: string; href: string };

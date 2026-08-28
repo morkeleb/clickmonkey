@@ -8,6 +8,7 @@ import {
   A11Y,
   isAcceptedInvalidFinding,
   isAxeRule,
+  isEnabledAxeRule,
   isServerRefusedSubmitFinding,
   isSilentSubmitFinding,
   isThrowInsteadOfInvalidFinding,
@@ -80,7 +81,15 @@ type _why = AssertNever<UnexplainedWhy>;
 void 0 as unknown as _visual & _testability & _kind & _why;
 
 function whyFor(rule: string): string | undefined {
-  return whyRule(rule) ?? checkByRule(rule)?.summary ?? FINDING_WHY[rule as FindingKind];
+  const custom = whyRule(rule) ?? checkByRule(rule)?.summary ?? FINDING_WHY[rule as FindingKind];
+  if (custom) return custom;
+  if (!isEnabledAxeRule(rule)) return undefined;
+  const wcag = wcagOf(rule);
+  if (wcag.sc) {
+    const title = wcag.title && wcag.title !== "Best practice" ? ` ${wcag.title}` : "";
+    return `Fails WCAG ${wcag.sc}${title}. Detector: axe ${rule}.`;
+  }
+  return `axe ${rule} failed (ClickMonkey extra, not a WCAG SC).`;
 }
 
 /** The check for this rule, or undefined if we have no code+link. */

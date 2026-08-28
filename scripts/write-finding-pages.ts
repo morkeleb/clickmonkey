@@ -1,11 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { catalogIndexMarkdown, htmlValidatePageId } from "../src/reports/catalog-lists.js";
-import { CHECKS, FINDINGS_SITE } from "../src/reports/check-catalog.js";
+import { axePageId, catalogIndexMarkdown, htmlValidatePageId } from "../src/reports/catalog-lists.js";
+import { catalogIdFor, CHECKS, FINDINGS_SITE } from "../src/reports/check-catalog.js";
 import { mustCheck } from "../src/reports/check.js";
 import { QA_LEFT } from "../src/reports/qa-left.js";
 import { HTMLVALIDATE_RULES, specLink, wcagUnderstandingHref } from "../src/reports/spec-links.js";
+import { DOM_WCAG_RULES, enabledAxeRules } from "../src/reports/wcag.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "docs", "findings");
@@ -73,6 +74,43 @@ for (const rule of HTMLVALIDATE_RULES) {
   writeFileSync(join(outDir, `${id}.md`), htmlValidatePageMarkdown(rule));
 }
 
+function officialPageMarkdown(
+  rule: string,
+  id: string,
+  specKind: "axe" | "WCAG",
+): string {
+  const check = mustCheck(rule);
+  const specLabel = specKind === "axe" ? "axe" : "WCAG";
+  return `---
+title: "${check.title}"
+permalink: /findings/${id}/
+---
+
+# ${check.title}
+
+**Chapter:** ${check.chapter}${check.sc ? ` · WCAG ${check.sc} ${check.level ?? ""}`.trimEnd() : ""}  
+**Rule:** \`${check.rule}\`  
+**${specLabel}:** [${check.title}](${check.href}) — official.
+
+${check.why}
+
+This handle is only “we found \`${check.rule}\`.” The requirement is the ${specKind === "axe" ? "Deque" : "W3C"} page, not this catalog.
+`;
+}
+
+for (const rule of enabledAxeRules()) {
+  const id = axePageId(rule);
+  writeFileSync(join(outDir, `${id}.md`), officialPageMarkdown(rule, id, "axe"));
+}
+
+const writtenIds = new Set(CHECKS.map((c) => c.id));
+for (const rule of DOM_WCAG_RULES) {
+  const id = catalogIdFor(rule);
+  if (!id || writtenIds.has(id)) continue;
+  writtenIds.add(id);
+  writeFileSync(join(outDir, `${id}.md`), officialPageMarkdown(rule, id, "WCAG"));
+}
+
 const qaRows = QA_LEFT.map(
   (item) =>
     `| ${item.sc} ${item.level} | ${item.title} | ${item.why} | ${item.qa} |`,
@@ -107,4 +145,4 @@ ${catalogIndexMarkdown().trim()}
 Site: ${FINDINGS_SITE}/findings/
 `;
 writeFileSync(join(outDir, "index.md"), index);
-console.log(`wrote ${CHECKS.length + HTMLVALIDATE_RULES.length + 2} pages under docs/findings/`);
+console.log(`wrote finding pages under docs/findings/`);

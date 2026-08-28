@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { AXE_EXTRA_RULES } from "../src/reports/spec-links.js";
 import { EXTRA_RULES, TAGS } from "../src/surveyor/a11y.js";
 
 describe("a11y axe allowlist", () => {
@@ -19,5 +20,6 @@ describe("a11y axe allowlist", () => {
       "aria-dialog-name",
       "label-content-name-mismatch",
     ]);
+    assert.deepEqual([...EXTRA_RULES], [...AXE_EXTRA_RULES]);
   });
 });

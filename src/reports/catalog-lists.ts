@@ -1,4 +1,4 @@
-import { CHECKS, catalogPageHref, checkByRule } from "./check-catalog.js";
+import { CHECKS, catalogIdFor, catalogPageHref, checkByRule } from "./check-catalog.js";
 import { HTMLVALIDATE_RULES, specLink } from "./spec-links.js";
 import { DOM_WCAG_RULES, enabledAxeRules, wcagOf } from "./wcag.js";
 
@@ -48,25 +48,37 @@ export function clickmonkeyRows(): CatalogListRow[] {
   }));
 }
 
+/** Catalog handle for an axe Check (`axe-color-contrast`). */
+export function axePageId(rule: string): string {
+  return `axe-${rule}`;
+}
+
 export function axeRows(): CatalogListRow[] {
   return enabledAxeRules()
     .sort((a, b) => a.localeCompare(b))
     .map((rule) => {
       const spec = mustSpec(rule);
-      return { list: "axe" as const, rule, title: spec.label, href: spec.href, ...scBits(rule) };
+      return {
+        list: "axe" as const,
+        rule,
+        id: axePageId(rule),
+        title: spec.label,
+        href: spec.href,
+        ...scBits(rule),
+      };
     });
 }
 
 export function wcagRows(): CatalogListRow[] {
   return DOM_WCAG_RULES.map((rule) => {
     const spec = mustSpec(rule);
-    const owned = checkByRule(rule);
+    const id = catalogIdFor(rule);
     return {
       list: "wcag" as const,
       rule,
       title: spec.label,
       href: spec.href,
-      ...(owned ? { id: owned.id } : {}),
+      ...(id ? { id } : {}),
       ...scBits(rule),
     };
   }).sort((a, b) => (a.sc ?? a.rule).localeCompare(b.sc ?? b.rule, undefined, { numeric: true }));
@@ -158,11 +170,11 @@ ${mdTable(
 
 ## AXE
 
-axe-core after inspect (\`wcag2a\` / \`wcag2aa\` / \`wcag21a\` / \`wcag21aa\` plus extras). Original: Deque University.
+axe-core after inspect (\`wcag2a\` / \`wcag2aa\` / \`wcag21a\` / \`wcag21aa\` plus extras). Reports tag these as **AXE {rule}**. Original: [axe 4.13](https://dequeuniversity.com/rules/axe/4.13).
 
 ${mdTable(
-    ["Rule", "Original", "SC"],
-    axe.map((r) => [`\`${r.rule}\``, originalLink(r), scCell(r)]),
+    ["Check", "Rule", "Original", "SC"],
+    axe.map((r) => [`[${r.title}](${r.id}/)`, `\`${r.rule}\``, originalLink(r), scCell(r)]),
   )}
 
 ## WCAG
@@ -170,8 +182,12 @@ ${mdTable(
 DOM detectors ClickMonkey runs itself. Original: W3C Understanding. \`A-*\` is only a handle when we also have a catalog page.
 
 ${mdTable(
-    ["Rule", "Original", "Our page"],
-    wcag.map((r) => [`\`${r.rule}\``, originalLink(r), ourPage(r)]),
+    ["Check", "Rule", "Original"],
+    wcag.map((r) => [
+      r.id ? `[${r.title}](${r.id}/)` : r.title,
+      `\`${r.rule}\``,
+      originalLink(r),
+    ]),
   )}
 
 ## html-validate
@@ -188,8 +204,12 @@ ${mdTable(
 Original: [HTML Living Standard](https://html.spec.whatwg.org/multipage/).
 
 ${mdTable(
-    ["Rule", "Original", "Our page"],
-    html.map((r) => [`\`${r.rule}\``, originalLink(r), ourPage(r)]),
+    ["Check", "Rule", "Original"],
+    html.map((r) => [
+      r.id ? `[${r.title}](${r.id}/)` : r.title,
+      `\`${r.rule}\``,
+      originalLink(r),
+    ]),
   )}
 `;
 }

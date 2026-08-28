@@ -69,94 +69,94 @@ These pages are the spec. Reports link here so T/V/Q ids do not shuffle.
 
 ## AXE
 
-axe-core after inspect (`wcag2a` / `wcag2aa` / `wcag21a` / `wcag21aa` plus extras). Original: Deque University.
+axe-core after inspect (`wcag2a` / `wcag2aa` / `wcag21a` / `wcag21aa` plus extras). Reports tag these as **AXE {rule}**. Original: [axe 4.13](https://dequeuniversity.com/rules/axe/4.13).
 
-| Rule | Original | SC |
-|---|---|---|
-| `area-alt` | [AXE area-alt](https://dequeuniversity.com/rules/axe/4.13/area-alt) | 1.1.1 A |
-| `aria-allowed-attr` | [AXE aria-allowed-attr](https://dequeuniversity.com/rules/axe/4.13/aria-allowed-attr) | 4.1.2 A |
-| `aria-braille-equivalent` | [AXE aria-braille-equivalent](https://dequeuniversity.com/rules/axe/4.13/aria-braille-equivalent) | 4.1.2 A |
-| `aria-command-name` | [AXE aria-command-name](https://dequeuniversity.com/rules/axe/4.13/aria-command-name) | 4.1.2 A |
-| `aria-conditional-attr` | [AXE aria-conditional-attr](https://dequeuniversity.com/rules/axe/4.13/aria-conditional-attr) | 4.1.2 A |
-| `aria-deprecated-role` | [AXE aria-deprecated-role](https://dequeuniversity.com/rules/axe/4.13/aria-deprecated-role) | 4.1.2 A |
-| `aria-dialog-name` | [AXE aria-dialog-name](https://dequeuniversity.com/rules/axe/4.13/aria-dialog-name) | 4.1.2 A |
-| `aria-hidden-body` | [AXE aria-hidden-body](https://dequeuniversity.com/rules/axe/4.13/aria-hidden-body) | 4.1.2 A |
-| `aria-hidden-focus` | [AXE aria-hidden-focus](https://dequeuniversity.com/rules/axe/4.13/aria-hidden-focus) | 4.1.2 A |
-| `aria-input-field-name` | [AXE aria-input-field-name](https://dequeuniversity.com/rules/axe/4.13/aria-input-field-name) | 4.1.2 A |
-| `aria-meter-name` | [AXE aria-meter-name](https://dequeuniversity.com/rules/axe/4.13/aria-meter-name) | 1.1.1 A |
-| `aria-progressbar-name` | [AXE aria-progressbar-name](https://dequeuniversity.com/rules/axe/4.13/aria-progressbar-name) | 1.1.1 A |
-| `aria-prohibited-attr` | [AXE aria-prohibited-attr](https://dequeuniversity.com/rules/axe/4.13/aria-prohibited-attr) | 4.1.2 A |
-| `aria-required-attr` | [AXE aria-required-attr](https://dequeuniversity.com/rules/axe/4.13/aria-required-attr) | 4.1.2 A |
-| `aria-required-children` | [AXE aria-required-children](https://dequeuniversity.com/rules/axe/4.13/aria-required-children) | 1.3.1 A |
-| `aria-required-parent` | [AXE aria-required-parent](https://dequeuniversity.com/rules/axe/4.13/aria-required-parent) | 1.3.1 A |
-| `aria-roles` | [AXE aria-roles](https://dequeuniversity.com/rules/axe/4.13/aria-roles) | 4.1.2 A |
-| `aria-tab-name` | [AXE aria-tab-name](https://dequeuniversity.com/rules/axe/4.13/aria-tab-name) | 4.1.2 A |
-| `aria-toggle-field-name` | [AXE aria-toggle-field-name](https://dequeuniversity.com/rules/axe/4.13/aria-toggle-field-name) | 4.1.2 A |
-| `aria-tooltip-name` | [AXE aria-tooltip-name](https://dequeuniversity.com/rules/axe/4.13/aria-tooltip-name) | 4.1.2 A |
-| `aria-valid-attr` | [AXE aria-valid-attr](https://dequeuniversity.com/rules/axe/4.13/aria-valid-attr) | 4.1.2 A |
-| `aria-valid-attr-value` | [AXE aria-valid-attr-value](https://dequeuniversity.com/rules/axe/4.13/aria-valid-attr-value) | 4.1.2 A |
-| `autocomplete-valid` | [AXE autocomplete-valid](https://dequeuniversity.com/rules/axe/4.13/autocomplete-valid) | 1.3.5 AA |
-| `avoid-inline-spacing` | [AXE avoid-inline-spacing](https://dequeuniversity.com/rules/axe/4.13/avoid-inline-spacing) | 1.4.12 AA |
-| `blink` | [AXE blink](https://dequeuniversity.com/rules/axe/4.13/blink) | 2.2.2 A |
-| `button-name` | [AXE button-name](https://dequeuniversity.com/rules/axe/4.13/button-name) | 4.1.2 A |
-| `bypass` | [AXE bypass](https://dequeuniversity.com/rules/axe/4.13/bypass) | 2.4.1 A |
-| `color-contrast` | [AXE color-contrast](https://dequeuniversity.com/rules/axe/4.13/color-contrast) | 1.4.3 AA |
-| `definition-list` | [AXE definition-list](https://dequeuniversity.com/rules/axe/4.13/definition-list) | 1.3.1 A |
-| `dlitem` | [AXE dlitem](https://dequeuniversity.com/rules/axe/4.13/dlitem) | 1.3.1 A |
-| `document-title` | [AXE document-title](https://dequeuniversity.com/rules/axe/4.13/document-title) | 2.4.2 A |
-| `duplicate-id-aria` | [AXE duplicate-id-aria](https://dequeuniversity.com/rules/axe/4.13/duplicate-id-aria) | 4.1.2 A |
-| `empty-heading` | [AXE empty-heading](https://dequeuniversity.com/rules/axe/4.13/empty-heading) | — |
-| `form-field-multiple-labels` | [AXE form-field-multiple-labels](https://dequeuniversity.com/rules/axe/4.13/form-field-multiple-labels) | 3.3.2 A |
-| `frame-focusable-content` | [AXE frame-focusable-content](https://dequeuniversity.com/rules/axe/4.13/frame-focusable-content) | 2.1.1 A |
-| `frame-title` | [AXE frame-title](https://dequeuniversity.com/rules/axe/4.13/frame-title) | 4.1.2 A |
-| `frame-title-unique` | [AXE frame-title-unique](https://dequeuniversity.com/rules/axe/4.13/frame-title-unique) | 4.1.2 A |
-| `heading-order` | [AXE heading-order](https://dequeuniversity.com/rules/axe/4.13/heading-order) | — |
-| `html-has-lang` | [AXE html-has-lang](https://dequeuniversity.com/rules/axe/4.13/html-has-lang) | 3.1.1 A |
-| `html-lang-valid` | [AXE html-lang-valid](https://dequeuniversity.com/rules/axe/4.13/html-lang-valid) | 3.1.1 A |
-| `html-xml-lang-mismatch` | [AXE html-xml-lang-mismatch](https://dequeuniversity.com/rules/axe/4.13/html-xml-lang-mismatch) | 3.1.1 A |
-| `image-alt` | [AXE image-alt](https://dequeuniversity.com/rules/axe/4.13/image-alt) | 1.1.1 A |
-| `input-button-name` | [AXE input-button-name](https://dequeuniversity.com/rules/axe/4.13/input-button-name) | 4.1.2 A |
-| `input-image-alt` | [AXE input-image-alt](https://dequeuniversity.com/rules/axe/4.13/input-image-alt) | 1.1.1 A |
-| `label` | [AXE label](https://dequeuniversity.com/rules/axe/4.13/label) | 4.1.2 A |
-| `label-content-name-mismatch` | [AXE label-content-name-mismatch](https://dequeuniversity.com/rules/axe/4.13/label-content-name-mismatch) | 2.5.3 AA |
-| `label-title-only` | [AXE label-title-only](https://dequeuniversity.com/rules/axe/4.13/label-title-only) | — |
-| `link-in-text-block` | [AXE link-in-text-block](https://dequeuniversity.com/rules/axe/4.13/link-in-text-block) | 1.4.1 A |
-| `link-name` | [AXE link-name](https://dequeuniversity.com/rules/axe/4.13/link-name) | 4.1.2 A |
-| `list` | [AXE list](https://dequeuniversity.com/rules/axe/4.13/list) | 1.3.1 A |
-| `listitem` | [AXE listitem](https://dequeuniversity.com/rules/axe/4.13/listitem) | 1.3.1 A |
-| `marquee` | [AXE marquee](https://dequeuniversity.com/rules/axe/4.13/marquee) | 2.2.2 A |
-| `meta-refresh` | [AXE meta-refresh](https://dequeuniversity.com/rules/axe/4.13/meta-refresh) | 2.2.1 A |
-| `meta-viewport` | [AXE meta-viewport](https://dequeuniversity.com/rules/axe/4.13/meta-viewport) | 1.4.4 AA |
-| `nested-interactive` | [AXE nested-interactive](https://dequeuniversity.com/rules/axe/4.13/nested-interactive) | 4.1.2 A |
-| `no-autoplay-audio` | [AXE no-autoplay-audio](https://dequeuniversity.com/rules/axe/4.13/no-autoplay-audio) | 1.4.2 A |
-| `object-alt` | [AXE object-alt](https://dequeuniversity.com/rules/axe/4.13/object-alt) | 1.1.1 A |
-| `role-img-alt` | [AXE role-img-alt](https://dequeuniversity.com/rules/axe/4.13/role-img-alt) | 1.1.1 A |
-| `scrollable-region-focusable` | [AXE scrollable-region-focusable](https://dequeuniversity.com/rules/axe/4.13/scrollable-region-focusable) | 2.1.1 A |
-| `select-name` | [AXE select-name](https://dequeuniversity.com/rules/axe/4.13/select-name) | 4.1.2 A |
-| `server-side-image-map` | [AXE server-side-image-map](https://dequeuniversity.com/rules/axe/4.13/server-side-image-map) | 2.1.1 A |
-| `skip-link` | [AXE skip-link](https://dequeuniversity.com/rules/axe/4.13/skip-link) | 2.4.1 A |
-| `summary-name` | [AXE summary-name](https://dequeuniversity.com/rules/axe/4.13/summary-name) | 4.1.2 A |
-| `svg-img-alt` | [AXE svg-img-alt](https://dequeuniversity.com/rules/axe/4.13/svg-img-alt) | 1.1.1 A |
-| `tabindex` | [AXE tabindex](https://dequeuniversity.com/rules/axe/4.13/tabindex) | — |
-| `td-headers-attr` | [AXE td-headers-attr](https://dequeuniversity.com/rules/axe/4.13/td-headers-attr) | 1.3.1 A |
-| `th-has-data-cells` | [AXE th-has-data-cells](https://dequeuniversity.com/rules/axe/4.13/th-has-data-cells) | 1.3.1 A |
-| `valid-lang` | [AXE valid-lang](https://dequeuniversity.com/rules/axe/4.13/valid-lang) | 3.1.2 AA |
-| `video-caption` | [AXE video-caption](https://dequeuniversity.com/rules/axe/4.13/video-caption) | 1.2.2 A |
+| Check | Rule | Original | SC |
+|---|---|---|---|
+| [AXE area-alt](axe-area-alt/) | `area-alt` | [AXE area-alt](https://dequeuniversity.com/rules/axe/4.13/area-alt) | 1.1.1 A |
+| [AXE aria-allowed-attr](axe-aria-allowed-attr/) | `aria-allowed-attr` | [AXE aria-allowed-attr](https://dequeuniversity.com/rules/axe/4.13/aria-allowed-attr) | 4.1.2 A |
+| [AXE aria-braille-equivalent](axe-aria-braille-equivalent/) | `aria-braille-equivalent` | [AXE aria-braille-equivalent](https://dequeuniversity.com/rules/axe/4.13/aria-braille-equivalent) | 4.1.2 A |
+| [AXE aria-command-name](axe-aria-command-name/) | `aria-command-name` | [AXE aria-command-name](https://dequeuniversity.com/rules/axe/4.13/aria-command-name) | 4.1.2 A |
+| [AXE aria-conditional-attr](axe-aria-conditional-attr/) | `aria-conditional-attr` | [AXE aria-conditional-attr](https://dequeuniversity.com/rules/axe/4.13/aria-conditional-attr) | 4.1.2 A |
+| [AXE aria-deprecated-role](axe-aria-deprecated-role/) | `aria-deprecated-role` | [AXE aria-deprecated-role](https://dequeuniversity.com/rules/axe/4.13/aria-deprecated-role) | 4.1.2 A |
+| [AXE aria-dialog-name](axe-aria-dialog-name/) | `aria-dialog-name` | [AXE aria-dialog-name](https://dequeuniversity.com/rules/axe/4.13/aria-dialog-name) | 4.1.2 A |
+| [AXE aria-hidden-body](axe-aria-hidden-body/) | `aria-hidden-body` | [AXE aria-hidden-body](https://dequeuniversity.com/rules/axe/4.13/aria-hidden-body) | 4.1.2 A |
+| [AXE aria-hidden-focus](axe-aria-hidden-focus/) | `aria-hidden-focus` | [AXE aria-hidden-focus](https://dequeuniversity.com/rules/axe/4.13/aria-hidden-focus) | 4.1.2 A |
+| [AXE aria-input-field-name](axe-aria-input-field-name/) | `aria-input-field-name` | [AXE aria-input-field-name](https://dequeuniversity.com/rules/axe/4.13/aria-input-field-name) | 4.1.2 A |
+| [AXE aria-meter-name](axe-aria-meter-name/) | `aria-meter-name` | [AXE aria-meter-name](https://dequeuniversity.com/rules/axe/4.13/aria-meter-name) | 1.1.1 A |
+| [AXE aria-progressbar-name](axe-aria-progressbar-name/) | `aria-progressbar-name` | [AXE aria-progressbar-name](https://dequeuniversity.com/rules/axe/4.13/aria-progressbar-name) | 1.1.1 A |
+| [AXE aria-prohibited-attr](axe-aria-prohibited-attr/) | `aria-prohibited-attr` | [AXE aria-prohibited-attr](https://dequeuniversity.com/rules/axe/4.13/aria-prohibited-attr) | 4.1.2 A |
+| [AXE aria-required-attr](axe-aria-required-attr/) | `aria-required-attr` | [AXE aria-required-attr](https://dequeuniversity.com/rules/axe/4.13/aria-required-attr) | 4.1.2 A |
+| [AXE aria-required-children](axe-aria-required-children/) | `aria-required-children` | [AXE aria-required-children](https://dequeuniversity.com/rules/axe/4.13/aria-required-children) | 1.3.1 A |
+| [AXE aria-required-parent](axe-aria-required-parent/) | `aria-required-parent` | [AXE aria-required-parent](https://dequeuniversity.com/rules/axe/4.13/aria-required-parent) | 1.3.1 A |
+| [AXE aria-roles](axe-aria-roles/) | `aria-roles` | [AXE aria-roles](https://dequeuniversity.com/rules/axe/4.13/aria-roles) | 4.1.2 A |
+| [AXE aria-tab-name](axe-aria-tab-name/) | `aria-tab-name` | [AXE aria-tab-name](https://dequeuniversity.com/rules/axe/4.13/aria-tab-name) | 4.1.2 A |
+| [AXE aria-toggle-field-name](axe-aria-toggle-field-name/) | `aria-toggle-field-name` | [AXE aria-toggle-field-name](https://dequeuniversity.com/rules/axe/4.13/aria-toggle-field-name) | 4.1.2 A |
+| [AXE aria-tooltip-name](axe-aria-tooltip-name/) | `aria-tooltip-name` | [AXE aria-tooltip-name](https://dequeuniversity.com/rules/axe/4.13/aria-tooltip-name) | 4.1.2 A |
+| [AXE aria-valid-attr](axe-aria-valid-attr/) | `aria-valid-attr` | [AXE aria-valid-attr](https://dequeuniversity.com/rules/axe/4.13/aria-valid-attr) | 4.1.2 A |
+| [AXE aria-valid-attr-value](axe-aria-valid-attr-value/) | `aria-valid-attr-value` | [AXE aria-valid-attr-value](https://dequeuniversity.com/rules/axe/4.13/aria-valid-attr-value) | 4.1.2 A |
+| [AXE autocomplete-valid](axe-autocomplete-valid/) | `autocomplete-valid` | [AXE autocomplete-valid](https://dequeuniversity.com/rules/axe/4.13/autocomplete-valid) | 1.3.5 AA |
+| [AXE avoid-inline-spacing](axe-avoid-inline-spacing/) | `avoid-inline-spacing` | [AXE avoid-inline-spacing](https://dequeuniversity.com/rules/axe/4.13/avoid-inline-spacing) | 1.4.12 AA |
+| [AXE blink](axe-blink/) | `blink` | [AXE blink](https://dequeuniversity.com/rules/axe/4.13/blink) | 2.2.2 A |
+| [AXE button-name](axe-button-name/) | `button-name` | [AXE button-name](https://dequeuniversity.com/rules/axe/4.13/button-name) | 4.1.2 A |
+| [AXE bypass](axe-bypass/) | `bypass` | [AXE bypass](https://dequeuniversity.com/rules/axe/4.13/bypass) | 2.4.1 A |
+| [AXE color-contrast](axe-color-contrast/) | `color-contrast` | [AXE color-contrast](https://dequeuniversity.com/rules/axe/4.13/color-contrast) | 1.4.3 AA |
+| [AXE definition-list](axe-definition-list/) | `definition-list` | [AXE definition-list](https://dequeuniversity.com/rules/axe/4.13/definition-list) | 1.3.1 A |
+| [AXE dlitem](axe-dlitem/) | `dlitem` | [AXE dlitem](https://dequeuniversity.com/rules/axe/4.13/dlitem) | 1.3.1 A |
+| [AXE document-title](axe-document-title/) | `document-title` | [AXE document-title](https://dequeuniversity.com/rules/axe/4.13/document-title) | 2.4.2 A |
+| [AXE duplicate-id-aria](axe-duplicate-id-aria/) | `duplicate-id-aria` | [AXE duplicate-id-aria](https://dequeuniversity.com/rules/axe/4.13/duplicate-id-aria) | 4.1.2 A |
+| [AXE empty-heading](axe-empty-heading/) | `empty-heading` | [AXE empty-heading](https://dequeuniversity.com/rules/axe/4.13/empty-heading) | — |
+| [AXE form-field-multiple-labels](axe-form-field-multiple-labels/) | `form-field-multiple-labels` | [AXE form-field-multiple-labels](https://dequeuniversity.com/rules/axe/4.13/form-field-multiple-labels) | 3.3.2 A |
+| [AXE frame-focusable-content](axe-frame-focusable-content/) | `frame-focusable-content` | [AXE frame-focusable-content](https://dequeuniversity.com/rules/axe/4.13/frame-focusable-content) | 2.1.1 A |
+| [AXE frame-title](axe-frame-title/) | `frame-title` | [AXE frame-title](https://dequeuniversity.com/rules/axe/4.13/frame-title) | 4.1.2 A |
+| [AXE frame-title-unique](axe-frame-title-unique/) | `frame-title-unique` | [AXE frame-title-unique](https://dequeuniversity.com/rules/axe/4.13/frame-title-unique) | 4.1.2 A |
+| [AXE heading-order](axe-heading-order/) | `heading-order` | [AXE heading-order](https://dequeuniversity.com/rules/axe/4.13/heading-order) | — |
+| [AXE html-has-lang](axe-html-has-lang/) | `html-has-lang` | [AXE html-has-lang](https://dequeuniversity.com/rules/axe/4.13/html-has-lang) | 3.1.1 A |
+| [AXE html-lang-valid](axe-html-lang-valid/) | `html-lang-valid` | [AXE html-lang-valid](https://dequeuniversity.com/rules/axe/4.13/html-lang-valid) | 3.1.1 A |
+| [AXE html-xml-lang-mismatch](axe-html-xml-lang-mismatch/) | `html-xml-lang-mismatch` | [AXE html-xml-lang-mismatch](https://dequeuniversity.com/rules/axe/4.13/html-xml-lang-mismatch) | 3.1.1 A |
+| [AXE image-alt](axe-image-alt/) | `image-alt` | [AXE image-alt](https://dequeuniversity.com/rules/axe/4.13/image-alt) | 1.1.1 A |
+| [AXE input-button-name](axe-input-button-name/) | `input-button-name` | [AXE input-button-name](https://dequeuniversity.com/rules/axe/4.13/input-button-name) | 4.1.2 A |
+| [AXE input-image-alt](axe-input-image-alt/) | `input-image-alt` | [AXE input-image-alt](https://dequeuniversity.com/rules/axe/4.13/input-image-alt) | 1.1.1 A |
+| [AXE label](axe-label/) | `label` | [AXE label](https://dequeuniversity.com/rules/axe/4.13/label) | 4.1.2 A |
+| [AXE label-content-name-mismatch](axe-label-content-name-mismatch/) | `label-content-name-mismatch` | [AXE label-content-name-mismatch](https://dequeuniversity.com/rules/axe/4.13/label-content-name-mismatch) | 2.5.3 AA |
+| [AXE label-title-only](axe-label-title-only/) | `label-title-only` | [AXE label-title-only](https://dequeuniversity.com/rules/axe/4.13/label-title-only) | — |
+| [AXE link-in-text-block](axe-link-in-text-block/) | `link-in-text-block` | [AXE link-in-text-block](https://dequeuniversity.com/rules/axe/4.13/link-in-text-block) | 1.4.1 A |
+| [AXE link-name](axe-link-name/) | `link-name` | [AXE link-name](https://dequeuniversity.com/rules/axe/4.13/link-name) | 4.1.2 A |
+| [AXE list](axe-list/) | `list` | [AXE list](https://dequeuniversity.com/rules/axe/4.13/list) | 1.3.1 A |
+| [AXE listitem](axe-listitem/) | `listitem` | [AXE listitem](https://dequeuniversity.com/rules/axe/4.13/listitem) | 1.3.1 A |
+| [AXE marquee](axe-marquee/) | `marquee` | [AXE marquee](https://dequeuniversity.com/rules/axe/4.13/marquee) | 2.2.2 A |
+| [AXE meta-refresh](axe-meta-refresh/) | `meta-refresh` | [AXE meta-refresh](https://dequeuniversity.com/rules/axe/4.13/meta-refresh) | 2.2.1 A |
+| [AXE meta-viewport](axe-meta-viewport/) | `meta-viewport` | [AXE meta-viewport](https://dequeuniversity.com/rules/axe/4.13/meta-viewport) | 1.4.4 AA |
+| [AXE nested-interactive](axe-nested-interactive/) | `nested-interactive` | [AXE nested-interactive](https://dequeuniversity.com/rules/axe/4.13/nested-interactive) | 4.1.2 A |
+| [AXE no-autoplay-audio](axe-no-autoplay-audio/) | `no-autoplay-audio` | [AXE no-autoplay-audio](https://dequeuniversity.com/rules/axe/4.13/no-autoplay-audio) | 1.4.2 A |
+| [AXE object-alt](axe-object-alt/) | `object-alt` | [AXE object-alt](https://dequeuniversity.com/rules/axe/4.13/object-alt) | 1.1.1 A |
+| [AXE role-img-alt](axe-role-img-alt/) | `role-img-alt` | [AXE role-img-alt](https://dequeuniversity.com/rules/axe/4.13/role-img-alt) | 1.1.1 A |
+| [AXE scrollable-region-focusable](axe-scrollable-region-focusable/) | `scrollable-region-focusable` | [AXE scrollable-region-focusable](https://dequeuniversity.com/rules/axe/4.13/scrollable-region-focusable) | 2.1.1 A |
+| [AXE select-name](axe-select-name/) | `select-name` | [AXE select-name](https://dequeuniversity.com/rules/axe/4.13/select-name) | 4.1.2 A |
+| [AXE server-side-image-map](axe-server-side-image-map/) | `server-side-image-map` | [AXE server-side-image-map](https://dequeuniversity.com/rules/axe/4.13/server-side-image-map) | 2.1.1 A |
+| [AXE skip-link](axe-skip-link/) | `skip-link` | [AXE skip-link](https://dequeuniversity.com/rules/axe/4.13/skip-link) | 2.4.1 A |
+| [AXE summary-name](axe-summary-name/) | `summary-name` | [AXE summary-name](https://dequeuniversity.com/rules/axe/4.13/summary-name) | 4.1.2 A |
+| [AXE svg-img-alt](axe-svg-img-alt/) | `svg-img-alt` | [AXE svg-img-alt](https://dequeuniversity.com/rules/axe/4.13/svg-img-alt) | 1.1.1 A |
+| [AXE tabindex](axe-tabindex/) | `tabindex` | [AXE tabindex](https://dequeuniversity.com/rules/axe/4.13/tabindex) | — |
+| [AXE td-headers-attr](axe-td-headers-attr/) | `td-headers-attr` | [AXE td-headers-attr](https://dequeuniversity.com/rules/axe/4.13/td-headers-attr) | 1.3.1 A |
+| [AXE th-has-data-cells](axe-th-has-data-cells/) | `th-has-data-cells` | [AXE th-has-data-cells](https://dequeuniversity.com/rules/axe/4.13/th-has-data-cells) | 1.3.1 A |
+| [AXE valid-lang](axe-valid-lang/) | `valid-lang` | [AXE valid-lang](https://dequeuniversity.com/rules/axe/4.13/valid-lang) | 3.1.2 AA |
+| [AXE video-caption](axe-video-caption/) | `video-caption` | [AXE video-caption](https://dequeuniversity.com/rules/axe/4.13/video-caption) | 1.2.2 A |
 
 ## WCAG
 
 DOM detectors ClickMonkey runs itself. Original: W3C Understanding. `A-*` is only a handle when we also have a catalog page.
 
-| Rule | Original | Our page |
+| Check | Rule | Original |
 |---|---|---|
-| `textSpacing` | [WCAG 1.4.12 Text spacing](https://www.w3.org/WAI/WCAG22/Understanding/text-spacing.html) |  |
-| `clickableNonWidget` | [WCAG 2.1.1 Keyboard](https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html) | [A-2.1.1](A-2.1.1/) |
-| `keyboardTrap` | [WCAG 2.1.2 No keyboard trap](https://www.w3.org/WAI/WCAG22/Understanding/no-keyboard-trap.html) | [A-2.1.2](A-2.1.2/) |
-| `focusOrder` | [WCAG 2.4.3 Focus order](https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html) | [A-2.4.3](A-2.4.3/) |
-| `focusVisible` | [WCAG 2.4.7 Focus visible](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html) |  |
-| `focusObscured` | [WCAG 2.4.11 Focus not obscured](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum.html) |  |
-| `targetSize` | [WCAG 2.5.8 Target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) |  |
-| `silentSubmit` | [WCAG 3.3.1 Error Identification](https://www.w3.org/WAI/WCAG22/Understanding/error-identification.html) |  |
+| [WCAG 1.4.12 Text spacing](A-1.4.12/) | `textSpacing` | [WCAG 1.4.12 Text spacing](https://www.w3.org/WAI/WCAG22/Understanding/text-spacing.html) |
+| [WCAG 2.1.1 Keyboard](A-2.1.1/) | `clickableNonWidget` | [WCAG 2.1.1 Keyboard](https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html) |
+| [WCAG 2.1.2 No keyboard trap](A-2.1.2/) | `keyboardTrap` | [WCAG 2.1.2 No keyboard trap](https://www.w3.org/WAI/WCAG22/Understanding/no-keyboard-trap.html) |
+| [WCAG 2.4.3 Focus order](A-2.4.3/) | `focusOrder` | [WCAG 2.4.3 Focus order](https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html) |
+| [WCAG 2.4.7 Focus visible](A-2.4.7/) | `focusVisible` | [WCAG 2.4.7 Focus visible](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html) |
+| [WCAG 2.4.11 Focus not obscured](A-2.4.11/) | `focusObscured` | [WCAG 2.4.11 Focus not obscured](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum.html) |
+| [WCAG 2.5.8 Target size](A-2.5.8/) | `targetSize` | [WCAG 2.5.8 Target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) |
+| [WCAG 3.3.1 Error Identification](A-3.3.1/) | `silentSubmit` | [WCAG 3.3.1 Error Identification](https://www.w3.org/WAI/WCAG22/Understanding/error-identification.html) |
 
 ## html-validate
 
@@ -179,9 +179,9 @@ html-validate:standard after inspect. Reports tag these as **html-validate {rule
 
 Original: [HTML Living Standard](https://html.spec.whatwg.org/multipage/).
 
-| Rule | Original | Our page |
+| Check | Rule | Original |
 |---|---|---|
-| `implicitSubmit` | [HTML button type](https://html.spec.whatwg.org/multipage/form-elements.html#attr-button-type) | [V-12](V-12/) |
-| `noopener` | [HTML noopener](https://html.spec.whatwg.org/multipage/links.html#link-type-noopener) | [V-13](V-13/) |
+| [HTML button type](V-12/) | `implicitSubmit` | [HTML button type](https://html.spec.whatwg.org/multipage/form-elements.html#attr-button-type) |
+| [HTML noopener](V-13/) | `noopener` | [HTML noopener](https://html.spec.whatwg.org/multipage/links.html#link-type-noopener) |
 
 Site: https://morkeleb.github.io/clickmonkey/findings/
