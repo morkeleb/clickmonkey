@@ -593,7 +593,7 @@ describe("findings report", () => {
     assert.match(md, /main\.layout/);
     assert.match(md, /Ga\(\.\.\.\) is not a function/);
     assert.match(md, /#### `\/`/);
-    assert.match(md, /\*\*Uncaught JavaScript\*\* · error/);
+    assert.match(md, /\[Uncaught JavaScript\]\([^)]+\)\*\* · error/);
     assert.doesNotMatch(md, / {2}- `no-multiple-main`/);
     assert.doesNotMatch(md, /`\/vendors` —/);
     assert.doesNotMatch(md, /Recurring rules/);
@@ -1005,7 +1005,7 @@ describe("findings report", () => {
     };
     const md = renderFindingsReport([], meta, "/tmp/findings.md");
     assert.match(md, /## Accessibility/);
-    assert.match(md, /\*\*AXE color-contrast\*\* · error · chrome · 9 pages/);
+    assert.match(md, /\[AXE color-contrast\]\([^)]+\)\*\* · error · chrome · 9 pages/);
     assert.match(md, /## Quality/);
     assert.equal((md.match(/^#### `/gm) ?? []).length, 8);
     assert.match(md, /#### `\/p0`/);
@@ -1014,7 +1014,7 @@ describe("findings report", () => {
     const full = renderFindingsReport([], { ...meta, qualityFull: true }, "/tmp/findings.md");
     assert.match(full, /#### `\/p8`/);
     assert.equal((full.match(/^#### `/gm) ?? []).length, 9);
-    assert.match(full, /\*\*AXE color-contrast\*\* · error · chrome · 9 pages/);
+    assert.match(full, /\[AXE color-contrast\]\([^)]+\)\*\* · error · chrome · 9 pages/);
     const withShell = {
       ...meta,
       qualityFull: true,
@@ -1044,7 +1044,7 @@ describe("findings report", () => {
     const fullIndex = renderFindingsReport([], withShell, "/tmp/findings.md");
     assert.doesNotMatch(fullIndex, /## By page/);
     assert.doesNotMatch(fullIndex, /^#### `\/shell`/m);
-    assert.match(fullIndex, /\*\*AXE color-contrast\*\* · error · chrome/);
+    assert.match(fullIndex, /\[AXE color-contrast\]\([^)]+\)\*\* · error · chrome/);
   });
 
   it("explains spec-name labels before they appear", () => {
@@ -1100,8 +1100,8 @@ describe("findings report", () => {
     assert.doesNotMatch(md, /## By page/);
     assert.match(md, /### Pages/);
     assert.ok(md.includes("#### `/`"), md);
-    assert.match(md, /\*\*AXE color-contrast\*\*/);
-    assert.match(md, /\*\*Overlap\*\*/);
+    assert.match(md, /\[AXE color-contrast\]/);
+    assert.match(md, /\[Overlap\]/);
     const withLlm = renderFindingsReport(
       [],
       meta,
@@ -1298,14 +1298,14 @@ describe("findings report", () => {
     const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
     assert.doesNotMatch(summary, /Checked: WCAG/);
     assert.doesNotMatch(summary, /- \*\*url:\*\*/);
-    assert.match(a11y, /\*\*AXE color-contrast\*\*/);
+    assert.match(a11y, /\[AXE color-contrast\]/);
     assert.match(a11y, /Focus visible/);
     assert.match(a11y, /Target size/);
     assert.match(a11y, /1\.4\.10/);
     assert.match(a11y, /heading-order/i);
     assert.doesNotMatch(a11y, /Checked: WCAG/);
     assert.doesNotMatch(a11y, /meets AA/i);
-    assert.match(visual, /\*\*Overlap\*\*/);
+    assert.match(visual, /\[Overlap\]/);
     assert.match(visual, /@ 1280px/);
     assert.doesNotMatch(visual, /`focusVisible`/);
     assert.doesNotMatch(visual, /`targetSize`/);
@@ -1485,7 +1485,7 @@ describe("findings report", () => {
     assert.match(a11y, /1\.4\.10/);
     assert.match(a11y, /main @ 320px/);
     assert.doesNotMatch(a11y, /@ 375px/);
-    assert.match(visual, /\*\*Overflow\*\*/);
+    assert.match(visual, /\[Overflow\]/);
     assert.match(visual, /@ 375px/);
     assert.match(visual, /header/);
     assert.doesNotMatch(visual, /@ 320px/);
@@ -1693,7 +1693,7 @@ describe("findings report", () => {
       { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
       "/tmp/findings.md",
     );
-    assert.match(md, /\*\*WCAG 3\.3\.1 Error Identification\*\*/);
+    assert.match(md, /\[WCAG 3\.3\.1 Error Identification\]/);
     assert.match(md, /3\.3\.1/);
     assert.match(md, /see WCAG 3\.3\.1 Error Identification/);
     assert.match(md, /\*\*Expected:\*\* Save submits, navigates, or shows invalid fields\./);
@@ -1732,7 +1732,7 @@ describe("findings report", () => {
     assert.match(md, /^### HTTP 409 — server refused submit/m);
     assert.doesNotMatch(md, /^### HTTP 409 POST https:/m);
     assert.match(md, /\*\*Actual:\*\* HTTP 409 POST https:\/\/app\/api\/vouchers: Vendor has status Blacklisted/);
-    assert.match(md, /\*\*Server refused submit\*\*/);
+    assert.match(md, /\[Server refused submit\]/);
     assert.match(md, /see Server refused submit/);
     assert.match(md, /findings\/Q-01/);
     assert.match(md, /\*\*Expected:\*\* The UI only sends values the server will store\./);
@@ -1769,7 +1769,7 @@ describe("findings report", () => {
       { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
       "/tmp/findings.md",
     );
-    assert.match(md, /\*\*Invalid input accepted\*\*/);
+    assert.match(md, /\[Invalid input accepted\]/);
     assert.match(md, /see Invalid input accepted/);
     assert.match(md, /findings\/Q-02/);
     assert.match(md, /\*\*Expected:\*\* The field is marked invalid\./);
@@ -1805,7 +1805,7 @@ describe("findings report", () => {
       { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
       "/tmp/findings.md",
     );
-    assert.match(md, /\*\*Threw instead of invalid\*\*/);
+    assert.match(md, /\[Threw instead of invalid\]/);
     assert.match(md, /see Threw instead of invalid/);
     assert.match(md, /findings\/Q-03/);
     assert.match(md, /\*\*Expected:\*\* The page stays usable, and junk in a field shows as a field error\./);

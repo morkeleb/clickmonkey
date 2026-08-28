@@ -336,7 +336,11 @@ function pageCountTrail(row: Pick<DigestRow, "pages">): string {
 
 function formatLedgerRow(row: DigestRow, scope: StartScope, _page?: string): string {
   const check = row.check ?? checkOf(row.rule, rowExtras(row));
-  const title = row.label ? `**${row.label}**` : `\`${row.rule}\``;
+  const title = check
+    ? `**${checkLink(check)}**`
+    : row.label
+      ? `**${row.label}**`
+      : `\`${row.rule}\``;
   const bits = [title];
   if (row.severity === "error") bits.push("error");
   if (scope === "chrome") bits.push("chrome", pageCountTrail(row));
@@ -344,7 +348,7 @@ function formatLedgerRow(row: DigestRow, scope: StartScope, _page?: string): str
   const head = `- ${bits.join(" · ")}`;
   const where = shortWhere(row.where);
   const instance = [shortQualityMessage(row.message), where].filter(Boolean).join(" — ");
-  const why = check ? `${check.why.replace(/\.$/, "")}. ${checkLink(check)}` : undefined;
+  const why = check ? `${check.why.replace(/\.$/, "")}.` : undefined;
   const lines = [head];
   if (instance || why) {
     lines.push("");
