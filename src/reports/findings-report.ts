@@ -24,6 +24,7 @@ import { joinWheres, qualityLedgerItems } from "../schema/quality.js";
 import type { TestabilityReport } from "../schema/testability.js";
 import { wrapClickmonkeyFence } from "./fences.js";
 import {
+  CHAPTER_ORDER,
   chapterOf,
   compareSc,
   coverageLines,
@@ -31,6 +32,7 @@ import {
   type OverflowViewport,
   type ReportChapter,
 } from "./wcag.js";
+import { DOCS_SITE } from "../schema/site.js";
 import { checkOf, type Check } from "./check.js";
 
 const SEV_ORDER: FindingSeverity[] = ["critical", "major", "minor", "suggestion"];
@@ -740,7 +742,7 @@ function chapterIssues(catalog: Catalog): Map<ReportChapter, ChapterIssue[]> {
 function renderChapterIssueIndex(catalog: Catalog): string[] {
   const grouped = chapterIssues(catalog);
   const body: string[] = [];
-  for (const ch of ["testability", "accessibility", "visual", "quality"] as const) {
+  for (const ch of CHAPTER_ORDER) {
     const items = grouped.get(ch);
     if (!items?.length) continue;
     body.push(`- **${CHAPTER_HEADING[ch]}**`);
@@ -751,7 +753,13 @@ function renderChapterIssueIndex(catalog: Catalog): string[] {
     }
   }
   if (body.length === 0) return [];
-  return ["### By chapter", "", ...body];
+  return [
+    "### By chapter",
+    "",
+    `[Why this order](${DOCS_SITE}/chapter-order/)`,
+    "",
+    ...body,
+  ];
 }
 
 /** Drop the auto count line so a host/LLM summary can lead. Keep By chapter / Start here. */
@@ -853,7 +861,7 @@ function renderCatalogChapters(catalog: Catalog, includeStartHere: boolean): str
     });
     lines.push("");
   }
-  for (const chapter of ["testability", "accessibility", "visual", "quality"] as const) {
+  for (const chapter of CHAPTER_ORDER) {
     lines.push(...renderChapter(chapter, catalog));
   }
   return lines;
@@ -945,7 +953,7 @@ export function renderFindingsReport(
   if (clusters.length === 0) {
     lines.push("_No findings in the selected runs._", "");
   }
-  for (const chapter of ["testability", "accessibility", "visual", "quality"] as const) {
+  for (const chapter of CHAPTER_ORDER) {
     lines.push(...renderChapter(chapter, catalog));
   }
   const extra = meta.extra?.trim();

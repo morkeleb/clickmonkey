@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  CHAPTER_ORDER,
   chapterOf,
   coverageLines,
   isAxeRule,
@@ -15,6 +16,10 @@ import {
 } from "../src/reports/wcag.js";
 
 describe("wcag map", () => {
+  it("orders report chapters Quality → Visual → Accessibility → Testability", () => {
+    assert.deepEqual([...CHAPTER_ORDER], ["quality", "visual", "accessibility", "testability"]);
+  });
+
   it("buckets axe, DOM, and layout rules into chapters", () => {
     assert.equal(isAxeRule("color-contrast"), true);
     assert.equal(isAxeRule("tabindex"), true);

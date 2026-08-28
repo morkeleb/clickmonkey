@@ -409,32 +409,6 @@ export function NodeSheet({
                 )}
               </section>
               <section>
-                <h3 className="mb-2 text-sm font-medium">Testability</h3>
-                <IssueList
-                  issues={ledger.testability?.issues ?? []}
-                  pages={snapshot.testability.pages}
-                  current={node}
-                />
-              </section>
-              <section>
-                <h3 className="mb-2 text-sm font-medium">Accessibility</h3>
-                {a11yItems.length > 0 ? (
-                  <QualityIssueCards items={a11yItems} pages={snapshot.quality.pages} current={node} />
-                ) : (
-                  <p className="text-sm text-muted-foreground">No accessibility issues.</p>
-                )}
-              </section>
-              <section>
-                <h3 className="mb-2 text-sm font-medium">Visual</h3>
-                {visualItems.length > 0 ? (
-                  <QualityIssueCards items={visualItems} pages={snapshot.quality.pages} current={node} />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {ledger.quality?.visualHash ? "Scanned, no extras." : "No visual extras."}
-                  </p>
-                )}
-              </section>
-              <section>
                 <h3 className="mb-2 text-sm font-medium">Quality</h3>
                 {ledger.quality && qualityScannerCount(ledger.quality) > 0 ? (
                   <div>
@@ -460,6 +434,32 @@ export function NodeSheet({
                 ) : (
                   <p className="text-sm text-muted-foreground">No quality issues.</p>
                 )}
+              </section>
+              <section>
+                <h3 className="mb-2 text-sm font-medium">Visual</h3>
+                {visualItems.length > 0 ? (
+                  <QualityIssueCards items={visualItems} pages={snapshot.quality.pages} current={node} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {ledger.quality?.visualHash ? "Scanned, no extras." : "No visual extras."}
+                  </p>
+                )}
+              </section>
+              <section>
+                <h3 className="mb-2 text-sm font-medium">Accessibility</h3>
+                {a11yItems.length > 0 ? (
+                  <QualityIssueCards items={a11yItems} pages={snapshot.quality.pages} current={node} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">No accessibility issues.</p>
+                )}
+              </section>
+              <section>
+                <h3 className="mb-2 text-sm font-medium">Testability</h3>
+                <IssueList
+                  issues={ledger.testability?.issues ?? []}
+                  pages={snapshot.testability.pages}
+                  current={node}
+                />
               </section>
               {here && here.length > 0 ? (
                 <InfoStat label="Here now">

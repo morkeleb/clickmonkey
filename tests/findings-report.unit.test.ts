@@ -1091,7 +1091,9 @@ describe("findings report", () => {
     assert.match(summary, /- \*\*Visual\*\*/);
     assert.match(summary, /\[AXE color-contrast\]\([^)]+axe\/4\.13\/color-contrast\) — 1 page/);
     assert.match(summary, /\[Overlap\]\([^)]+V-03[^)]*\) — 1 page/);
+    assert.match(summary, /chapter-order/);
     assert.doesNotMatch(summary, /\[`\//);
+    assert.ok(summary.indexOf("**Visual**") < summary.indexOf("**Accessibility**"));
     assert.ok(summary.indexOf("**Accessibility**") < summary.indexOf("AXE color-contrast"));
     assert.ok(summary.indexOf("**Visual**") < summary.indexOf("Overlap"));
     assert.ok(summary.indexOf("### By chapter") < summary.indexOf("### Start here"));
@@ -1201,9 +1203,9 @@ describe("findings report", () => {
     const a11yHead = index.indexOf("**Accessibility**");
     const visualHead = index.indexOf("**Visual**");
     const qualityHead = index.indexOf("**Quality**");
-    assert.ok(a11yHead >= 0 && visualHead > a11yHead && qualityHead > visualHead, index);
-    assert.ok(a1 < visualHead, "contrast under Accessibility");
-    assert.ok(index.indexOf("2 pages") >= 0 && index.indexOf("2 pages") < visualHead, "most pages first in chapter");
+    assert.ok(qualityHead >= 0 && visualHead > qualityHead && a11yHead > visualHead, index);
+    assert.ok(a1 > visualHead, "contrast under Accessibility, after Visual");
+    assert.ok(index.indexOf("2 pages") >= 0 && index.indexOf("2 pages") > visualHead, "most pages first in chapter");
     assert.doesNotMatch(index, /\[`\//);
     assert.doesNotMatch(md, /## By page/);
     assert.ok(md.includes("#### `/messy`"), md);
@@ -1286,9 +1288,9 @@ describe("findings report", () => {
       },
       "/tmp/findings.md",
     );
-    const findings = md.slice(md.indexOf("## Findings"), md.indexOf("## Accessibility"));
-    const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Visual"));
-    const visual = md.slice(md.indexOf("## Visual"), md.indexOf("## Quality") === -1 ? md.length : md.indexOf("## Quality"));
+    const findings = md.slice(md.indexOf("## Findings"), md.indexOf("## Visual"));
+    const visual = md.slice(md.indexOf("## Visual"), md.indexOf("## Accessibility"));
+    const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Testability") === -1 ? md.length : md.indexOf("## Testability"));
     assert.match(findings, /Checked: WCAG 2\.0\/2\.1 A and AA/);
     assert.match(findings, /Not checked:.*2\.5\.7.*AAA/);
     assert.match(findings, /Fails on covered SCs: A — 0 rules; AA — 4 rules\./);
@@ -1478,8 +1480,8 @@ describe("findings report", () => {
       },
       "/tmp/findings.md",
     );
-    const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Visual"));
-    const visual = md.slice(md.indexOf("## Visual"));
+    const visual = md.slice(md.indexOf("## Visual"), md.indexOf("## Accessibility"));
+    const a11y = md.slice(md.indexOf("## Accessibility"));
     assert.match(a11y, /1\.4\.10/);
     assert.match(a11y, /main @ 320px/);
     assert.doesNotMatch(a11y, /@ 375px/);

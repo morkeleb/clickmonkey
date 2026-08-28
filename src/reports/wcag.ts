@@ -1,6 +1,9 @@
 export type WcagLevel = "A" | "AA";
 export type ReportChapter = "testability" | "accessibility" | "visual" | "quality";
 
+/** Report / By chapter order: user-facing breakage first, team debt last. */
+export const CHAPTER_ORDER = ["quality", "visual", "accessibility", "testability"] as const satisfies readonly ReportChapter[];
+
 export type WcagEntry = {
   sc?: string;
   level?: WcagLevel;

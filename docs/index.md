@@ -14,3 +14,4 @@ QA walker. Point it at a URL, let it drive the UI, keep a tape.
 - [Fog of war](fog/) — clocks and hunger
 - [MCP](mcp/) — host-LLM walk, then freeze a spec
 - [Issue classes](issue-classes/) — what it harvests vs QA
+- [Chapter order](chapter-order/) — Quality → Visual → Accessibility → Testability

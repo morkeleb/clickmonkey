@@ -7,7 +7,7 @@ permalink: /issue-classes/
 
 ClickMonkey harvests **classes of defects that repeat across pages** so people stop re-walking chrome, locators, and crash paths. It does not replace someone who knows the product.
 
-A report counts **sites** (pages that show the class), not “10 unique bugs.” One illegal `div` in a button in the shell can be 50 page-instances. That is the point: fix once.
+A report counts **sites** (pages that show the class), not “10 unique bugs.” One illegal `div` in a button in the shell can be 50 page-instances. That is the point: fix once. Chapters in a report are [Quality → Visual → Accessibility → Testability](chapter-order/).
 
 ## How to use the split
 
