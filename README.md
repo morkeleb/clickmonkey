@@ -57,6 +57,9 @@ target with no `id` / `data-testid` (or `data-cy` / `data-test`) is a
 `missingStableId` **warn**. That is the hook classical e2e tools use. It
 does not block the walk.
 
+This repo dogfoods the same layout: [clickmonkey-testing](clickmonkey-testing/README.md)
+has one leash that maps the GitHub Pages catalog and one that maps `clickmonkey ui`.
+
 `fixtures/sites/validates` is the same form with client-side validation. The
 playbook should pass there and write no findings.
 

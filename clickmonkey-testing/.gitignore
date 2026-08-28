@@ -1,0 +1,13 @@
+# Generated walks. Keep the leashes and maps tracked (see README Git).
+**/clickmonkey/runs/
+**/clickmonkey/replays/
+**/clickmonkey/reports/
+**/clickmonkey/bundle/
+**/clickmonkey/dev-origin
+**/clickmonkey/ui.pid
+**/clickmonkey/lands.json
+**/clickmonkey/testability.json
+**/clickmonkey/quality.json
+**/clickmonkey/broken.json
+**/clickmonkey/**/*.json.lock
+**/clickmonkey/**/*.json.tmp

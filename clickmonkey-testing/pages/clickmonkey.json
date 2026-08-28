@@ -1,0 +1,9 @@
+{
+  "url": "https://morkeleb.github.io/clickmonkey/",
+  "fence": { "path": "/clickmonkey", "blacklist": [] },
+  "intro": [],
+  "skip": ["Improve this page"],
+  "writePolicy": "validationOnly",
+  "screenshots": true,
+  "seo": {}
+}
