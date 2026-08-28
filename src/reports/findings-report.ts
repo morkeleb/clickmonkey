@@ -23,7 +23,6 @@ import type { QualityReport } from "../schema/quality.js";
 import { joinWheres, qualityLedgerItems } from "../schema/quality.js";
 import type { TestabilityReport } from "../schema/testability.js";
 import { wrapClickmonkeyFence } from "./fences.js";
-import { FINDINGS_SITE } from "./check-catalog.js";
 import {
   chapterOf,
   compareSc,
@@ -748,13 +747,7 @@ function renderChapterIssueIndex(catalog: Catalog): string[] {
     }
   }
   if (body.length === 0) return [];
-  return [
-    "### By chapter",
-    "",
-    `Pages affected per class. [Catalog](${FINDINGS_SITE}/findings/).`,
-    "",
-    ...body,
-  ];
+  return ["### By chapter", "", ...body];
 }
 
 /** Drop the auto count line so a host/LLM summary can lead. Keep By chapter / Start here. */
