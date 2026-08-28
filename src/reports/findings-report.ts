@@ -141,7 +141,7 @@ function pathOfHref(href: string): string | undefined {
 
 function expectedActual(c: FindingCase): { expected?: string; actual?: string } {
   const message = (c.message || c.finding.message).trim();
-  const title = findingReportTitle(c.finding.kind, c.title || message).trim();
+  const title = findingReportTitle(c.finding.kind, message, c.finding.httpStatus).trim();
   const expected = (c.expected !== undefined ? c.expected : c.check.expected)?.trim() || undefined;
   const actual =
     (c.actual !== undefined ? c.actual.trim() : undefined) ||
@@ -202,7 +202,9 @@ function renderCase(
   copies: FindingCase[] = [],
   catalog?: ClassCatalog,
 ): string {
-  const title = extra?.title || findingReportTitle(c.finding.kind, c.title || c.finding.message);
+  const computed = findingReportTitle(c.finding.kind, c.finding.message, c.finding.httpStatus);
+  const extraTitle = extra?.title?.trim();
+  const title = extraTitle && extraTitle !== c.finding.message ? extraTitle : computed;
   const url = c.finding.url ?? c.url;
   const path = url ? pathOfHref(url) : undefined;
   const all = [c, ...copies];

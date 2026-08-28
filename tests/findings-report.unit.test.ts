@@ -1729,6 +1729,9 @@ describe("findings report", () => {
       { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: ["r"] },
       "/tmp/findings.md",
     );
+    assert.match(md, /^### HTTP 409 — server refused submit/m);
+    assert.doesNotMatch(md, /^### HTTP 409 POST https:/m);
+    assert.match(md, /\*\*Actual:\*\* HTTP 409 POST https:\/\/app\/api\/vouchers: Vendor has status Blacklisted/);
     assert.match(md, /\*\*Server refused submit\*\*/);
     assert.match(md, /see Server refused submit/);
     assert.match(md, /findings\/Q-01/);

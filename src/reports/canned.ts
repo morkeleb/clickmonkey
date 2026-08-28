@@ -1,4 +1,10 @@
-import { findingReportTitle, pageErrorExplanation, pageErrorTitle, type Finding } from "../schema/finding.js";
+import {
+  findingReportTitle,
+  httpErrorTitle,
+  pageErrorExplanation,
+  pageErrorTitle,
+  type Finding,
+} from "../schema/finding.js";
 
 export function cannedReport(finding: Finding): string {
   switch (finding.kind) {
@@ -17,7 +23,7 @@ export function cannedReport(finding: Finding): string {
       return [
         `# ${finding.id}`,
         "",
-        `HTTP ${finding.httpStatus ?? "error"} ${finding.url ?? ""}`.trim(),
+        httpErrorTitle(finding.message, finding.httpStatus),
         "",
         finding.message,
         "",

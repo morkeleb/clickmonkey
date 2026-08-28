@@ -15,7 +15,7 @@ import {
 } from "../src/executor/field-validity.js";
 import { looksLikeRowSelectCheckbox } from "../src/brains/unleash.js";
 import { isPrimaryFormCommit, looksLikeSubmitClick } from "../src/executor/write-policy.js";
-import { findingReportTitle, findingTapeBug, validationMissExplanation } from "../src/schema/finding.js";
+import { findingReportTitle, findingTapeBug, httpErrorTitle, validationMissExplanation } from "../src/schema/finding.js";
 
 const valid: TrackedFill["validity"] = { ariaInvalid: false, errorVisible: false, nativeInvalid: false };
 
@@ -184,6 +184,17 @@ describe("validationMissExplanation", () => {
   it("names an empty required field", () => {
     const body = validationMissExplanation([{ field: "create.name", value: "" }]);
     assert.match(body, /Required field `create\.name` accepted empty/);
+  });
+});
+
+describe("httpErrorTitle", () => {
+  it("shortens httpError titles so the card heading is not the oracle body", () => {
+    const refused =
+      "HTTP 409 PATCH https://demo.f2dev.test/api/accounts-payable/settings: AP settings were modified by another writer. Expected version abc";
+    assert.equal(httpErrorTitle(refused, 409), "HTTP 409 — server refused submit");
+    assert.equal(findingReportTitle("httpError", refused, 409), "HTTP 409 — server refused submit");
+    assert.equal(findingReportTitle("httpError", "HTTP 403 GET https://app/secret", 403), "HTTP 403");
+    assert.equal(httpErrorTitle("timeout"), "HTTP error");
   });
 });
 

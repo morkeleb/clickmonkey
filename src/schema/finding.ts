@@ -91,6 +91,23 @@ export function pageErrorTitle(message: string): string {
   return `Uncaught JavaScript error: ${pageErrorDetail(message)}`;
 }
 
+const HTTP_HEAD = /^HTTP\s+(\d{3})(?:\s+([A-Z]+))?/i;
+const HTTP_WRITE = /^(POST|PUT|PATCH|DELETE)$/i;
+
+/** Short card heading. Full oracle text stays in Actual. */
+export function httpErrorTitle(message: string, httpStatus?: number): string {
+  const m = message.match(HTTP_HEAD);
+  const status = httpStatus ?? (m ? Number(m[1]) : undefined);
+  const method = m?.[2]?.toUpperCase();
+  const refused =
+    status !== undefined &&
+    (status === 400 || status === 409 || status === 422) &&
+    Boolean(method && HTTP_WRITE.test(method));
+  if (status === undefined || !Number.isFinite(status)) return "HTTP error";
+  if (refused) return `HTTP ${status} — server refused submit`;
+  return `HTTP ${status}`;
+}
+
 function fillFromStoredExplanation(message: string): PageErrorFillCtx | undefined {
   const m = message.match(/ClickMonkey had just filled `([^`]+)`(?: with ("(?:\\.|[^"\\])*"))?/);
   if (!m?.[1]) return undefined;
@@ -176,8 +193,9 @@ export function validationMissExplanation(fills: ValidationMissFill[]): string {
   return lines.join("\n");
 }
 
-export function findingReportTitle(kind: FindingKind, message: string): string {
+export function findingReportTitle(kind: FindingKind, message: string, httpStatus?: number): string {
   if (kind === "pageError") return pageErrorTitle(message);
+  if (kind === "httpError") return httpErrorTitle(message, httpStatus);
   return message.split("\n").map((l) => l.trim()).find(Boolean) ?? message;
 }
 
