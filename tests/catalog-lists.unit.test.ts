@@ -39,7 +39,8 @@ describe("catalog lists", () => {
     assert.equal(wcagRules.has("targetSize"), true);
     assert.equal(wcagRules.has("color-contrast"), false);
     assert.ok(htmlv.some((r) => r.rule === "no-dup-id"));
-    assert.ok(html.some((r) => r.rule === "implicitSubmit" && r.id === "V-12"));
+    assert.ok(html.some((r) => r.rule === "implicitSubmit"));
+    assert.equal(html.find((r) => r.rule === "implicitSubmit")?.id, undefined);
     const seen = new Set<string>();
     for (const row of catalogListRows()) {
       assert.equal(seen.has(row.rule), false, `rule in two lists: ${row.rule}`);
@@ -50,21 +51,25 @@ describe("catalog lists", () => {
   it("points each list at the original spec, not a parallel catalog", () => {
     const contrast = axeRows().find((r) => r.rule === "color-contrast");
     assert.equal(contrast?.title, "AXE color-contrast");
-    assert.equal(contrast?.id, "axe-color-contrast");
+    assert.equal(contrast?.id, undefined);
     assert.equal(contrast?.href, "https://dequeuniversity.com/rules/axe/4.13/color-contrast");
     const keyboard = wcagRows().find((r) => r.rule === "clickableNonWidget");
     assert.equal(keyboard?.title, "WCAG 2.1.1 Keyboard");
     assert.match(keyboard?.href ?? "", /Understanding\/keyboard/);
-    assert.equal(keyboard?.id, "A-2.1.1");
-    assert.equal(wcagRows().find((r) => r.rule === "focusVisible")?.id, "A-2.4.7");
+    assert.equal(keyboard?.id, undefined);
+    assert.equal(wcagRows().find((r) => r.rule === "focusVisible")?.id, undefined);
     for (const row of catalogListRows()) {
       const check = mustCheck(row.rule);
       assert.equal(check.title, row.title, row.rule);
       assert.equal(check.href, row.href, row.rule);
+      if (row.list !== "clickmonkey") {
+        assert.equal(row.id, undefined, row.rule);
+        assert.match(row.href, /^https:\/\//, row.rule);
+      }
     }
     const dup = htmlValidateRows().find((r) => r.rule === "no-dup-id");
     assert.equal(dup?.title, "html-validate no-dup-id");
-    assert.equal(dup?.id, "html-validate-no-dup-id");
+    assert.equal(dup?.id, undefined);
     assert.match(dup?.href ?? "", /html-validate\.org\/rules\/no-dup-id/);
     const submit = htmlRows().find((r) => r.rule === "implicitSubmit");
     assert.match(submit?.href ?? "", /html\.spec\.whatwg\.org/);
@@ -81,11 +86,11 @@ describe("catalog lists", () => {
     assert.match(md, /^## html-validate$/m);
     assert.match(md, /^## HTML$/m);
     assert.ok(md.indexOf("## ClickMonkey") < md.indexOf("## AXE"));
-    assert.match(md, /\[AXE color-contrast\]\(axe-color-contrast\/\)/);
     assert.match(md, /\[AXE color-contrast\]\(https:\/\/dequeuniversity\.com\/rules\/axe\/4\.13\/color-contrast\)/);
-    assert.match(md, /\[WCAG 2\.1\.1 Keyboard\]\(A-2\.1\.1\/\)/);
-    assert.match(md, /\[WCAG 2\.4\.7 Focus visible\]\(A-2\.4\.7\/\)/);
+    assert.doesNotMatch(md, /axe-color-contrast\//);
+    assert.doesNotMatch(md, /A-2\.1\.1\//);
     assert.match(md, /\[WCAG 2\.1\.1 Keyboard\]\(https:\/\/www\.w3\.org\/WAI\/WCAG22\/Understanding\/keyboard\.html\)/);
+    assert.match(md, /\[WCAG 2\.4\.7 Focus visible\]\(https:\/\/www\.w3\.org\/WAI\/WCAG22\/Understanding\/focus-visible\.html\)/);
     const clickStart = md.indexOf("## ClickMonkey");
     const axeStart = md.indexOf("## AXE");
     const wcagStart = md.indexOf("## WCAG");
@@ -96,8 +101,9 @@ describe("catalog lists", () => {
     assert.match(axe, /`color-contrast`/);
     assert.doesNotMatch(axe, /`clickableNonWidget`/);
     assert.doesNotMatch(md, /Q-19|fenceViolation|writePolicyBlocked|`uiIssue`/);
-    assert.match(md, /\[html-validate no-dup-id\]\(html-validate-no-dup-id\/\)/);
     assert.match(md, /\[html-validate no-dup-id\]\(https:\/\/html-validate\.org\/rules\/no-dup-id\.html\)/);
-    assert.match(md, /\[html-validate element-permitted-content\]\(html-validate-element-permitted-content\/\)/);
+    assert.doesNotMatch(md, /html-validate-no-dup-id\//);
+    assert.match(md, /\[html-validate element-permitted-content\]\(https:\/\/html-validate\.org\/rules\/element-permitted-content\.html\)/);
+    assert.match(md, /\[HTML button type\]\(https:\/\/html\.spec\.whatwg\.org\//);
   });
 });

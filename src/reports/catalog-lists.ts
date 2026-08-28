@@ -1,4 +1,4 @@
-import { CHECKS, catalogIdFor, catalogPageHref, checkByRule } from "./check-catalog.js";
+import { CHECKS, catalogPageHref } from "./check-catalog.js";
 import { HTMLVALIDATE_RULES, specLink } from "./spec-links.js";
 import { DOM_WCAG_RULES, enabledAxeRules, wcagOf } from "./wcag.js";
 
@@ -8,7 +8,7 @@ export type CatalogListId = (typeof CATALOG_LISTS)[number];
 export type CatalogListRow = {
   list: CatalogListId;
   rule: string;
-  /** ClickMonkey catalog id when we own a page (`T-01`, `A-2.1.1`). */
+  /** ClickMonkey catalog id when we own the spec (`T-01`). Absent when Original is canonical. */
   id?: string;
   chapter?: string;
   title: string;
@@ -18,7 +18,7 @@ export type CatalogListRow = {
   level?: string;
 };
 
-const HTML_SPEC_RULES = ["implicitSubmit", "noopener"] as const;
+export const HTML_SPEC_RULES = ["implicitSubmit", "noopener"] as const;
 
 function mustSpec(rule: string): { label: string; href: string } {
   const spec = specLink(rule);
@@ -48,71 +48,33 @@ export function clickmonkeyRows(): CatalogListRow[] {
   }));
 }
 
-/** Catalog handle for an axe Check (`axe-color-contrast`). */
-export function axePageId(rule: string): string {
-  return `axe-${rule}`;
-}
-
 export function axeRows(): CatalogListRow[] {
   return enabledAxeRules()
     .sort((a, b) => a.localeCompare(b))
     .map((rule) => {
       const spec = mustSpec(rule);
-      return {
-        list: "axe" as const,
-        rule,
-        id: axePageId(rule),
-        title: spec.label,
-        href: spec.href,
-        ...scBits(rule),
-      };
+      return { list: "axe" as const, rule, title: spec.label, href: spec.href, ...scBits(rule) };
     });
 }
 
 export function wcagRows(): CatalogListRow[] {
   return DOM_WCAG_RULES.map((rule) => {
     const spec = mustSpec(rule);
-    const id = catalogIdFor(rule);
-    return {
-      list: "wcag" as const,
-      rule,
-      title: spec.label,
-      href: spec.href,
-      ...(id ? { id } : {}),
-      ...scBits(rule),
-    };
+    return { list: "wcag" as const, rule, title: spec.label, href: spec.href, ...scBits(rule) };
   }).sort((a, b) => (a.sc ?? a.rule).localeCompare(b.sc ?? b.rule, undefined, { numeric: true }));
-}
-
-/** Catalog handle for an html-validate Check (`html-validate-no-dup-id`). */
-export function htmlValidatePageId(rule: string): string {
-  return `html-validate-${rule}`;
 }
 
 export function htmlValidateRows(): CatalogListRow[] {
   return HTMLVALIDATE_RULES.map((rule) => {
     const spec = mustSpec(rule);
-    return {
-      list: "html-validate" as const,
-      rule,
-      id: htmlValidatePageId(rule),
-      title: spec.label,
-      href: spec.href,
-    };
+    return { list: "html-validate" as const, rule, title: spec.label, href: spec.href };
   });
 }
 
 export function htmlRows(): CatalogListRow[] {
   return HTML_SPEC_RULES.map((rule) => {
     const spec = mustSpec(rule);
-    const owned = checkByRule(rule);
-    return {
-      list: "html" as const,
-      rule,
-      title: spec.label,
-      href: spec.href,
-      ...(owned ? { id: owned.id } : {}),
-    };
+    return { list: "html" as const, rule, title: spec.label, href: spec.href };
   });
 }
 
@@ -150,18 +112,18 @@ export function catalogIndexMarkdown(): string {
   const html = htmlRows();
   return `# Finding catalog
 
-Rules this walker reports, grouped by who owns the spec. Original pages are in the other lists; ClickMonkey pages are only for classes we named.
+Rules this walker reports. ClickMonkey pages exist only when there is no official spec. AXE, WCAG, html-validate, and HTML link the canonical page — we do not republish it.
 
-- [ClickMonkey](#clickmonkey) — T/V/Q classes we own
-- [AXE](#axe) — axe-core 4.13 ([rule list](https://dequeuniversity.com/rules/axe/4.13))
+- [ClickMonkey](#clickmonkey) — classes we named
+- [AXE](#axe) — [axe 4.13](https://dequeuniversity.com/rules/axe/4.13)
 - [WCAG](#wcag) — DOM checks we run (not axe)
-- [html-validate](#html-validate) — HTML authoring
-- [HTML](#html) — WHATWG
+- [html-validate](#html-validate) — [html-validate rules](https://html-validate.org/rules/)
+- [HTML](#html) — [HTML Living Standard](https://html.spec.whatwg.org/multipage/)
 - [What a person still tests](qa-left/) — leftover WCAG 2.2 A/AA
 
 ## ClickMonkey
 
-These pages are the spec. Reports link here so T/V/Q ids do not shuffle.
+These pages are the spec. No W3C / Deque / html-validate / WHATWG page covers them.
 
 ${mdTable(
     ["Id", "Rule", "Chapter", "Title"],
@@ -170,46 +132,38 @@ ${mdTable(
 
 ## AXE
 
-axe-core after inspect (\`wcag2a\` / \`wcag2aa\` / \`wcag21a\` / \`wcag21aa\` plus extras). Reports tag these as **AXE {rule}**. Original: [axe 4.13](https://dequeuniversity.com/rules/axe/4.13).
+axe-core after inspect (\`wcag2a\` / \`wcag2aa\` / \`wcag21a\` / \`wcag21aa\` plus extras). Reports tag **AXE {rule}**.
 
 ${mdTable(
-    ["Check", "Rule", "Original", "SC"],
-    axe.map((r) => [`[${r.title}](${r.id}/)`, `\`${r.rule}\``, originalLink(r), scCell(r)]),
+    ["Check", "Rule", "SC"],
+    axe.map((r) => [originalLink(r), `\`${r.rule}\``, scCell(r)]),
   )}
 
 ## WCAG
 
-DOM detectors ClickMonkey runs itself. Original: W3C Understanding. \`A-*\` is only a handle when we also have a catalog page.
+DOM detectors ClickMonkey runs itself. Reports tag **WCAG {sc}**. The W3C Understanding page is the spec.
 
 ${mdTable(
-    ["Check", "Rule", "Original"],
-    wcag.map((r) => [
-      r.id ? `[${r.title}](${r.id}/)` : r.title,
-      `\`${r.rule}\``,
-      originalLink(r),
-    ]),
+    ["Check", "Rule"],
+    wcag.map((r) => [originalLink(r), `\`${r.rule}\``]),
   )}
 
 ## html-validate
 
-html-validate:standard after inspect. Reports tag these as **html-validate {rule}**. Original: [html-validate rules](https://html-validate.org/rules/).
+html-validate:standard after inspect. Reports tag **html-validate {rule}**.
 
 ${mdTable(
-    ["Check", "Rule", "Original"],
-    htmlv.map((r) => [`[${r.title}](${r.id}/)`, `\`${r.rule}\``, originalLink(r)]),
+    ["Check", "Rule"],
+    htmlv.map((r) => [originalLink(r), `\`${r.rule}\``]),
   )}
 
 ## HTML
 
-Original: [HTML Living Standard](https://html.spec.whatwg.org/multipage/).
+Reports tag the WHATWG name. \`implicitSubmit\` / \`noopener\` are how we detect them.
 
 ${mdTable(
-    ["Check", "Rule", "Original"],
-    html.map((r) => [
-      r.id ? `[${r.title}](${r.id}/)` : r.title,
-      `\`${r.rule}\``,
-      originalLink(r),
-    ]),
+    ["Check", "Rule"],
+    html.map((r) => [originalLink(r), `\`${r.rule}\``]),
   )}
 `;
 }

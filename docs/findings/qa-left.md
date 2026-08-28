@@ -7,7 +7,7 @@ permalink: /findings/qa-left/
 
 ClickMonkey soaks chrome, locators, HTML/axe, form Tab (2.1.2 trap, 2.4.3 order), and the layout extras. It does **not** replace someone who knows the product. This page is the leftover **WCAG 2.2 A/AA** list — use it as a session checklist on a real flow.
 
-2.1.2 and 2.4.3 are **not** here: a form Tab walk covers those ([A-2.1.2](../A-2.1.2/), [A-2.4.3](../A-2.4.3/)). AAA is out of scope.
+2.1.2 and 2.4.3 are covered by the form Tab walk. Spec: [WCAG 2.1.2](https://www.w3.org/WAI/WCAG22/Understanding/no-keyboard-trap.html), [WCAG 2.4.3](https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html). AAA is out of scope.
 
 | SC | Gap | Why the walker skips it | What you do |
 |---|---|---|---|

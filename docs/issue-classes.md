@@ -29,8 +29,8 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 | **A11y scanners** | WCAG 2.0/2.1 A/AA (contrast, names, ARIA, labels, keyboard 2.1.1, …) plus a small extra allowlist — not all axe `best-practice` | axe-core after inspect; **clickableNonWidget** is DOM 2.1.1 |
 | **SEO hygiene** | Missing title/description/OG on public paths; the same title on every route | `seo` on the leash. Catalog **Q-04…Q-13**. |
 | **Testability** | Unlabeled fields, unnamed controls, no `main`, occluded widgets, duplicate names, missing stable ids | Inspect audit. Findings explain why. Stable ids **T-01…T-08**: [catalog](https://morkeleb.github.io/clickmonkey/findings/). |
-| **Keyboard 2.1.1** | **clickableNonWidget**: click on a `div`/`span`/`svg` (onclick, React onClick, `addEventListener`) or a `role=button` that is not tabbable | Inspect audit. Report chapter **A-2.1.1**. List rows and `#root` are not mapped as actions. |
-| **Keyboard 2.1.2 / 2.4.3** | Form Tab walk: **keyboardTrap** (Tab cannot leave a field), **focusOrder** (next stop sits a row above) | DOM on inspect when a form has two+ tabbables — not a full-page Tab session. **A-2.1.2** / **A-2.4.3**. |
+| **Keyboard 2.1.1** | **clickableNonWidget**: click on a `div`/`span`/`svg` (onclick, React onClick, `addEventListener`) or a `role=button` that is not tabbable | Inspect audit. Spec: [WCAG 2.1.1](https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html). List rows and `#root` are not mapped as actions. |
+| **Keyboard 2.1.2 / 2.4.3** | Form Tab walk: **keyboardTrap** (Tab cannot leave a field), **focusOrder** (next stop sits a row above) | DOM on inspect when a form has two+ tabbables — not a full-page Tab session. Spec: [2.1.2](https://www.w3.org/WAI/WCAG22/Understanding/no-keyboard-trap.html) / [2.4.3](https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html). |
 | **Layout / DOM extras** | Overflow (1280, 375, 320), clip, overlap, z-index, scanline, sparse, broken images, hit targets, focus-obscured, focus rings, text occlusion, tiny type, text-spacing, dead hashes, implicit submit, noopener, scroll-padding, pointer-events:none | DOM on every inspect (no model). High confidence → finding folder; medium → quality ledger |
 | **Silent Save** | Submit/Save: no navigation, no write request, and no accessible invalid (`aria-invalid`, `{id}-error`, HTML5 constraint). WCAG 3.3.1 | Unleash after submit |
 | **Invalid accepted** | Required blank or junk: after Save the field is not invalid, **and** the form sent that value or left the page | Unleash / `empty-required`. Catalog **Q-02**. |
@@ -58,7 +58,7 @@ On top of `wcag2a` / `wcag2aa` / `wcag21a` / `wcag21aa`, inspect enables these r
 
 WCAG 2.2 `target-size` is **not** taken from axe — the DOM **targetSize** rule owns 2.5.8. **2.1.1 Keyboard** is the DOM **clickableNonWidget** check (click on a non-control, or `role=button` that is not tabbable), not an axe rule. **2.1.2** / **2.4.3** are the form Tab walk (`keyboardTrap`, `focusOrder`).
 
-Reports tag issues by **spec name**: **AXE** `{rule}` (Deque), **WCAG** `{sc}` `{name}` (DOM detectors), HTML authoring (html-validate or the HTML spec), or catalog titles. The [catalog](https://morkeleb.github.io/clickmonkey/findings/) lists each set separately, with links to the original pages. ClickMonkey permalinks stay `T-01` / `V-03` / `Q-01` / `A-2.1.1`.
+Reports tag issues by **spec name**: **AXE** `{rule}` (Deque), **WCAG** `{sc}` `{name}` (W3C), HTML authoring (html-validate or the HTML spec), or ClickMonkey catalog titles. The [catalog](https://morkeleb.github.io/clickmonkey/findings/) lists each set separately and links the official page when there is one. ClickMonkey-owned permalinks stay `T-01` / `V-03` / `Q-01`.
 
 ### WCAG 2.2 A/AA a person still tests
 
