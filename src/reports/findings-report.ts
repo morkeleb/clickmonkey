@@ -39,6 +39,9 @@ const SEV_ORDER: FindingSeverity[] = ["critical", "major", "minor", "suggestion"
 /** Unique-to-a-route pages with their own issues shown in default reports. */
 export const LEFTOVER_PAGE_CAP = 8;
 
+/** By chapter lists every path when the class is this small; larger classes fold. */
+export const INDEX_PATHS_OPEN = 8;
+
 const CHAPTER_HEADING: Record<ReportChapter, string> = {
   testability: "Testability",
   accessibility: "Accessibility",
@@ -318,6 +321,39 @@ function shortWhere(where: string | undefined): string | undefined {
 
 function pageCountTrail(row: Pick<DigestRow, "pages">): string {
   return `${row.pages} page${row.pages === 1 ? "" : "s"}`;
+}
+
+function hrefForIndexPage(page: string, appUrl: string): string | undefined {
+  const at = page.indexOf(" @ ");
+  const path = at >= 0 ? page.slice(0, at).trim() : page.trim();
+  const base = at >= 0 ? page.slice(at + 3).trim() : appUrl;
+  if (!path || !base) return undefined;
+  try {
+    return new URL(path, base).href;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatIndexPageItem(page: string, appUrl: string): string {
+  const code = `\`${page}\``;
+  const href = hrefForIndexPage(page, appUrl);
+  return href ? `[${code}](${href})` : code;
+}
+
+function renderIndexPaths(pages: ReadonlySet<string>, appUrl: string): string[] {
+  const names = [...pages].sort((a, b) => a.localeCompare(b));
+  if (names.length === 0) return [];
+  const items = names.map((p) => `    - ${formatIndexPageItem(p, appUrl)}`);
+  if (names.length <= INDEX_PATHS_OPEN) return items;
+  return [
+    "    <details>",
+    `    <summary>${names.length} paths</summary>`,
+    "",
+    ...items,
+    "",
+    "    </details>",
+  ];
 }
 
 function formatLedgerRow(row: DigestRow, scope: StartScope, page?: string): string {
@@ -754,8 +790,9 @@ function chapterIssues(catalog: Catalog): Map<ReportChapter, ChapterIssue[]> {
 /**
  * Category → issue → pages. Compact enough for one printed page.
  * Page counts are the ledger, not collapsed finding cards.
+ * Paths nest under each class so "Clip — 3 pages" shows which routes.
  */
-function renderChapterIssueIndex(catalog: Catalog): string[] {
+function renderChapterIssueIndex(catalog: Catalog, appUrl: string): string[] {
   const grouped = chapterIssues(catalog);
   const body: string[] = [];
   for (const ch of ["testability", "accessibility", "visual", "quality"] as const) {
@@ -766,21 +803,33 @@ function renderChapterIssueIndex(catalog: Catalog): string[] {
       const check = item.row.check ?? checkOf(item.rule, rowExtras(item.row));
       const tag = check ? checkLink(check) : item.label;
       body.push(`  - ${tag} — ${pageCountTrail({ pages: item.pages.size })}`);
+      body.push(...renderIndexPaths(item.pages, appUrl));
     }
   }
   if (body.length === 0) return [];
   return [
     "### By chapter",
     "",
-    `Pages affected per class. [Catalog](${FINDINGS_SITE}/findings/).`,
+    `Pages affected per class. Paths nest under each check. [Catalog](${FINDINGS_SITE}/findings/).`,
     "",
     ...body,
   ];
 }
 
+/** Drop the auto count line so a host/LLM summary can lead. Keep By chapter / Start here. */
+function dropLeadCountLine(lines: string[]): string[] {
+  const out = [...lines];
+  while (out[0] === "") out.shift();
+  if (out[0] && /^\d+ findings? from /.test(out[0])) {
+    out.shift();
+    while (out[0] === "") out.shift();
+  }
+  return out;
+}
+
 /** Issue index before Start here (or after an LLM paragraph). */
-function withChapterIndex(summaryLines: string[], catalog: Catalog): string[] {
-  const index = renderChapterIssueIndex(catalog);
+function withChapterIndex(summaryLines: string[], catalog: Catalog, appUrl: string): string[] {
+  const index = renderChapterIssueIndex(catalog, appUrl);
   if (index.length === 0) return summaryLines;
   const startIdx = summaryLines.findIndex((l) => l === "### Start here");
   if (startIdx >= 0) {
@@ -863,11 +912,11 @@ function fallbackSummary(
   return lines;
 }
 
-function renderCatalogChapters(catalog: Catalog, includeStartHere: boolean): string[] {
+function renderCatalogChapters(catalog: Catalog, includeStartHere: boolean, appUrl = ""): string[] {
   if (catalog.rows.length === 0) return [];
   const lines: string[] = [];
   if (hasClassLabels(catalog)) {
-    lines.push(...renderChapterIssueIndex(catalog), "");
+    lines.push(...renderChapterIssueIndex(catalog, appUrl), "");
   }
   if (includeStartHere && catalog.start.length > 0) {
     lines.push("### Start here", "");
@@ -885,9 +934,10 @@ function renderCatalogChapters(catalog: Catalog, includeStartHere: boolean): str
 export function renderQualityDigest(
   testability?: TestabilityReport,
   quality?: QualityReport,
+  appUrl = "",
 ): string[] {
   const catalog = buildCatalog(testability, quality, LEFTOVER_PAGE_CAP);
-  return renderCatalogChapters(catalog, true);
+  return renderCatalogChapters(catalog, true, appUrl);
 }
 
 export function outlinesFromRunDirs(runDirs: readonly string[]): Array<{ runId: string; outline: UiExploreOutline }> {
@@ -936,10 +986,10 @@ export function renderFindingsReport(
   const clusters = collapseFindingCases(cases);
   const leftoverCap = meta.qualityFull ? Number.POSITIVE_INFINITY : LEFTOVER_PAGE_CAP;
   const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap, cases);
-  const summaryLines = withChapterIndex(
-    summary?.trim() ? [summary.trim()] : fallbackSummary(clusters, catalog, meta),
-    catalog,
-  );
+  const indexed = withChapterIndex(fallbackSummary(clusters, catalog, meta), catalog, meta.url);
+  const summaryLines = summary?.trim()
+    ? [summary.trim(), "", ...dropLeadCountLine(indexed)]
+    : indexed;
   const lines = [
     "# Findings report",
     "",

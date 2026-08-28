@@ -1051,8 +1051,10 @@ describe("findings report", () => {
     assert.match(summary, /- \*\*Visual\*\*/);
     assert.match(summary, /\[AXE color-contrast\]\([^)]+axe\/4\.13\/color-contrast\) — 1 page/);
     assert.match(summary, /\[Overlap\]\([^)]+V-03[^)]*\) — 1 page/);
+    assert.match(summary, /\[`\/`\]\(http:\/\/127\.0\.0\.1:4173\/\)/);
     assert.ok(summary.indexOf("**Accessibility**") < summary.indexOf("AXE color-contrast"));
     assert.ok(summary.indexOf("**Visual**") < summary.indexOf("Overlap"));
+    assert.ok(summary.indexOf("AXE color-contrast") < summary.indexOf("[`/`]"), "path nests under the class");
     assert.ok(summary.indexOf("### By chapter") < summary.indexOf("### Start here"));
     const byPage = md.slice(md.indexOf("## By page"));
     assert.match(byPage, /Same spec tags as in By chapter/);
@@ -1069,6 +1071,7 @@ describe("findings report", () => {
     assert.ok(withLlm.indexOf("Walked the app") < withLlm.indexOf("### By chapter"));
     const llmIndex = withLlm.slice(withLlm.indexOf("### By chapter"), withLlm.indexOf("## Findings"));
     assert.match(llmIndex, /AXE color-contrast/);
+    assert.match(llmIndex, /### Start here/);
     const empty = renderFindingsReport(
       [],
       { url: "http://127.0.0.1:4173/", generatedAt: "t", runIds: [] },
@@ -1162,12 +1165,69 @@ describe("findings report", () => {
     assert.ok(a11yHead >= 0 && visualHead > a11yHead && qualityHead > visualHead, index);
     assert.ok(a1 < visualHead, "contrast under Accessibility");
     assert.ok(index.indexOf("2 pages") >= 0 && index.indexOf("2 pages") < visualHead, "most pages first in chapter");
+    const contrastAt = index.indexOf("AXE color-contrast");
+    const messyPath = index.indexOf("[`/messy`](http://127.0.0.1:4173/messy)");
+    const quietPath = index.indexOf("[`/quiet`](http://127.0.0.1:4173/quiet)");
+    assert.ok(messyPath > contrastAt && messyPath < visualHead, "messy nests under contrast");
+    assert.ok(quietPath > contrastAt && quietPath < visualHead, "quiet nests under contrast");
     const byPage = md.slice(md.indexOf("## By page"));
     const messy = byPage.indexOf("`/messy` — 4 issues");
     const quiet = byPage.indexOf("`/quiet` — 1 issue · AXE color-contrast");
     assert.ok(messy >= 0, byPage);
     assert.ok(quiet >= 0, byPage);
     assert.ok(messy < quiet, "worst page first");
+  });
+
+  it("nests paths under By chapter and folds when a class hits many pages", () => {
+    const pages = Array.from({ length: 9 }, (_, i) => ({
+      path: `/p${i}`,
+      foundAt: "t",
+      html: [] as [],
+      a11y: [
+        {
+          source: "a11y" as const,
+          rule: "color-contrast",
+          severity: "error" as const,
+          message: "Elements must meet minimum color contrast ratio thresholds",
+          count: 1,
+        },
+      ],
+      visual:
+        i === 0
+          ? [
+              {
+                source: "visual" as const,
+                rule: "clip",
+                severity: "error" as const,
+                message: "AMOUNT header is cut off",
+                count: 1,
+              },
+            ]
+          : [],
+      runtime: [] as [],
+    }));
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: [],
+        qualityFull: true,
+        quality: { schemaVersion: 1, pages },
+      },
+      "/tmp/findings.md",
+    );
+    const index = md.slice(md.indexOf("### By chapter"), md.indexOf("## Findings"));
+    const contrastAt = index.indexOf("[AXE color-contrast]");
+    const clipAt = index.indexOf("[Clip]");
+    assert.ok(contrastAt >= 0 && clipAt > contrastAt, index);
+    assert.match(index.slice(contrastAt, clipAt), /\[AXE color-contrast\]\([^)]+\) — 9 pages/);
+    assert.match(index.slice(contrastAt, clipAt), /<details>/);
+    assert.match(index.slice(contrastAt, clipAt), /<summary>9 paths<\/summary>/);
+    assert.match(index.slice(contrastAt, clipAt), /\[`\/p8`\]\(http:\/\/127\.0\.0\.1:4173\/p8\)/);
+    assert.match(index.slice(clipAt), /\[Clip\]\([^)]+V-02[^)]*\) — 1 page/);
+    assert.match(index.slice(clipAt), /\[`\/p0`\]\(http:\/\/127\.0\.0\.1:4173\/p0\)/);
+    assert.doesNotMatch(index.slice(clipAt), /<details>/);
   });
 
   it("splits accessibility vs visual by SC, including 320 overflow", () => {
