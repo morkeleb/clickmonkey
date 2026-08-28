@@ -657,7 +657,6 @@ function emitLedgerRows(rows: DigestRow[], chapter: ReportChapter, scope: StartS
 function renderChapter(
   chapter: ReportChapter,
   catalog: Catalog,
-  opts?: { coverage?: boolean },
 ): string[] {
   const chrome = catalog.chrome.filter((r) => r.chapter === chapter);
   const clusters = catalog.clusters.filter((r) => r.chapter === chapter);
@@ -668,13 +667,6 @@ function renderChapter(
   if (chrome.length === 0 && clusters.length === 0 && leftoverPages.length === 0) return [];
 
   const lines = [`## ${CHAPTER_HEADING[chapter]}`, ""];
-  if (opts?.coverage) {
-    const a11yRows = catalog.rows.filter((r) => r.chapter === "accessibility");
-    for (const line of coverageLines(a11yRows.map((r) => ({ rule: r.rule, extras: rowExtras(r) })))) {
-      lines.push(line);
-    }
-    lines.push("");
-  }
   if (chrome.length > 0) {
     lines.push("### Chrome", "");
     lines.push(...emitLedgerRows(chrome, chapter, "chrome"), "");
@@ -777,6 +769,22 @@ function coverageForSummary(catalog: Catalog): string[] {
   return coverageLines(a11y.map((r) => ({ rule: r.rule, extras: rowExtras(r) })));
 }
 
+function findingsLeadIn(catalog: Catalog, meta: ReportMeta): string[] {
+  const lines: string[] = [];
+  const coverage = coverageForSummary(catalog);
+  if (coverage.length > 0) {
+    lines.push(...coverage, "");
+  }
+  lines.push(
+    `- **url:** ${meta.url}`,
+    `- **generated:** ${meta.generatedAt}`,
+    `- **runs:** ${meta.runIds.join(", ") || "(none)"}`,
+  );
+  if (meta.brain) lines.push(`- **brain:** ${meta.brain}`);
+  lines.push("");
+  return lines;
+}
+
 function countLine(
   clusters: FindingCluster[],
   runCount: number,
@@ -816,10 +824,6 @@ function fallbackSummary(
       lines.push(`${i + 1}. ${why}.\n   ${checkLink(check)} · ${g.primary.severity}`);
     });
   }
-  const coverage = coverageForSummary(catalog);
-  if (coverage.length > 0) {
-    lines.push("", ...coverage);
-  }
   return lines;
 }
 
@@ -837,7 +841,7 @@ function renderCatalogChapters(catalog: Catalog, includeStartHere: boolean): str
     lines.push("");
   }
   for (const chapter of ["testability", "accessibility", "visual", "quality"] as const) {
-    lines.push(...renderChapter(chapter, catalog, { coverage: chapter === "accessibility" }));
+    lines.push(...renderChapter(chapter, catalog));
   }
   return lines;
 }
@@ -907,13 +911,9 @@ export function renderFindingsReport(
     "",
     ...summaryLines,
     "",
-    `- **url:** ${meta.url}`,
-    `- **generated:** ${meta.generatedAt}`,
-    `- **runs:** ${meta.runIds.join(", ") || "(none)"}`,
-    ...(meta.brain ? [`- **brain:** ${meta.brain}`] : []),
-    "",
     "## Findings",
     "",
+    ...findingsLeadIn(catalog, meta),
   ];
   const grouped = new Map<FindingSeverity, FindingCluster[]>();
   for (const sev of SEV_ORDER) grouped.set(sev, []);
@@ -933,7 +933,7 @@ export function renderFindingsReport(
     lines.push("_No findings in the selected runs._", "");
   }
   for (const chapter of ["testability", "accessibility", "visual", "quality"] as const) {
-    lines.push(...renderChapter(chapter, catalog, { coverage: chapter === "accessibility" }));
+    lines.push(...renderChapter(chapter, catalog));
   }
   const extra = meta.extra?.trim();
   if (extra) {

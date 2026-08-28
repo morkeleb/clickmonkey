@@ -1286,17 +1286,23 @@ describe("findings report", () => {
       },
       "/tmp/findings.md",
     );
+    const findings = md.slice(md.indexOf("## Findings"), md.indexOf("## Accessibility"));
     const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Visual"));
     const visual = md.slice(md.indexOf("## Visual"), md.indexOf("## Quality") === -1 ? md.length : md.indexOf("## Quality"));
+    assert.match(findings, /Checked: WCAG 2\.0\/2\.1 A and AA/);
+    assert.match(findings, /Not checked:.*2\.5\.7.*AAA/);
+    assert.match(findings, /Fails on covered SCs: A — 0 rules; AA — 4 rules\./);
+    assert.match(findings, /- \*\*url:\*\*/);
+    const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
+    assert.doesNotMatch(summary, /Checked: WCAG/);
+    assert.doesNotMatch(summary, /- \*\*url:\*\*/);
     assert.match(a11y, /`color-contrast`/);
     assert.match(a11y, /\*\*AXE color-contrast\*\*/);
     assert.match(a11y, /`focusVisible`/);
     assert.match(a11y, /`targetSize`/);
     assert.match(a11y, /1\.4\.10/);
     assert.match(a11y, /`overflow`/);
-    assert.match(a11y, /Checked: WCAG 2\.0\/2\.1 A and AA/);
-    assert.match(a11y, /Not checked:.*2\.5\.7.*AAA/);
-    assert.match(a11y, /Fails on covered SCs: A — 0 rules; AA — 4 rules\./);
+    assert.doesNotMatch(a11y, /Checked: WCAG/);
     assert.doesNotMatch(a11y, /meets AA/i);
     assert.match(a11y, /`heading-order`/);
     assert.match(visual, /`overlap`/);
