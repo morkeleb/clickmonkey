@@ -10,6 +10,7 @@ import {
   shouldPersistFinding,
   visualIssueMessage,
 } from "../src/persist/finding.js";
+import { collectFindingCases, countFindings } from "../src/persist/runs.js";
 import type { QualityIssue } from "../src/schema/quality.js";
 import { cannedReport } from "../src/reports/canned.js";
 import { Finding, findingId } from "../src/schema/finding.js";
@@ -541,5 +542,40 @@ describe("finding folder", () => {
     );
     assert.equal(written.length, 0);
     assert.deepEqual(findingFolders(outDir), []);
+  });
+
+  it("skips retired run-control kinds when loading finding folders", () => {
+    const runDir = mkdtempSync(join(tmpdir(), "cm-fnd-skip-"));
+    writeFileSync(join(runDir, "log.txt"), "open home\n");
+    const fence = join(runDir, "findings", "fnd_1_fenceViolation");
+    mkdirSync(fence, { recursive: true });
+    writeFileSync(
+      join(fence, "finding.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: "fnd_1_fenceViolation",
+        kind: "fenceViolation",
+        message: "left the fence",
+        tapePath: join(fence, "replay.log"),
+        stepIndex: 1,
+      })}\n`,
+    );
+    const ok = join(runDir, "findings", "fnd_2_pageError");
+    mkdirSync(ok, { recursive: true });
+    writeFileSync(
+      join(ok, "finding.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: "fnd_2_pageError",
+        kind: "pageError",
+        message: "boom",
+        tapePath: join(ok, "replay.log"),
+        stepIndex: 2,
+      })}\n`,
+    );
+    assert.equal(countFindings(runDir), 1);
+    const cases = collectFindingCases([runDir], { tapes: false });
+    assert.equal(cases.length, 1);
+    assert.equal(cases[0]?.finding.kind, "pageError");
   });
 });

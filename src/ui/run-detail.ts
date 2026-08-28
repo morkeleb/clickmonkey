@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { Finding, severityForKind } from "../schema/finding.js";
+import { severityForKind } from "../schema/finding.js";
+import { loadFindingJson } from "../persist/finding.js";
 import {
   UiRunDetail,
   UiRunFinding,
@@ -317,12 +318,8 @@ function collectFindings(runDir: string, runId: string): UiRunFinding[] {
   for (const name of readdirSync(root).sort()) {
     const jsonPath = join(root, name, "finding.json");
     if (!existsSync(jsonPath)) continue;
-    let finding: Finding;
-    try {
-      finding = Finding.parse(JSON.parse(readFileSync(jsonPath, "utf8")));
-    } catch {
-      continue;
-    }
+    const finding = loadFindingJson(jsonPath);
+    if (!finding) continue;
     const shot = join(root, name, "screenshot.png");
     out.push(
       UiRunFinding.parse({

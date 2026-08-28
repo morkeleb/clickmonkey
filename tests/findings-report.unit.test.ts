@@ -1002,9 +1002,9 @@ describe("findings report", () => {
       },
     };
     const fullIndex = renderFindingsReport([], withShell, "/tmp/findings.md");
-    const byPage = fullIndex.slice(fullIndex.indexOf("## By page"));
-    assert.match(byPage, /`\/shell` — 1 issue · AXE color-contrast/);
+    assert.doesNotMatch(fullIndex, /## By page/);
     assert.doesNotMatch(fullIndex, /^#### `\/shell`/m);
+    assert.match(fullIndex, /`color-contrast` · error · chrome/);
   });
 
   it("explains spec-name labels before they appear", () => {
@@ -1056,11 +1056,11 @@ describe("findings report", () => {
     assert.ok(summary.indexOf("**Visual**") < summary.indexOf("Overlap"));
     assert.ok(summary.indexOf("AXE color-contrast") < summary.indexOf("[`/`]"), "path nests under the class");
     assert.ok(summary.indexOf("### By chapter") < summary.indexOf("### Start here"));
-    const byPage = md.slice(md.indexOf("## By page"));
-    assert.match(byPage, /Same spec tags as in By chapter/);
-    assert.match(byPage, /Worst pages first/);
-    assert.match(byPage, /`\/` — 2 issues · AXE color-contrast, Overlap/);
-    assert.ok(byPage.indexOf("Same spec tags") < byPage.indexOf("AXE color-contrast"));
+    assert.doesNotMatch(md, /## By page/);
+    assert.match(md, /### Pages/);
+    assert.ok(md.includes("#### `/`"), md);
+    assert.match(md, /\*\*AXE color-contrast\*\*/);
+    assert.match(md, /\*\*Overlap\*\*/);
     const withLlm = renderFindingsReport(
       [],
       meta,
@@ -1081,7 +1081,7 @@ describe("findings report", () => {
     assert.doesNotMatch(empty, /### Labels/);
   });
 
-  it("ranks issue classes by pages and By page by issue count", () => {
+  it("ranks issue classes by pages and leftover Pages by unique issues", () => {
     const md = renderFindingsReport(
       [],
       {
@@ -1170,12 +1170,9 @@ describe("findings report", () => {
     const quietPath = index.indexOf("[`/quiet`](http://127.0.0.1:4173/quiet)");
     assert.ok(messyPath > contrastAt && messyPath < visualHead, "messy nests under contrast");
     assert.ok(quietPath > contrastAt && quietPath < visualHead, "quiet nests under contrast");
-    const byPage = md.slice(md.indexOf("## By page"));
-    const messy = byPage.indexOf("`/messy` — 4 issues");
-    const quiet = byPage.indexOf("`/quiet` — 1 issue · AXE color-contrast");
-    assert.ok(messy >= 0, byPage);
-    assert.ok(quiet >= 0, byPage);
-    assert.ok(messy < quiet, "worst page first");
+    assert.doesNotMatch(md, /## By page/);
+    assert.ok(md.includes("#### `/messy`"), md);
+    assert.ok(!md.includes("#### `/quiet`"), md);
   });
 
   it("nests paths under By chapter and folds when a class hits many pages", () => {

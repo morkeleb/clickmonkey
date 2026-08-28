@@ -102,8 +102,6 @@ describe("wrapReportPrintBlocks", () => {
         "<h2>Quality</h2>",
         "<h3>Chrome</h3>",
         "<ul><li>element-permitted-content</li></ul>",
-        "<h2>By page</h2>",
-        "<ul><li>/vouchers</li></ul>",
         "<h2>Appendix</h2>",
       ].join(""),
     );
@@ -116,7 +114,7 @@ describe("wrapReportPrintBlocks", () => {
     assert.match(html, /<div class="report-card"><h3>HTTP 409<\/h3>/);
     assert.match(html, /<div class="report-subcard"><h4>/);
     assert.equal((html.match(/class="report-card"/g) ?? []).length, 1);
-    for (const chapter of ["Testability", "Accessibility", "Visual", "Quality", "By page"]) {
+    for (const chapter of ["Testability", "Accessibility", "Visual", "Quality"]) {
       assert.match(html, new RegExp(`<h2>${chapter}</h2>`));
     }
   });

@@ -38,9 +38,11 @@ function unlinkIfOutsideFindings(outDir: string, path: string): void {
   }
 }
 
-function loadFindingJson(path: string): Finding | undefined {
+/** Skip folders whose `kind` is no longer a finding (fence bounce, writePolicy, …). */
+export function loadFindingJson(path: string): Finding | undefined {
   try {
-    return Finding.parse(JSON.parse(readFileSync(path, "utf8")));
+    const parsed = Finding.safeParse(JSON.parse(readFileSync(path, "utf8")));
+    return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }

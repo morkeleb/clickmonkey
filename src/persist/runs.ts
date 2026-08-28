@@ -3,7 +3,8 @@ import { basename, dirname, join } from "node:path";
 import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { findingHitOf, type FindingHit } from "../reports/check.js";
 import { formatLog, parseLog } from "../schema/dsl.js";
-import { Finding, severityForKind, type FindingSeverity } from "../schema/finding.js";
+import { type Finding, severityForKind, type FindingSeverity } from "../schema/finding.js";
+import { loadFindingJson } from "./finding.js";
 import { runsDir } from "./workspace.js";
 
 export interface RunSummary {
@@ -119,7 +120,7 @@ export function listRuns(configPath: string): RunSummary[] {
 export function countFindings(runDir: string): number {
   const root = join(runDir, "findings");
   if (!existsSync(root)) return 0;
-  return readdirSync(root).filter((name) => existsSync(join(root, name, "finding.json"))).length;
+  return readdirSync(root).filter((name) => Boolean(loadFindingJson(join(root, name, "finding.json")))).length;
 }
 
 export function resolveRunDirs(configPath: string, selectors: string[]): string[] {
@@ -165,8 +166,8 @@ export function collectFindingCases(
     for (const name of readdirSync(root).sort()) {
       const folder = join(root, name);
       const jsonPath = join(folder, "finding.json");
-      if (!existsSync(jsonPath)) continue;
-      const finding = Finding.parse(JSON.parse(readFileSync(jsonPath, "utf8")));
+      const finding = loadFindingJson(jsonPath);
+      if (!finding) continue;
       const description =
         wantTapes && existsSync(join(folder, "report.md"))
           ? readFileSync(join(folder, "report.md"), "utf8").trim()

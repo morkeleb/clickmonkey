@@ -740,27 +740,6 @@ function compareLabel(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true });
 }
 
-function issueCountTrail(n: number): string {
-  return `${n} issue${n === 1 ? "" : "s"}`;
-}
-
-function pageLabels(catalog: Catalog, page: string): string[] {
-  return catalog.rows
-    .filter((r) => r.pageSet.has(page) && r.label)
-    .map((r) => r.label!)
-    .filter((v, i, all) => all.indexOf(v) === i)
-    .sort(compareLabel);
-}
-
-function pagesByIssueCount(pages: readonly string[], catalog: Catalog): string[] {
-  return [...pages].sort((a, b) => {
-    const nb = pageLabels(catalog, b).length;
-    const na = pageLabels(catalog, a).length;
-    if (nb !== na) return nb - na;
-    return a.localeCompare(b);
-  });
-}
-
 type ChapterIssue = { label: string; rule: string; pages: Set<string>; row: DigestRow };
 
 function chapterIssues(catalog: Catalog): Map<ReportChapter, ChapterIssue[]> {
@@ -838,28 +817,7 @@ function withChapterIndex(summaryLines: string[], catalog: Catalog, appUrl: stri
   return [...summaryLines, "", ...index];
 }
 
-function renderByPage(catalog: Catalog, qualityFull?: boolean): string[] {
-  const raw = qualityFull
-    ? [...new Set(catalog.rows.flatMap((r) => [...r.pageSet]))]
-    : catalog.leftoverPages;
-  const pages = pagesByIssueCount(raw, catalog);
-  if (pages.length === 0) return [];
-  const lines = ["## By page", ""];
-  if (hasClassLabels(catalog)) {
-    lines.push(
-      "Same spec tags as in By chapter — jump to that class in the chapters above. Worst pages first.",
-      "",
-    );
-  }
-  for (const page of pages) {
-    const labels = pageLabels(catalog, page);
-    if (labels.length === 0) continue;
-    lines.push(`- \`${page}\` — ${issueCountTrail(labels.length)} · ${labels.join(", ")}`);
-  }
-  if (lines.length === 2) return [];
-  lines.push("");
-  return lines;
-}
+
 
 function coverageForSummary(catalog: Catalog): string[] {
   const a11y = catalog.rows.filter((r) => r.chapter === "accessibility");
@@ -1025,7 +983,6 @@ export function renderFindingsReport(
   for (const chapter of ["testability", "accessibility", "visual", "quality"] as const) {
     lines.push(...renderChapter(chapter, catalog, { coverage: chapter === "accessibility" }));
   }
-  lines.push(...renderByPage(catalog, meta.qualityFull));
   const extra = meta.extra?.trim();
   if (extra) {
     lines.push("## Extra", "", extra, "");
