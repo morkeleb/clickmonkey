@@ -1051,10 +1051,9 @@ describe("findings report", () => {
     assert.match(summary, /- \*\*Visual\*\*/);
     assert.match(summary, /\[AXE color-contrast\]\([^)]+axe\/4\.13\/color-contrast\) — 1 page/);
     assert.match(summary, /\[Overlap\]\([^)]+V-03[^)]*\) — 1 page/);
-    assert.match(summary, /\[`\/`\]\(http:\/\/127\.0\.0\.1:4173\/\)/);
+    assert.doesNotMatch(summary, /\[`\//);
     assert.ok(summary.indexOf("**Accessibility**") < summary.indexOf("AXE color-contrast"));
     assert.ok(summary.indexOf("**Visual**") < summary.indexOf("Overlap"));
-    assert.ok(summary.indexOf("AXE color-contrast") < summary.indexOf("[`/`]"), "path nests under the class");
     assert.ok(summary.indexOf("### By chapter") < summary.indexOf("### Start here"));
     assert.doesNotMatch(md, /## By page/);
     assert.match(md, /### Pages/);
@@ -1165,70 +1164,10 @@ describe("findings report", () => {
     assert.ok(a11yHead >= 0 && visualHead > a11yHead && qualityHead > visualHead, index);
     assert.ok(a1 < visualHead, "contrast under Accessibility");
     assert.ok(index.indexOf("2 pages") >= 0 && index.indexOf("2 pages") < visualHead, "most pages first in chapter");
-    const contrastAt = index.indexOf("AXE color-contrast");
-    const messyPath = index.indexOf("[`/messy`](http://127.0.0.1:4173/messy)");
-    const quietPath = index.indexOf("[`/quiet`](http://127.0.0.1:4173/quiet)");
-    assert.ok(messyPath > contrastAt && messyPath < visualHead, "messy nests under contrast");
-    assert.ok(quietPath > contrastAt && quietPath < visualHead, "quiet nests under contrast");
+    assert.doesNotMatch(index, /\[`\//);
     assert.doesNotMatch(md, /## By page/);
     assert.ok(md.includes("#### `/messy`"), md);
     assert.ok(!md.includes("#### `/quiet`"), md);
-  });
-
-  it("nests paths under By chapter and groups long classes by prefix", () => {
-    const pages = Array.from({ length: 9 }, (_, i) => ({
-      path: i < 4 ? `/acct/p${i}` : `/trust/p${i}`,
-      foundAt: "t",
-      html: [] as [],
-      a11y: [
-        {
-          source: "a11y" as const,
-          rule: "color-contrast",
-          severity: "error" as const,
-          message: "Elements must meet minimum color contrast ratio thresholds",
-          count: 1,
-        },
-      ],
-      visual:
-        i === 0
-          ? [
-              {
-                source: "visual" as const,
-                rule: "clip",
-                severity: "error" as const,
-                message: "AMOUNT header is cut off",
-                count: 1,
-              },
-            ]
-          : [],
-      runtime: [] as [],
-    }));
-    const md = renderFindingsReport(
-      [],
-      {
-        url: "http://127.0.0.1:4173/",
-        generatedAt: "t",
-        runIds: [],
-        qualityFull: true,
-        quality: { schemaVersion: 1, pages },
-      },
-      "/tmp/findings.md",
-    );
-    const index = md.slice(md.indexOf("### By chapter"), md.indexOf("## Findings"));
-    const contrastAt = index.indexOf("[AXE color-contrast]");
-    const clipAt = index.indexOf("[Clip]");
-    assert.ok(contrastAt >= 0 && clipAt > contrastAt, index);
-    const contrast = index.slice(contrastAt, clipAt);
-    assert.match(contrast, /\[AXE color-contrast\]\([^)]+\) — 9 pages/);
-    assert.doesNotMatch(contrast, /<details>/);
-    assert.match(contrast, /`\/trust` — 5/);
-    assert.match(contrast, /`\/acct` — 4/);
-    assert.ok(contrast.indexOf("`/trust` — 5") < contrast.indexOf("`/acct` — 4"), contrast);
-    assert.match(contrast, /\[`\/trust\/p8`\]\(http:\/\/127\.0\.0\.1:4173\/trust\/p8\)/);
-    const clip = index.slice(clipAt);
-    assert.match(clip, /\[Clip\]\([^)]+V-02[^)]*\) — 1 page/);
-    assert.match(clip, /\[`\/acct\/p0`\]\(http:\/\/127\.0\.0\.1:4173\/acct\/p0\)/);
-    assert.doesNotMatch(clip, /`\/acct` —/);
   });
 
   it("splits accessibility vs visual by SC, including 320 overflow", () => {
