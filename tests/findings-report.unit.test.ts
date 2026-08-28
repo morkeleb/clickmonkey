@@ -806,11 +806,51 @@ describe("findings report", () => {
       "/tmp/findings.md",
     );
     const start = md.slice(md.indexOf("### Start here"), md.indexOf("### Chrome"));
-    assert.match(start, /Fix `color-contrast` \(shared shell/);
     assert.match(start, /theme token/);
-    assert.match(start, /2\. Fix `clickableNonWidget` \(same component/);
+    assert.match(start, /\[AXE color-contrast\]/);
+    assert.match(start, /shared shell/);
+    assert.match(start, /2\. /);
+    assert.match(start, /click lives on a div/);
     assert.match(start, /mostly `\/pipelines`/);
-    assert.ok(start.indexOf("clickableNonWidget") < start.indexOf("button-name"));
+    assert.doesNotMatch(start, /Fix `/);
+    assert.ok(start.indexOf("click lives on a div") < start.indexOf("discernible text"), start);
+  });
+
+  it("Start here lists five items and leads with why", () => {
+    const rules = ["clip", "overlap", "scanline", "zIndex", "sparse", "textOcclusion"] as const;
+    const pages = rules.map((rule, i) => ({
+      path: `/p${i}`,
+      foundAt: "t",
+      html: [] as [],
+      a11y: [] as [],
+      visual: [
+        {
+          source: "visual" as const,
+          rule,
+          severity: "error" as const,
+          message: `${rule} hit`,
+          count: 1,
+        },
+      ],
+      runtime: [] as [],
+    }));
+    const md = renderFindingsReport(
+      [],
+      {
+        url: "http://127.0.0.1:4173/",
+        generatedAt: "t",
+        runIds: [],
+        qualityFull: true,
+        quality: { schemaVersion: 1, pages },
+      },
+      "/tmp/findings.md",
+    );
+    const start = md.slice(md.indexOf("### Start here"), md.indexOf("## Visual"));
+    assert.match(start, /^5\. /m);
+    assert.doesNotMatch(start, /^6\. /m);
+    assert.doesNotMatch(start, /Fix `/);
+    assert.match(start, /cut off mid-glyph/);
+    assert.match(start, /Two things occupy the same pixels/);
   });
 
   it("enrichWithBrain keeps only known ids", async () => {
@@ -1316,7 +1356,7 @@ describe("findings report", () => {
     );
     assert.match(md, /0 findings from 1 run \(none\)/);
     assert.match(md, /### Start here/);
-    assert.match(md, /Fix `no-multiple-main`/);
+    assert.match(md, /More than one main landmark/);
     const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
     assert.ok(summary.includes("Start here"));
   });

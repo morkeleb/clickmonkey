@@ -38,6 +38,9 @@ const SEV_ORDER: FindingSeverity[] = ["critical", "major", "minor", "suggestion"
 /** Unique-to-a-route pages with their own issues shown in default reports. */
 export const LEFTOVER_PAGE_CAP = 8;
 
+/** How many Start here items to list. */
+export const START_HERE = 5;
+
 const CHAPTER_HEADING: Record<ReportChapter, string> = {
   testability: "Testability",
   accessibility: "Accessibility",
@@ -375,18 +378,14 @@ function formatStartItem(row: DigestRow, scope: StartScope): string {
         ? `${wherePages(row)}, mostly \`${family}\``
         : wherePages(row);
   const check = row.check ?? checkOf(row.rule, rowExtras(row));
-  const msg = shortQualityMessage(row.message);
   const scopeLabel =
     scope === "chrome" ? "shared shell" : scope === "cluster" ? "same component" : "this page only";
-  const head = `Fix \`${row.rule}\` (${scopeLabel}, ${where})`;
-  const detail: string[] = [];
-  if (row.message.includes("<")) detail.push(msg.replace(/\.$/, ""));
-  else if (!check) detail.push(msg.replace(/\.$/, ""));
-  if (row.where) detail.push(`Look at ${markdownSafeQualityMessage(row.where)}`);
-  if (check) {
-    detail.push(`${check.why.replace(/\.$/, "")} ${checkLink(check)}`);
-  }
-  return detail.length > 0 ? `${head} — ${detail.join(". ")}.` : head;
+  const why = (check?.why ?? shortQualityMessage(row.message)).replace(/\.$/, "");
+  const title = check ? checkLink(check) : `\`${row.rule}\``;
+  const loc = [`${scopeLabel} · ${where}`];
+  if (row.message.includes("<") && check) loc.unshift(shortQualityMessage(row.message).replace(/\.$/, ""));
+  if (row.where) loc.push(`Look at ${markdownSafeQualityMessage(row.where)}`);
+  return `${why}.\n   ${title} · ${loc.join(" · ")}`;
 }
 
 function rankStartClusters(clusters: DigestRow[]): DigestRow[] {
@@ -410,14 +409,14 @@ function pickStartHere(
   const seen = new Set<string>();
   const push = (row: DigestRow, scope: StartScope) => {
     const key = digestKey(row);
-    if (seen.has(key) || out.length >= 3) return;
+    if (seen.has(key) || out.length >= START_HERE) return;
     seen.add(key);
     out.push({ row, scope });
   };
   const chromeErrors = chrome.filter((r) => r.severity === "error");
   const chromeWarns = chrome.filter((r) => r.severity !== "error");
   const hasLocal = clusters.length > 0 || uniqueRows.length > 0;
-  const chromeSlots = hasLocal ? 2 : 3;
+  const chromeSlots = hasLocal ? 2 : START_HERE;
   for (const row of chromeErrors) {
     if (out.length >= chromeSlots) break;
     push(row, "chrome");
@@ -427,9 +426,9 @@ function pickStartHere(
     push(row, "chrome");
   }
   for (const row of rankStartClusters(clusters)) push(row, "cluster");
-  if (out.length < 3) {
-    const topUnique = sortDigestRows(uniqueRows)[0];
-    if (topUnique) push(topUnique, "page");
+  for (const row of sortDigestRows(uniqueRows)) {
+    if (out.length >= START_HERE) break;
+    push(row, "page");
   }
   return out;
 }
@@ -811,9 +810,10 @@ function fallbackSummary(
     });
   } else if (clusters.length > 0) {
     lines.push("", "### Start here", "");
-    clusters.slice(0, 3).forEach((g, i) => {
-      const title = findingReportTitle(g.primary.finding.kind, g.primary.title || g.primary.finding.message);
-      lines.push(`${i + 1}. ${title} (${g.primary.severity})`);
+    clusters.slice(0, START_HERE).forEach((g, i) => {
+      const check = g.primary.check;
+      const why = check.why.replace(/\.$/, "");
+      lines.push(`${i + 1}. ${why}.\n   ${checkLink(check)} · ${g.primary.severity}`);
     });
   }
   const coverage = coverageForSummary(catalog);
