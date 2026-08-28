@@ -341,19 +341,36 @@ function formatIndexPageItem(page: string, appUrl: string): string {
   return href ? `[${code}](${href})` : code;
 }
 
+function indexPathGroup(page: string): string {
+  const seg = firstPathSegment(page);
+  return seg ? `/${seg}` : "/";
+}
+
 function renderIndexPaths(pages: ReadonlySet<string>, appUrl: string): string[] {
   const names = [...pages].sort((a, b) => a.localeCompare(b));
   if (names.length === 0) return [];
-  const items = names.map((p) => `    - ${formatIndexPageItem(p, appUrl)}`);
-  if (names.length <= INDEX_PATHS_OPEN) return items;
-  return [
-    "    <details>",
-    `    <summary>${names.length} paths</summary>`,
-    "",
-    ...items,
-    "",
-    "    </details>",
-  ];
+  const leaf = (page: string, indent: string) => `${indent}- ${formatIndexPageItem(page, appUrl)}`;
+  if (names.length <= INDEX_PATHS_OPEN) return names.map((p) => leaf(p, "    "));
+  const groups = new Map<string, string[]>();
+  for (const page of names) {
+    const key = indexPathGroup(page);
+    const list = groups.get(key) ?? [];
+    list.push(page);
+    groups.set(key, list);
+  }
+  const ordered = [...groups.entries()].sort(
+    (a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]),
+  );
+  const lines: string[] = [];
+  for (const [group, groupPages] of ordered) {
+    if (groupPages.length === 1) {
+      lines.push(leaf(groupPages[0]!, "    "));
+      continue;
+    }
+    lines.push(`    - \`${group}\` — ${groupPages.length}`);
+    for (const page of groupPages) lines.push(leaf(page, "      "));
+  }
+  return lines;
 }
 
 function formatLedgerRow(row: DigestRow, scope: StartScope, page?: string): string {

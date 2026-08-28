@@ -1175,9 +1175,9 @@ describe("findings report", () => {
     assert.ok(!md.includes("#### `/quiet`"), md);
   });
 
-  it("nests paths under By chapter and folds when a class hits many pages", () => {
+  it("nests paths under By chapter and groups long classes by prefix", () => {
     const pages = Array.from({ length: 9 }, (_, i) => ({
-      path: `/p${i}`,
+      path: i < 4 ? `/acct/p${i}` : `/trust/p${i}`,
       foundAt: "t",
       html: [] as [],
       a11y: [
@@ -1218,13 +1218,17 @@ describe("findings report", () => {
     const contrastAt = index.indexOf("[AXE color-contrast]");
     const clipAt = index.indexOf("[Clip]");
     assert.ok(contrastAt >= 0 && clipAt > contrastAt, index);
-    assert.match(index.slice(contrastAt, clipAt), /\[AXE color-contrast\]\([^)]+\) — 9 pages/);
-    assert.match(index.slice(contrastAt, clipAt), /<details>/);
-    assert.match(index.slice(contrastAt, clipAt), /<summary>9 paths<\/summary>/);
-    assert.match(index.slice(contrastAt, clipAt), /\[`\/p8`\]\(http:\/\/127\.0\.0\.1:4173\/p8\)/);
-    assert.match(index.slice(clipAt), /\[Clip\]\([^)]+V-02[^)]*\) — 1 page/);
-    assert.match(index.slice(clipAt), /\[`\/p0`\]\(http:\/\/127\.0\.0\.1:4173\/p0\)/);
-    assert.doesNotMatch(index.slice(clipAt), /<details>/);
+    const contrast = index.slice(contrastAt, clipAt);
+    assert.match(contrast, /\[AXE color-contrast\]\([^)]+\) — 9 pages/);
+    assert.doesNotMatch(contrast, /<details>/);
+    assert.match(contrast, /`\/trust` — 5/);
+    assert.match(contrast, /`\/acct` — 4/);
+    assert.ok(contrast.indexOf("`/trust` — 5") < contrast.indexOf("`/acct` — 4"), contrast);
+    assert.match(contrast, /\[`\/trust\/p8`\]\(http:\/\/127\.0\.0\.1:4173\/trust\/p8\)/);
+    const clip = index.slice(clipAt);
+    assert.match(clip, /\[Clip\]\([^)]+V-02[^)]*\) — 1 page/);
+    assert.match(clip, /\[`\/acct\/p0`\]\(http:\/\/127\.0\.0\.1:4173\/acct\/p0\)/);
+    assert.doesNotMatch(clip, /`\/acct` —/);
   });
 
   it("splits accessibility vs visual by SC, including 320 overflow", () => {
