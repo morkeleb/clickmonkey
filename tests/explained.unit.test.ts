@@ -26,6 +26,9 @@ describe("check (finding class)", () => {
     assert.equal(checkOf("color-contrast")?.code, "AXE color-contrast");
     assert.equal(checkOf("color-contrast")?.title, "AXE color-contrast");
     assert.equal(checkOf("no-dup-id")?.code, "html-validate no-dup-id");
+    assert.equal(checkOf("no-dup-id")?.title, "html-validate no-dup-id");
+    assert.equal(checkOf("no-dup-id")?.href, "https://html-validate.org/rules/no-dup-id.html");
+    assert.match(checkOf("no-dup-id")?.why ?? "", /id/);
     assert.equal(checkOf("tabindex")?.code, "AXE tabindex");
     assert.equal(checkOf("clickableNonWidget")?.code, "A-2.1.1");
     assert.equal(checkOf("clickableNonWidget")?.title, "WCAG 2.1.1 Keyboard");

@@ -1,10 +1,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { catalogIndexMarkdown } from "../src/reports/catalog-lists.js";
+import { catalogIndexMarkdown, htmlValidatePageId } from "../src/reports/catalog-lists.js";
 import { CHECKS, FINDINGS_SITE } from "../src/reports/check-catalog.js";
+import { mustCheck } from "../src/reports/check.js";
 import { QA_LEFT } from "../src/reports/qa-left.js";
-import { specLink, wcagUnderstandingHref } from "../src/reports/spec-links.js";
+import { HTMLVALIDATE_RULES, specLink, wcagUnderstandingHref } from "../src/reports/spec-links.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "docs", "findings");
@@ -47,6 +48,31 @@ for (const check of CHECKS) {
   writeFileSync(join(outDir, `${check.id}.md`), pageMarkdown(check));
 }
 
+function htmlValidatePageMarkdown(rule: string): string {
+  const check = mustCheck(rule);
+  const id = htmlValidatePageId(rule);
+  return `---
+title: "${check.title}"
+permalink: /findings/${id}/
+---
+
+# ${check.title}
+
+**Chapter:** ${check.chapter}  
+**Rule:** \`${check.rule}\`  
+**html-validate:** [${check.title}](${check.href}) — official.
+
+${check.why}
+
+This handle is only “we found \`${check.rule}\`.” The requirement is the html-validate page, not this catalog.
+`;
+}
+
+for (const rule of HTMLVALIDATE_RULES) {
+  const id = htmlValidatePageId(rule);
+  writeFileSync(join(outDir, `${id}.md`), htmlValidatePageMarkdown(rule));
+}
+
 const qaRows = QA_LEFT.map(
   (item) =>
     `| ${item.sc} ${item.level} | ${item.title} | ${item.why} | ${item.qa} |`,
@@ -81,4 +107,4 @@ ${catalogIndexMarkdown().trim()}
 Site: ${FINDINGS_SITE}/findings/
 `;
 writeFileSync(join(outDir, "index.md"), index);
-console.log(`wrote ${CHECKS.length + 2} pages under docs/findings/`);
+console.log(`wrote ${CHECKS.length + HTMLVALIDATE_RULES.length + 2} pages under docs/findings/`);

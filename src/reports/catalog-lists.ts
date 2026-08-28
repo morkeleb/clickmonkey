@@ -72,10 +72,21 @@ export function wcagRows(): CatalogListRow[] {
   }).sort((a, b) => (a.sc ?? a.rule).localeCompare(b.sc ?? b.rule, undefined, { numeric: true }));
 }
 
+/** Catalog handle for an html-validate Check (`html-validate-no-dup-id`). */
+export function htmlValidatePageId(rule: string): string {
+  return `html-validate-${rule}`;
+}
+
 export function htmlValidateRows(): CatalogListRow[] {
   return HTMLVALIDATE_RULES.map((rule) => {
     const spec = mustSpec(rule);
-    return { list: "html-validate" as const, rule, title: spec.label, href: spec.href };
+    return {
+      list: "html-validate" as const,
+      rule,
+      id: htmlValidatePageId(rule),
+      title: spec.label,
+      href: spec.href,
+    };
   });
 }
 
@@ -165,11 +176,11 @@ ${mdTable(
 
 ## html-validate
 
-Original: [html-validate rules](https://html-validate.org/rules/).
+html-validate:standard after inspect. Reports tag these as **html-validate {rule}**. Original: [html-validate rules](https://html-validate.org/rules/).
 
 ${mdTable(
-    ["Rule", "Original"],
-    htmlv.map((r) => [`\`${r.rule}\``, originalLink(r)]),
+    ["Check", "Rule", "Original"],
+    htmlv.map((r) => [`[${r.title}](${r.id}/)`, `\`${r.rule}\``, originalLink(r)]),
   )}
 
 ## HTML

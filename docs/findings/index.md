@@ -160,20 +160,20 @@ DOM detectors ClickMonkey runs itself. Original: W3C Understanding. `A-*` is onl
 
 ## html-validate
 
-Original: [html-validate rules](https://html-validate.org/rules/).
+html-validate:standard after inspect. Reports tag these as **html-validate {rule}**. Original: [html-validate rules](https://html-validate.org/rules/).
 
-| Rule | Original |
-|---|---|
-| `element-permitted-content` | [html-validate element-permitted-content](https://html-validate.org/rules/element-permitted-content.html) |
-| `attribute-misuse` | [html-validate attribute-misuse](https://html-validate.org/rules/attribute-misuse.html) |
-| `no-multiple-main` | [html-validate no-multiple-main](https://html-validate.org/rules/no-multiple-main.html) |
-| `aria-label-misuse` | [html-validate aria-label-misuse](https://html-validate.org/rules/aria-label-misuse.html) |
-| `attribute-allowed-values` | [html-validate attribute-allowed-values](https://html-validate.org/rules/attribute-allowed-values.html) |
-| `element-required-attributes` | [html-validate element-required-attributes](https://html-validate.org/rules/element-required-attributes.html) |
-| `no-dup-id` | [html-validate no-dup-id](https://html-validate.org/rules/no-dup-id.html) |
-| `close-order` | [html-validate close-order](https://html-validate.org/rules/close-order.html) |
-| `element-required-content` | [html-validate element-required-content](https://html-validate.org/rules/element-required-content.html) |
-| `void-content` | [html-validate void-content](https://html-validate.org/rules/void-content.html) |
+| Check | Rule | Original |
+|---|---|---|
+| [html-validate element-permitted-content](html-validate-element-permitted-content/) | `element-permitted-content` | [html-validate element-permitted-content](https://html-validate.org/rules/element-permitted-content.html) |
+| [html-validate attribute-misuse](html-validate-attribute-misuse/) | `attribute-misuse` | [html-validate attribute-misuse](https://html-validate.org/rules/attribute-misuse.html) |
+| [html-validate no-multiple-main](html-validate-no-multiple-main/) | `no-multiple-main` | [html-validate no-multiple-main](https://html-validate.org/rules/no-multiple-main.html) |
+| [html-validate aria-label-misuse](html-validate-aria-label-misuse/) | `aria-label-misuse` | [html-validate aria-label-misuse](https://html-validate.org/rules/aria-label-misuse.html) |
+| [html-validate attribute-allowed-values](html-validate-attribute-allowed-values/) | `attribute-allowed-values` | [html-validate attribute-allowed-values](https://html-validate.org/rules/attribute-allowed-values.html) |
+| [html-validate element-required-attributes](html-validate-element-required-attributes/) | `element-required-attributes` | [html-validate element-required-attributes](https://html-validate.org/rules/element-required-attributes.html) |
+| [html-validate no-dup-id](html-validate-no-dup-id/) | `no-dup-id` | [html-validate no-dup-id](https://html-validate.org/rules/no-dup-id.html) |
+| [html-validate close-order](html-validate-close-order/) | `close-order` | [html-validate close-order](https://html-validate.org/rules/close-order.html) |
+| [html-validate element-required-content](html-validate-element-required-content/) | `element-required-content` | [html-validate element-required-content](https://html-validate.org/rules/element-required-content.html) |
+| [html-validate void-content](html-validate-void-content/) | `void-content` | [html-validate void-content](https://html-validate.org/rules/void-content.html) |
 
 ## HTML
 

@@ -55,6 +55,8 @@ describe("catalog lists", () => {
     assert.match(keyboard?.href ?? "", /Understanding\/keyboard/);
     assert.equal(keyboard?.id, "A-2.1.1");
     const dup = htmlValidateRows().find((r) => r.rule === "no-dup-id");
+    assert.equal(dup?.title, "html-validate no-dup-id");
+    assert.equal(dup?.id, "html-validate-no-dup-id");
     assert.match(dup?.href ?? "", /html-validate\.org\/rules\/no-dup-id/);
     const submit = htmlRows().find((r) => r.rule === "implicitSubmit");
     assert.match(submit?.href ?? "", /html\.spec\.whatwg\.org/);
@@ -83,5 +85,8 @@ describe("catalog lists", () => {
     assert.match(axe, /`color-contrast`/);
     assert.doesNotMatch(axe, /`clickableNonWidget`/);
     assert.doesNotMatch(md, /Q-19|fenceViolation|writePolicyBlocked|`uiIssue`/);
+    assert.match(md, /\[html-validate no-dup-id\]\(html-validate-no-dup-id\/\)/);
+    assert.match(md, /\[html-validate no-dup-id\]\(https:\/\/html-validate\.org\/rules\/no-dup-id\.html\)/);
+    assert.match(md, /\[html-validate element-permitted-content\]\(html-validate-element-permitted-content\/\)/);
   });
 });
