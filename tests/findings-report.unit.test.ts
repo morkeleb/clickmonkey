@@ -593,7 +593,7 @@ describe("findings report", () => {
     assert.match(md, /main\.layout/);
     assert.match(md, /Ga\(\.\.\.\) is not a function/);
     assert.match(md, /#### `\/`/);
-    assert.match(md, /`pageError` · error/);
+    assert.match(md, /\*\*Uncaught JavaScript\*\* · error/);
     assert.doesNotMatch(md, / {2}- `no-multiple-main`/);
     assert.doesNotMatch(md, /`\/vendors` —/);
     assert.doesNotMatch(md, /Recurring rules/);
@@ -707,7 +707,7 @@ describe("findings report", () => {
     );
     assert.match(md, /### Start here/);
     assert.match(md, /### On several pages/);
-    assert.match(md, /clickableNonWidget/);
+    assert.match(md, /WCAG 2\.1\.1 Keyboard/);
     assert.match(md, /`<div>`/);
     assert.match(md, /`<style>` element is not permitted as content under `<div>`/);
     assert.doesNotMatch(md, / — <style>/);
@@ -1005,7 +1005,7 @@ describe("findings report", () => {
     };
     const md = renderFindingsReport([], meta, "/tmp/findings.md");
     assert.match(md, /## Accessibility/);
-    assert.match(md, /\*\*AXE color-contrast\*\* · AA · 1\.4\.3 · `color-contrast` · error · chrome · 9 pages/);
+    assert.match(md, /\*\*AXE color-contrast\*\* · error · chrome · 9 pages/);
     assert.match(md, /## Quality/);
     assert.equal((md.match(/^#### `/gm) ?? []).length, 8);
     assert.match(md, /#### `\/p0`/);
@@ -1014,7 +1014,7 @@ describe("findings report", () => {
     const full = renderFindingsReport([], { ...meta, qualityFull: true }, "/tmp/findings.md");
     assert.match(full, /#### `\/p8`/);
     assert.equal((full.match(/^#### `/gm) ?? []).length, 9);
-    assert.match(full, /`color-contrast` · error · chrome · 9 pages/);
+    assert.match(full, /\*\*AXE color-contrast\*\* · error · chrome · 9 pages/);
     const withShell = {
       ...meta,
       qualityFull: true,
@@ -1044,7 +1044,7 @@ describe("findings report", () => {
     const fullIndex = renderFindingsReport([], withShell, "/tmp/findings.md");
     assert.doesNotMatch(fullIndex, /## By page/);
     assert.doesNotMatch(fullIndex, /^#### `\/shell`/m);
-    assert.match(fullIndex, /`color-contrast` · error · chrome/);
+    assert.match(fullIndex, /\*\*AXE color-contrast\*\* · error · chrome/);
   });
 
   it("explains spec-name labels before they appear", () => {
@@ -1296,16 +1296,13 @@ describe("findings report", () => {
     const summary = md.slice(md.indexOf("## Summary"), md.indexOf("## Findings"));
     assert.doesNotMatch(summary, /Checked: WCAG/);
     assert.doesNotMatch(summary, /- \*\*url:\*\*/);
-    assert.match(a11y, /`color-contrast`/);
     assert.match(a11y, /\*\*AXE color-contrast\*\*/);
-    assert.match(a11y, /`focusVisible`/);
-    assert.match(a11y, /`targetSize`/);
+    assert.match(a11y, /Focus visible/);
+    assert.match(a11y, /Target size/);
     assert.match(a11y, /1\.4\.10/);
-    assert.match(a11y, /`overflow`/);
+    assert.match(a11y, /heading-order/i);
     assert.doesNotMatch(a11y, /Checked: WCAG/);
     assert.doesNotMatch(a11y, /meets AA/i);
-    assert.match(a11y, /`heading-order`/);
-    assert.match(visual, /`overlap`/);
     assert.match(visual, /\*\*Overlap\*\*/);
     assert.match(visual, /@ 1280px/);
     assert.doesNotMatch(visual, /`focusVisible`/);
@@ -1484,10 +1481,9 @@ describe("findings report", () => {
     const a11y = md.slice(md.indexOf("## Accessibility"), md.indexOf("## Visual"));
     const visual = md.slice(md.indexOf("## Visual"));
     assert.match(a11y, /1\.4\.10/);
-    assert.match(a11y, /`overflow`/);
     assert.match(a11y, /main @ 320px/);
     assert.doesNotMatch(a11y, /@ 375px/);
-    assert.match(visual, /`overflow`/);
+    assert.match(visual, /\*\*Overflow\*\*/);
     assert.match(visual, /@ 375px/);
     assert.match(visual, /header/);
     assert.doesNotMatch(visual, /@ 320px/);
@@ -1697,7 +1693,6 @@ describe("findings report", () => {
     );
     assert.match(md, /\*\*WCAG 3\.3\.1 Error Identification\*\*/);
     assert.match(md, /3\.3\.1/);
-    assert.match(md, /`silentSubmit`/);
     assert.match(md, /see WCAG 3\.3\.1 Error Identification/);
     assert.match(md, /\*\*Expected:\*\* Save submits, navigates, or shows invalid fields\./);
     assert.doesNotMatch(md, /The field is marked invalid/);
@@ -1733,7 +1728,6 @@ describe("findings report", () => {
       "/tmp/findings.md",
     );
     assert.match(md, /\*\*Server refused submit\*\*/);
-    assert.match(md, /`serverRefusedSubmit`/);
     assert.match(md, /see Server refused submit/);
     assert.match(md, /findings\/Q-01/);
     assert.match(md, /\*\*Expected:\*\* The UI only sends values the server will store\./);
@@ -1771,7 +1765,6 @@ describe("findings report", () => {
       "/tmp/findings.md",
     );
     assert.match(md, /\*\*Invalid input accepted\*\*/);
-    assert.match(md, /`acceptedInvalid`/);
     assert.match(md, /see Invalid input accepted/);
     assert.match(md, /findings\/Q-02/);
     assert.match(md, /\*\*Expected:\*\* The field is marked invalid\./);
@@ -1808,7 +1801,6 @@ describe("findings report", () => {
       "/tmp/findings.md",
     );
     assert.match(md, /\*\*Threw instead of invalid\*\*/);
-    assert.match(md, /`throwInsteadOfInvalid`/);
     assert.match(md, /see Threw instead of invalid/);
     assert.match(md, /findings\/Q-03/);
     assert.match(md, /\*\*Expected:\*\* The page stays usable, and junk in a field shows as a field error\./);

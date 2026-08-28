@@ -307,12 +307,20 @@ function shortQualityMessage(message: string): string {
   return markdownSafeQualityMessage(msg);
 }
 
+function isGeneratedWhere(token: string): boolean {
+  const t = token.trim();
+  if (!t) return true;
+  if (/^[.#]?[\w-]*-0\.[a-z0-9]{4,}$/i.test(t)) return true;
+  if (!/\s/.test(t) && /\b0\.[a-z0-9]{5,}\b/i.test(t)) return true;
+  return false;
+}
+
 function shortWhere(where: string | undefined): string | undefined {
   if (!where?.trim()) return undefined;
   const parts = where
     .split(" · ")
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter((s) => s && !isGeneratedWhere(s))
     .slice(0, 2);
   if (parts.length === 0) return undefined;
   return markdownSafeQualityMessage(parts.join(" · "));
@@ -322,21 +330,26 @@ function pageCountTrail(row: Pick<DigestRow, "pages">): string {
   return `${row.pages} page${row.pages === 1 ? "" : "s"}`;
 }
 
-function formatLedgerRow(row: DigestRow, scope: StartScope, page?: string): string {
+function formatLedgerRow(row: DigestRow, scope: StartScope, _page?: string): string {
   const check = row.check ?? checkOf(row.rule, rowExtras(row));
-  const bits = [row.label ? `**${row.label}**` : undefined];
-  if (check?.level) bits.push(check.level);
-  if (check?.sc && !row.label?.includes(check.sc)) bits.push(check.sc);
-  bits.push(`\`${row.rule}\``);
-  bits.push(row.severity);
+  const title = row.label ? `**${row.label}**` : `\`${row.rule}\``;
+  const bits = [title];
+  if (row.severity === "error") bits.push("error");
   if (scope === "chrome") bits.push("chrome", pageCountTrail(row));
   else if (scope === "cluster") bits.push("cluster", pageCountTrail(row));
-  else bits.push("page", page ? `\`${page}\`` : pageCountTrail(row));
-  const head = `- ${bits.filter(Boolean).join(" · ")}`;
-  const detail = [shortQualityMessage(row.message), shortWhere(row.where)].filter(Boolean).join(" · ");
+  const head = `- ${bits.join(" · ")}`;
+  const where = shortWhere(row.where);
+  const instance = [shortQualityMessage(row.message), where].filter(Boolean).join(" — ");
+  const why = check ? `${check.why.replace(/\.$/, "")}. ${checkLink(check)}` : undefined;
   const lines = [head];
-  if (detail) lines.push(`  ${detail}`);
-  if (check) lines.push(`  Why it matters: ${check.why} ${checkLink(check)}`);
+  if (instance || why) {
+    lines.push("");
+    if (instance) {
+      lines.push(`  ${instance}`);
+      if (why) lines.push("");
+    }
+    if (why) lines.push(`  ${why}`);
+  }
   return lines.join("\n");
 }
 

@@ -208,10 +208,17 @@
 }
 .markdown li > p:first-child {
   font-weight: 600;
-  margin: 0 0 0.25em;
+  margin: 0 0 0.35em;
 }
 .markdown li > p:not(:first-child) {
-  color: oklch(0.72 0.012 286);
+  font-weight: 400;
+  color: oklch(0.76 0.012 286);
+}
+.markdown li > p:last-child:not(:first-child) {
+  color: oklch(0.88 0.01 286);
+  border-left: 2px solid oklch(0.62 0.09 250);
+  padding-left: 0.7rem;
+  margin-top: 0.5em;
 }
 .markdown code {
   font-size: 0.85em;
@@ -315,6 +322,10 @@
   }
   .markdown li > p:not(:first-child) {
     color: #52525b;
+  }
+  .markdown li > p:last-child:not(:first-child) {
+    color: #27272a;
+    border-left: 2px solid #71717a;
   }
   .markdown a {
     color: black;
