@@ -15,6 +15,8 @@ export const MONKEY_MARK: Record<string, string> = {
   nasty: "n",
   explore: "e",
   mcp: "c",
+  spec: "s",
+  test: "t",
 };
 
 export function fogOf(at: string | undefined, now = Date.now()): number {

@@ -32,6 +32,7 @@ Commands:
   prune       Drop false positives from a report (inquirer; --ids for scripts)
   replay      Replay a log file or a findings-report markdown file
   spec        Markdown specs under clickmonkey/specs/ [--check] [--fail-on-findings]
+  emit        Generate clickmonkey/ts/generated.ts (typed page model from the map)
   compact     Shorten a log to the last open or nav click + following lines
   bundle      Static dashboard folder (open without the CLI)
   ui          Local-only dashboard (map, runs, findings) [--stop]

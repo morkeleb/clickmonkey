@@ -47,6 +47,7 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stdout, /report/);
     assert.match(result.stdout, /^\s+prune\s/m);
     assert.match(result.stdout, /^\s+spec\s/m);
+    assert.match(result.stdout, /^\s+emit\s/m);
     assert.match(result.stdout, /^\s+ui\s/m);
     assert.match(result.stdout, /^\s+bundle\s/m);
     assert.match(result.stdout, /--verbose/);
@@ -122,6 +123,18 @@ describe("clickmonkey CLI chassis", () => {
     const jobOnly = run(["fog", "--job", "map", "--config", cfg]);
     assert.equal(jobOnly.status, 2);
     assert.match(jobOnly.stderr, /--job is only valid with --reset/);
+  });
+
+  it("emit refuses an empty map", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-emit-empty-"));
+    const cfg = join(dir, "clickmonkey.json");
+    writeFileSync(
+      cfg,
+      `${JSON.stringify({ url: "http://127.0.0.1:4173/", map: { schemaVersion: 1, app: "x", pages: [] } })}\n`,
+    );
+    const result = run(["emit", "--config", cfg]);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /map has no pages/);
   });
 
   it("init from another cwd writes the leash there", () => {

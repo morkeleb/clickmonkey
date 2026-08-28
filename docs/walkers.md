@@ -18,8 +18,9 @@ Host-LLM MCP: [mcp.md](mcp.md).
 Parallel runs merge into one `clickmonkey/map.json`. Rings on the dashboard
 are live units. map, unleash, and nasty each have their own last-land clock
 per page. explore and mcp do not — they still show as different live letters
-(**e** / **c**) when they stand on the same page. How to read haze, pips,
-and rings: [map.md](map.md).
+(**e** / **c**) when they stand on the same page. Spec and typed tests are
+run modes (**s** / **t**), not job clocks. How to read haze, pips, and
+rings: [map.md](map.md).
 
 | Monkey | Command | Does |
 |---|---|---|
@@ -29,9 +30,10 @@ and rings: [map.md](map.md).
 | **explore** | `clickmonkey explore` | One charter. Unattended LLM. Not a soak. Needs `brain`. |
 | **mcp** | `clickmonkey mcp` | Host LLM walks (`explore_start` …), then freeze/replay a spec. Not `clickmonkey explore`. [mcp.md](mcp.md). |
 
-Spec (`clickmonkey spec` / MCP `spec_save` / `spec_run`) and replay are not
-monkeys. Spec is frozen fences, still a real walk. Replay is comparison vs a
-report.
+Spec (`clickmonkey spec` / MCP `spec_save` / `spec_run`) and typed tests
+(`clickmonkey emit` / `brain: test`) are run modes, not monkeys. They show
+live letters **s** / **t** and do not stamp a job clock. Spec is frozen
+fences, still a real walk. Replay is comparison vs a report.
 
 Do not add list or tab as a sixth monkey. Lists, tabs, empty states, and
 layout bugs are **modes or loot on the tile**. Fog on the monkey sends a

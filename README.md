@@ -235,11 +235,14 @@ clickmonkey fog [--config] [--reset] [--job map|unleash|nasty]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
 clickmonkey replay <log|report.md> [--config] [--url] [--out]
 clickmonkey spec [file.md] [--check] [--fail-on-findings]
+clickmonkey emit [--config]
 clickmonkey compact <log> [--out <file>]
 clickmonkey bundle [--config] [--out]
 clickmonkey ui
 clickmonkey ui --stop
 ```
+
+`clickmonkey emit` writes `clickmonkey/ts/generated.ts` from the map and leash intro. That file is a typed page object: `session()` logs in via intro (`$CLICKMONKEY_*` tokens stay tokens), then you chain mapped ids (`await app.home.openCreate().fill({ name: "Acme" }).submit()`). Call `app.close()` when done, or `await using app = await session()`. The chain is a spec specialization — same executor, inspect, findings, and map presence (live letter **t**). `visualIssue` does not fail the chain; `expectFailed`, unknown ids, and a filled submit under default `writePolicy: "validationOnly"` do (set `"allow"` on a disposable instance to commit). Findings are on `app.findings` / `app.ledger`. Re-run emit when the map changes; do not edit the generated file. Write tests against it. Spec stays markdown fences (`clickmonkey spec`, live letter **s**).
 
 `clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists. If the banner says the UI is stale, use **Restart UI** in that banner, or `clickmonkey ui --stop` then `clickmonkey ui`. A report page has **Copy** (markdown + inlined screenshots for pasting into a model) next to **Print**.
 

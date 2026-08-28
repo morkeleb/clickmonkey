@@ -51,9 +51,9 @@ landing does **not** turn unleash green. Clocks do not share.
 | **u** | unleash | last time `clickmonkey unleash` stood here |
 | **n** | nasty | last time `clickmonkey nasty` stood here |
 
-**explore** and **mcp** have no job clock, so no pip. Hover the row of
-dots for the three ages. Click the card — **Last land** lists the same
-three clocks with color.
+**explore**, **mcp**, spec, and typed tests have no job clock, so no pip.
+Hover the row of dots for the three ages. Click the card — **Last land**
+lists the same three clocks with color.
 
 That is how you see “map already walked this, unleash has not filled it
 yet” without opening JSON.
@@ -71,6 +71,8 @@ map runs still tell apart. Hover: `mcp · amber-otter`.
 | **n** | nasty |
 | **e** | explore |
 | **c** | mcp |
+| **s** | spec (run mode, not an m/u/n pip) |
+| **t** | test (run mode, not an m/u/n pip) |
 
 Live is not hunger. A ring can sit on a red **u** pip: unleash is here
 now, but that does not yet mean the clock is fresh (the stamp is last
@@ -94,5 +96,5 @@ The sheet is the rest of the explanation:
    recently. Run unleash.
 3. Green **u**, red **n** — unleash already walked it; nasty still treats
    it as hungry. Site you own.
-4. A live **e** or **c** — someone is exploring or an MCP session is on
-   that tile. Not a soak clock.
+4. A live **e**, **c**, **s**, or **t** — exploring, MCP, spec, or typed
+   tests on that tile. Not a soak clock.

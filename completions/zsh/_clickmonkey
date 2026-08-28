@@ -16,6 +16,7 @@ _clickmonkey() {
     'report:Markdown findings report from selected runs'
     'replay:Replay a log or a findings-report markdown file'
     'spec:Markdown specs under clickmonkey/specs/ [--check] [--fail-on-findings]'
+    'emit:Generate clickmonkey/ts/generated.ts from the map'
     'compact:Shorten a log to the last open'
     'ui:Local-only dashboard'
   )

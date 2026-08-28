@@ -128,6 +128,7 @@ export const CLICKMONKEY_GUIDE = [
   "# ClickMonkey",
   "",
   "Five monkeys (working names): map, unleash, nasty, explore, mcp.",
+  "Spec and typed tests are run modes (letters s/t) and do not stamp job clocks.",
   "The host LLM walks via MCP, then freezes the tape as a spec and proves replay.",
   "`clickmonkey explore` is unattended (needs brain). mcp is the host walk. Map, unleash, and nasty stay CLI.",
   "Read clickmonkey://map for the sitemap. This text is also prompt `clickmonkey`.",

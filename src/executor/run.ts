@@ -137,6 +137,8 @@ export interface StepResult {
   findingCreated?: boolean;
   /** Left the leash. Recover and keep walking — not a website finding. */
   bounced?: boolean;
+  /** Click skipped: writePolicy validationOnly and required fields are filled. */
+  writePolicyBlocked?: boolean;
   view: View;
 }
 
@@ -629,6 +631,7 @@ async function finish(
   const fenceHit = state.inIntro ? "ok" : checkFence(href, state.config.fence);
   const refusedFence = stepFailure?.kind === "fenceViolation";
   const bounced = fenceHit !== "ok";
+  const writePolicyBlocked = stepFailure?.kind === "writePolicyBlocked";
 
   let finding: Finding | undefined;
   let runInspect = false;
@@ -799,19 +802,26 @@ async function finish(
     ...(state.configPath ? { configPath: state.configPath } : {}),
     last: {
       step: redactEnvInText(formatStep(step)),
-      ok: !finding,
-      ...(finding ? { finding: finding.kind } : bounced || refusedFence ? { finding: "fenceViolation" } : {}),
+      ok: !finding && !writePolicyBlocked,
+      ...(finding
+        ? { finding: finding.kind }
+        : bounced || refusedFence
+          ? { finding: "fenceViolation" }
+          : writePolicyBlocked
+            ? { finding: "writePolicyBlocked" }
+            : {}),
     },
   });
 
   await dumpVerboseState(state, redactEnvInText(formatStep(step)), view);
 
   return {
-    ok: !finding,
+    ok: !finding && !writePolicyBlocked,
     step,
     view,
     ...(finding ? { finding, findingCreated } : {}),
     ...(bounced ? { bounced: true } : {}),
+    ...(writePolicyBlocked ? { writePolicyBlocked: true } : {}),
   };
 }
 

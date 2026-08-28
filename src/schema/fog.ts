@@ -18,8 +18,8 @@ export function jobOfBrain(brain?: string): WalkerJobName | undefined {
   return undefined;
 }
 
-/** Five monkeys. explore and mcp are different; only map/unleash/nasty stamp a job clock. */
-export const MonkeyName = z.enum(["map", "unleash", "nasty", "explore", "mcp"]);
+/** Five walkers: map/unleash/nasty/explore/mcp. spec and test are run modes with live letters and no job clock. */
+export const MonkeyName = z.enum(["map", "unleash", "nasty", "explore", "mcp", "spec", "test"]);
 export type MonkeyName = z.infer<typeof MonkeyName>;
 
 export function monkeyOfBrain(brain?: string): MonkeyName | undefined {

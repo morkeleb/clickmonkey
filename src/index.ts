@@ -117,6 +117,12 @@ export type { InspectResult, SurveyorContext } from "./surveyor/inspect.js";
 export { captureStepShot } from "./executor/steps.js";
 export { createExecutor, attachOracles } from "./executor/run.js";
 export type { AfterStep, RunState, StepResult } from "./executor/run.js";
+export { createSession, SessionRuntime } from "./ts/session.js";
+export type { SessionOpts } from "./ts/session.js";
+export { SurfaceChain, SessionStepError, secret } from "./ts/handle.js";
+export type { FlushResult } from "./ts/handle.js";
+export { emitTs, graphFromModel, writeGeneratedTs } from "./ts/emit.js";
+export type { EmittedGraph, EmittedPage, EmittedSurface, EmittedField, EmittedAction } from "./ts/graph.js";
 export { bootRun, locatorsFromModel, attachInspectAfterStep } from "./executor/boot.js";
 export {
   attachNavLog,

@@ -20,6 +20,7 @@ import {
   cmdUnleash,
   cmdView,
 } from "./commands.js";
+import { cmdEmit } from "./cmd-emit.js";
 import { EXIT_USAGE, printUsage, USAGE } from "./common.js";
 
 try {
@@ -125,6 +126,8 @@ try {
         return cmdReplay(positionals[1], flags);
       case "spec":
         return cmdSpec(positionals[1], flags);
+      case "emit":
+        return cmdEmit(flags);
       case "compact":
         return cmdCompact(positionals[1], { out: flags.out });
       case "bundle":

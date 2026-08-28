@@ -123,10 +123,13 @@ describe("page fog", () => {
     assert.equal(jobOfBrain("unleash-nasty"), "nasty");
     assert.equal(jobOfBrain("map"), "map");
     assert.equal(jobOfBrain("explore"), undefined);
+    assert.equal(jobOfBrain("spec"), undefined);
+    assert.equal(jobOfBrain("test"), undefined);
     assert.equal(monkeyOfBrain("unleash-nasty"), "nasty");
     assert.equal(monkeyOfBrain("explore"), "explore");
     assert.equal(monkeyOfBrain("mcp"), "mcp");
-    assert.equal(monkeyOfBrain("spec"), undefined);
+    assert.equal(monkeyOfBrain("spec"), "spec");
+    assert.equal(monkeyOfBrain("test"), "test");
   });
 
   it("full reset drops fog on sitemap pages and deletes leftover lands.json", () => {

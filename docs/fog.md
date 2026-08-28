@@ -134,7 +134,8 @@ Dashboard haze uses `at` (last land, including explore/mcp), opacity when
 **m** map, **u** unleash, **n** nasty — green when that monkey stood here
 recently, red when it is hungry. **explore** and **mcp** have no job clock,
 so no heat pip. Live units on a page are a **colored letter**
-(instance hue): m / u / n / **e** explore / **c** mcp. Tooltip is
+(instance hue): m / u / n / **e** explore / **c** mcp / **s** spec /
+**t** test. Spec and typed tests are run modes, not hunger jobs. Tooltip is
 `mcp · amber-otter` so two of the same kind still tell apart. How the
 dashboard draws that: [map.md](map.md).
 

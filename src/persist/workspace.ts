@@ -46,6 +46,15 @@ export function specsDir(configPath: string): string {
   return join(workspaceDir(configPath), "specs");
 }
 
+/** Generated TypeScript page model (`clickmonkey emit`). */
+export function tsDir(configPath: string): string {
+  return join(workspaceDir(configPath), "ts");
+}
+
+export function generatedTsPath(configPath: string): string {
+  return join(tsDir(configPath), "generated.ts");
+}
+
 /** Pre-folder sibling. Read-only fallback. */
 export function legacyTestabilityPath(configPath: string): string {
   return configPath.replace(/\.json$/i, "") + ".testability.json";
