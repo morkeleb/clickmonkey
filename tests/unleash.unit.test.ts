@@ -8,6 +8,7 @@ import {
   decideUnleash,
   formSubmitAction,
   isPrimaryFormCommit,
+  looksLikeModeSwitch,
   freshClicks,
   isAddRepeatingRowAction,
   listModeScore,
@@ -32,6 +33,7 @@ import {
   stayActions,
   viewWidgetSig,
 } from "../src/brains/unleash.js";
+import { skipInspectForBurstLine } from "../src/brains/types.js";
 import type { Page } from "../src/schema/page-model.js";
 import { fogHunger, FOG_FRESH_MS, FOG_OLD_MS, npcHunger } from "../src/brains/npc.js";
 import { detectWalkerMode } from "../src/brains/walker-mode.js";
@@ -365,6 +367,37 @@ describe("formSubmitAction", () => {
     assert.equal(isPrimaryFormCommit({ id: "button_close_create_client", label: "Close" }), false);
     assert.equal(isPrimaryFormCommit({ id: "button_close_create_client" }), false);
     assert.equal(isPrimaryFormCommit({ id: "button_save", label: "Save" }), true);
+  });
+
+  it("does not treat Existing/Create-new mode toggles as Save", () => {
+    assert.equal(looksLikeModeSwitch({ id: "wizard_source_mode_create", label: "Create new" }), true);
+    assert.equal(looksLikeModeSwitch({ id: "wizard_source_mode_pick", label: "Existing" }), true);
+    assert.equal(looksLikeModeSwitch({ id: "button_create", label: "Create" }), false);
+    assert.equal(isPrimaryFormCommit({ id: "wizard_source_mode_create", label: "Create new" }), false);
+    assert.equal(isPrimaryFormCommit({ id: "wizard_source_mode_pick", label: "Existing" }), false);
+    assert.equal(isPrimaryFormCommit({ id: "button_create", label: "Create" }), true);
+    assert.equal(
+      formSubmitAction([
+        { id: "wizard_source_mode_create", label: "Create new" },
+        { id: "wizard_next", label: "Next" },
+      ])?.id,
+      "wizard_next",
+    );
+  });
+
+  it("does not treat Add/Create that opens a dialog as Save", () => {
+    const page = {
+      surfaces: [{ id: "add_customer", kind: "dialog" as const, fields: [], actions: [] }],
+    };
+    assert.equal(
+      isPrimaryFormCommit({ id: "customers_action_customer_create", opens: "add_customer" }, page, "page"),
+      false,
+    );
+    assert.equal(isPrimaryFormCommit({ id: "button_create", label: "Create", opens: "add_customer" }, page, "add_customer"), true);
+    assert.equal(
+      isPrimaryFormCommit({ id: "form_dialog_customer_create_submit", opens: "customers_id1" }, page, "add_customer"),
+      true,
+    );
   });
 
   it("does not treat Close create as a form commit after Save was just clicked", () => {
@@ -702,6 +735,85 @@ describe("formSubmitAction", () => {
     assert.match(text, /click page\.button_save/);
     assert.doesNotMatch(text, /tab_dashboard/);
   });
+
+  it("does not treat page-level list_action_create as the dialog Save", () => {
+    const pages = [
+      {
+        id: "customers",
+        path: "/customers",
+        ready: { by: "testId", value: "customers" },
+        surfaces: [
+          {
+            id: "page",
+            kind: "page" as const,
+            fields: [],
+            actions: [
+              {
+                id: "list_action_create",
+                by: "testId" as const,
+                value: "list-action-create",
+                status: "ok" as const,
+              },
+              {
+                id: "customers_action_customer_create",
+                by: "testId" as const,
+                value: "customers-action-customer-create",
+                opens: "add_customer",
+                status: "ok" as const,
+              },
+            ],
+          },
+          {
+            id: "add_customer",
+            kind: "dialog" as const,
+            fields: [
+              { id: "name", required: true, type: "text" as const, by: "name" as const, value: "name", status: "ok" as const },
+              { id: "notes", required: false, type: "textarea" as const, by: "name" as const, value: "notes", status: "ok" as const },
+            ],
+            actions: [
+              {
+                id: "form_dialog_customer_create_submit",
+                by: "testId" as const,
+                value: "form-dialog-customer-create-submit",
+                opens: "customers_id1",
+                status: "ok" as const,
+              },
+            ],
+          },
+        ],
+      },
+    ] as unknown as Page[];
+    const view = viewOf({
+      page: "customers",
+      surface: "add_customer",
+      stack: ["page", "add_customer"],
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "notes", value: "", type: "text" },
+      ],
+      actions: [{ id: "button_cancel", label: "Cancel" }],
+    });
+    assert.deepEqual(
+      mappedPrimaryCommits(view, pages).map((a) => a.id),
+      ["form_dialog_customer_create_submit"],
+    );
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow", pages }, () => 0.5);
+    assert.equal(d.mode, "form");
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.match(text, /fill add_customer\.name /);
+    assert.match(text, /fill add_customer\.notes /);
+    assert.match(text, /click add_customer\.form_dialog_customer_create_submit/);
+    assert.doesNotMatch(text, /list_action_create|customers_action_customer_create/);
+  });
+});
+
+describe("skipInspectForBurstLine", () => {
+  it("inspects a single line, and only the last line of a fill+fill+Create burst", () => {
+    assert.equal(skipInspectForBurstLine(0, 1), false);
+    assert.equal(skipInspectForBurstLine(0, 3), true);
+    assert.equal(skipInspectForBurstLine(1, 3), true);
+    assert.equal(skipInspectForBurstLine(2, 3), false);
+  });
 });
 
 describe("continueFormBurst", () => {
@@ -952,6 +1064,8 @@ describe("looksLikePageSearch", () => {
     assert.equal(looksLikePageSearch({ id: "search", value: "", type: "text" }), true);
     assert.equal(looksLikePageSearch({ id: "q", value: "", type: "text" }), true);
     assert.equal(looksLikePageSearch({ id: "textbox_search_or_talk_to_lois", value: "", type: "text" }), true);
+    assert.equal(looksLikePageSearch({ id: "customers_filter_q", value: "", type: "text" }), true);
+    assert.equal(looksLikePageSearch({ id: "customer_filter_q", value: "", type: "text" }), true);
     assert.equal(looksLikePageSearch({ id: "vendortype_search", value: "", type: "text" }), false);
     assert.equal(looksLikePageSearch({ id: "vendor_create_places_search", value: "", type: "text" }), false);
   });

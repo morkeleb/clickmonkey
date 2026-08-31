@@ -70,6 +70,11 @@ export function looksLikeListedPicker(field: FieldRef | undefined): boolean {
   return false;
 }
 
+/** Typeahead/select leftovers need Escape. Plain text in a dialog must not. */
+export function shouldCloseOverlaysAfterFill(field: FieldRef | undefined): boolean {
+  return looksLikeListedPicker(field);
+}
+
 export type FieldControl = {
   kind: FieldControlKind;
   applies(field: FieldRef | undefined, typeahead: boolean): boolean;

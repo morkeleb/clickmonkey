@@ -1,6 +1,12 @@
 import type { Page, Surface } from "../schema/page-model.js";
 import type { BrainContext, BrainDecision } from "./types.js";
-import { formSubmitAction, looksLikeMidForm, looksLikeSearchField, looksLikeUnfinishedForm } from "./unleash.js";
+import {
+  formSubmitAction,
+  isPrimaryFormCommit,
+  looksLikeMidForm,
+  looksLikeSearchField,
+  looksLikeUnfinishedForm,
+} from "./unleash.js";
 import { formatNpcStep, npcHunger, npcKey, planNpc, staleMsForPage } from "./npc.js";
 
 export { floodNpc as floodHunt, npcHunger as huntHunger, npcKey as huntNodeKey, npcScore as huntScore, pageSurfaceId } from "./npc.js";
@@ -8,7 +14,7 @@ export type { NpcEdge as HuntEdge, NpcNode as HuntNode, NpcReach as HuntReach } 
 
 /** Chance to stay on local chrome instead of walking toward a map form. */
 export const FORM_HUNT_STAY_RATE = 0.2;
-/** Chance to drop the current hunt target and pick again. */
+/** Chance to drop the current hunt target and pick again. Unused when pick is `hungry`. */
 export const FORM_HUNT_RETHINK = 0.15;
 /** Local clicks after a submit that landed on a new page (inspect the record). */
 export const LOOT_EXPLORE_STEPS = 5;
@@ -44,7 +50,7 @@ function okField(field: { status?: string }): boolean {
 }
 
 /** Non-search fields plus a submit-like action — a form the walker should exercise. */
-export function isMapFormSurface(surface: Surface): boolean {
+export function isMapFormSurface(surface: Surface, page?: Page): boolean {
   const fields = surface.fields.filter(
     (f) =>
       okField(f) &&
@@ -55,14 +61,16 @@ export function isMapFormSurface(surface: Surface): boolean {
     id: a.id,
     ...(a.opens ? { opens: a.opens } : {}),
   }));
-  return Boolean(formSubmitAction(actions, surface.id));
+  if (formSubmitAction(actions, surface.id)) return true;
+  // Save/Create that hops to a record page still counts; a dialog opener does not.
+  return actions.some((a) => isPrimaryFormCommit(a, page, surface.id));
 }
 
 export function mapFormGoals(pages: readonly Page[]): FormGoal[] {
   const goals: FormGoal[] = [];
   for (const page of pages) {
     for (const surface of page.surfaces) {
-      if (!isMapFormSurface(surface)) continue;
+      if (!isMapFormSurface(surface, page)) continue;
       const fields = surface.fields.filter(
         (f) =>
           okField(f) &&
@@ -79,9 +87,6 @@ export function decideFormHunt(ctx: BrainContext, rng: () => number): BrainDecis
   const pages = ctx.pages;
   if (!pages || pages.length === 0) return undefined;
   if (ctx.lockForm && isOnFormLock(ctx)) return undefined;
-  if (!ctx.lockForm && (looksLikeUnfinishedForm(ctx.view) || looksLikeMidForm(ctx.view))) {
-    return undefined;
-  }
   const mapped = mapFormGoals(pages);
   const forms = ctx.lockForm
     ? mapped.filter((g) => g.pageId === ctx.lockForm)
@@ -92,16 +97,24 @@ export function decideFormHunt(ctx: BrainContext, rng: () => number): BrainDecis
       : forms;
   if (locked.length === 0) return undefined;
   const here = npcKey({ page: ctx.view.page, surface: ctx.view.surface });
-  if (locked.some((g) => formGoalKey(g) === here)) return undefined;
+  const hereSpent = Boolean(ctx.formSpent?.[here]);
+  if (!ctx.lockForm && !hereSpent && (looksLikeUnfinishedForm(ctx.view) || looksLikeMidForm(ctx.view))) {
+    return undefined;
+  }
+  if (locked.some((g) => formGoalKey(g) === here) && !hereSpent) return undefined;
   const plan = planNpc({
     ctx,
     goals: locked.map((g) => ({
       key: formGoalKey(g),
-      hunger: npcHunger(ctx.formHits?.[formGoalKey(g)] ?? 0, staleMsForPage(ctx.pageFog, g.pageId)),
+      hunger: npcHunger(
+        ctx.formHits?.[formGoalKey(g)] ?? 0,
+        staleMsForPage(ctx.formWork, formGoalKey(g)),
+      ),
     })),
     rng,
-    committed: ctx.lockForm ? formGoalKey(locked[0]!) : ctx.huntTarget,
-    rethink: ctx.lockForm ? 0 : FORM_HUNT_RETHINK,
+    committed: ctx.lockForm ? formGoalKey(locked[0]!) : undefined,
+    rethink: ctx.lockForm ? 0 : 1,
+    pick: "hungry",
   });
   if (!plan) return undefined;
   return {

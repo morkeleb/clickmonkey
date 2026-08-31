@@ -49,6 +49,21 @@ describe("scanTextClip", () => {
     });
   });
 
+  it("skips collapsed icon-rail button labels", async () => {
+    await withPage(html, async (page) => {
+      const issues = await scanTextClip(page);
+      const clips = issues.filter((i) => i.rule === "clip");
+      assert.ok(
+        clips.every((i) => !/Overview|Customers|Orchestration/i.test(i.where ?? "")),
+        `icon-rail labels must not be clip, got ${JSON.stringify(issues)}`,
+      );
+      assert.ok(
+        clips.some((i) => /Accounts receivable/i.test(i.where ?? "")),
+        `clipped tab must still file, got ${JSON.stringify(issues)}`,
+      );
+    });
+  });
+
   it("skips chrome behind a small open dialog and still flags clip inside it", async () => {
     await withPage(html, async (page) => {
       await page.evaluate(() => {

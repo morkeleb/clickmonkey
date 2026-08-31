@@ -6,6 +6,7 @@ import {
   FOCUS_VISIBLE_CLIP_MIN_W,
   FOCUS_VISIBLE_CLIP_PAD,
   MAX_FOCUS_VISIBLE_HITS,
+  evidenceClipFromRect,
   fitShotClip,
   focusIndicatorChanged,
   focusShotClip,
@@ -265,5 +266,16 @@ describe("parseShotClip", () => {
       height: 20,
     });
     assert.equal(fitShotClip({ x: 1280, y: 0, width: 40, height: 20 }, { width: 1280, height: 720 }), undefined);
+  });
+});
+
+describe("evidenceClipFromRect", () => {
+  it("pads a tiny Close to at least 320×80 inside the viewport", () => {
+    const clip = evidenceClipFromRect({ left: 1200, top: 8, right: 1216, bottom: 24 }, 1280, 720);
+    assert.ok(clip);
+    assert.ok(clip.width >= FOCUS_VISIBLE_CLIP_MIN_W || clip.x + clip.width === 1280);
+    assert.ok(clip.height >= FOCUS_VISIBLE_CLIP_MIN_H);
+    assert.ok(clip.x >= 0 && clip.y >= 0);
+    assert.ok(clip.x + clip.width <= 1280);
   });
 });

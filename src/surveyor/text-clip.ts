@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import type { QualityIssue } from "../schema/quality.js";
+import { evidenceClipFromRect, type EvidenceClip } from "./focus-visible.js";
 
 export const CLIP_PX = 4;
 export const CLIP_HIGH_PX = 12;
@@ -7,6 +8,8 @@ export const MAX_HITS = 8;
 export const WHERE_MAX = 40;
 /** Small dialog/panel vs viewport — chrome behind these is skipped. */
 export const SMALL_DIALOG_VW = 0.7;
+/** Collapsed icon rail / square nav item — labels are not meant to show. */
+export const ICON_RAIL_MAX_PX = 72;
 
 /** scanline.ts already files clip on these. */
 export const SCANLINE_OWNED = "td, th, [role='cell'], [role='gridcell'], input, textarea";
@@ -41,6 +44,7 @@ export type TextClipHit = {
   where: string;
   message: string;
   confidence: "high" | "medium";
+  clip?: { x: number; y: number; width: number; height: number };
 };
 
 const KIND_MESSAGES: Record<TextClipKind, string> = {
@@ -114,6 +118,23 @@ export function skipOpenMenu(opts: { inMenu: boolean; menuShown: boolean }): boo
   return opts.inMenu && opts.menuShown;
 }
 
+/**
+ * Collapsed sidebar: icon + clipped label, item is icon-sized.
+ * Semantic nav/aside, shadcn `data-sidebar`, or a flush viewport-edge strip.
+ * Expanded nav (wide enough to show the word) still clips.
+ */
+export function skipIconRailClip(opts: {
+  inNav: boolean;
+  hasIcon: boolean;
+  width: number;
+  inSidebar?: boolean;
+  atViewportEdge?: boolean;
+}): boolean {
+  if (!opts.hasIcon) return false;
+  if (!(opts.width > 0 && opts.width <= ICON_RAIL_MAX_PX)) return false;
+  return opts.inNav || Boolean(opts.inSidebar) || Boolean(opts.atViewportEdge);
+}
+
 export function kindFromRoleTag(opts: {
   role?: string;
   tag?: string;
@@ -161,6 +182,7 @@ const COLLECT_SRC = `(() => {
   var MAX_HITS = ${MAX_HITS};
   var WHERE_MAX = ${WHERE_MAX};
   var SMALL_DIALOG_VW = ${SMALL_DIALOG_VW};
+  var ICON_RAIL_MAX_PX = ${ICON_RAIL_MAX_PX};
   var SCANLINE_OWNED = ${JSON.stringify(SCANLINE_OWNED)};
   var CANDIDATE_SELECTOR = ${JSON.stringify(CANDIDATE_SELECTOR)};
   var MESSAGES = ${JSON.stringify(KIND_MESSAGES)};
@@ -247,6 +269,35 @@ const COLLECT_SRC = `(() => {
     return shown(menu);
   }
 
+  function inNav(el) {
+    return Boolean(el.closest && el.closest("nav, [role='navigation'], aside, [role='complementary']"));
+  }
+
+  function inSidebar(el) {
+    if (!el.closest) return false;
+    if (el.closest("[data-sidebar], [data-slot='sidebar']")) return true;
+    return Boolean(el.closest("[data-collapsible='icon']"));
+  }
+
+  function atViewportEdge(el) {
+    var r = el.getBoundingClientRect();
+    var vw = window.innerWidth || 0;
+    var edge = 16;
+    return r.left <= edge || (vw > 0 && r.right >= vw - edge);
+  }
+
+  function hasIcon(el) {
+    if (!el || !el.querySelector) return false;
+    return Boolean(el.querySelector("svg, img, [aria-hidden='true']"));
+  }
+
+  function skipIconRail(el) {
+    if (!hasIcon(el)) return false;
+    var r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.width <= ICON_RAIL_MAX_PX)) return false;
+    return inNav(el) || inSidebar(el) || atViewportEdge(el);
+  }
+
   function smallOpenDialog() {
     var nodes = document.querySelectorAll("dialog[open], [role='dialog']");
     var vw = window.innerWidth || 0;
@@ -325,11 +376,13 @@ const COLLECT_SRC = `(() => {
     if (seen[key]) return;
     seen[key] = true;
     hitEls.push(el);
+    var r = el.getBoundingClientRect();
     hits.push({
       rule: "clip",
       where: where,
       message: message,
       confidence: amt >= CLIP_HIGH_PX ? "high" : "medium",
+      clip: { x: r.left, y: r.top, width: r.width, height: r.height },
     });
   }
 
@@ -343,6 +396,7 @@ const COLLECT_SRC = `(() => {
     if (el.matches(SCANLINE_OWNED)) continue;
     if (el.closest && el.closest(SCANLINE_OWNED)) continue;
     if (inOpenMenu(el)) continue;
+    if (skipIconRail(el)) continue;
     if (dlg && !dlg.contains(el)) continue;
     if (coveredByHit(el)) continue;
     if (!isClipped(el)) continue;
@@ -369,23 +423,38 @@ const COLLECT_SRC = `(() => {
   return hits;
 })()`;
 
-export async function scanTextClip(page: Page): Promise<QualityIssue[]> {
+export async function scanTextClipEvidence(page: Page): Promise<{
+  issues: QualityIssue[];
+  clips: EvidenceClip[];
+}> {
   const hits = (await page.evaluate(COLLECT_SRC).catch(() => [])) as TextClipHit[];
   const issues: QualityIssue[] = [];
-  if (!Array.isArray(hits)) return issues;
+  const clips: EvidenceClip[] = [];
+  if (!Array.isArray(hits)) return { issues, clips };
+  const vw = page.viewportSize()?.width ?? 0;
+  const vh = page.viewportSize()?.height ?? 0;
   for (const hit of hits) {
     if (hit.rule !== "clip") continue;
     if (!hit.message || !hit.where) continue;
+    const confidence = hit.confidence === "high" ? "high" : "medium";
     issues.push({
       source: "visual",
       rule: "clip",
       severity: "error",
       message: hit.message,
       count: 1,
-      confidence: hit.confidence === "high" ? "high" : "medium",
+      confidence,
       where: hit.where,
     });
+    if (confidence === "high") {
+      const clip = evidenceClipFromRect(hit.clip, vw, vh);
+      if (clip) clips.push({ where: hit.where, clip });
+    }
     if (issues.length >= MAX_HITS) break;
   }
-  return issues;
+  return { issues, clips };
+}
+
+export async function scanTextClip(page: Page): Promise<QualityIssue[]> {
+  return (await scanTextClipEvidence(page)).issues;
 }

@@ -25,15 +25,18 @@ rings: [map.md](map.md).
 | Monkey | Command | Does |
 |---|---|---|
 | **map** | `clickmonkey map` | Unseen doors, then rooms this map run has not stood on recently. Never fill or submit. |
-| **unleash** | `clickmonkey unleash` | Pathfind to mapped forms this unleash run has not filled recently, fill, submit. `--form clients_new` pins one page, retries Save, stops when submit leaves. |
-| **nasty** | `clickmonkey nasty` | Same hunt on the **nasty** clock — pages unleash already walked still look hungry. Junk payloads. Site you own. `unleash --nasty` is the same call. |
+| **unleash** | `clickmonkey unleash` | Pathfind to mapped forms this job has not **filled** recently (not page land), fill, submit. `--form clients_new` pins one page, retries Save, stops when submit leaves. |
+| **nasty** | `clickmonkey nasty` | Same hunt on the **nasty** form-work clock — forms unleash already filled still look hungry. Junk payloads. Site you own. `unleash --nasty` is the same call. |
 | **explore** | `clickmonkey explore` | One charter. Unattended LLM. Not a soak. Needs `brain`. |
 | **mcp** | `clickmonkey mcp` | Host LLM walks (`explore_start` …), then freeze/replay a spec. Not `clickmonkey explore`. [mcp.md](mcp.md). |
 
 Spec (`clickmonkey spec` / MCP `spec_save` / `spec_run`) and typed tests
 (`clickmonkey emit` / `brain: test`) are run modes, not monkeys. They show
 live letters **s** / **t** and do not stamp a job clock. Spec is frozen
-fences, still a real walk. Replay is comparison vs a report.
+fences, still a real walk. Replay is comparison vs a report. Ghost rooms stay on the map until
+`clickmonkey pages` (checkbox; `--drop` for scripts). Recommend only with a 404 in `broken.json` plus no live inbound door.
+False-positive findings in a report are `clickmonkey prune` (rewrites that
+`findings.md` and records `dismissed.json`). That is not map GC.
 
 Do not add list or tab as a sixth monkey. Lists, tabs, empty states, and
 layout bugs are **modes or loot on the tile**. Fog on the monkey sends a
@@ -50,10 +53,10 @@ before list before tab before dialog before empty).
 | Mode | When | Legal moves |
 |---|---|---|
 | **wizard** | Body fields + Next/Continue, and it is not a list pager | Fill empties, then Next/Continue. No sidebar hop, no form hunt, until Finish/Save or the stepper is gone. |
-| **form** | Fields + submit/save/create | Burst-fill empties, then submit (or rarely dismiss). Do not fill one field and leave. |
+| **form** | Body fields + submit/save/create | Burst-fill empties, then submit (or rarely dismiss). Do not fill one field and leave. List search/`*_filter_*` and Add/Create that **opens a dialog** are not this. |
 | **list** | Filters/sort/search/rows/pager (score ≥ 2) | Sample each chrome kind once, then a row. Can share a surface with a form; the staler mode wins. Pagination is list chrome, not wizard Next. |
 | **tab** | Tab / tablist controls | Click a tab. |
-| **dialog** | Mapped dialog opener on the page (not already inside a dialog) | Click an opener, preferring a dialog this run has not stood in. Form/wizard take over once the dialog is open. |
+| **dialog** | Mapped dialog opener on the page (not already inside a dialog) | Click an opener this run has not stood in. **unleash** skips Archive/Delete confirms and hunts the next form after Edit. **nasty** still opens those confirms. Form/wizard take over once a form dialog is open. |
 | **empty** | Empty-state CTA (“Create your first …”), search not active | Click the empty-state action. |
 | **nav** | Nothing else applies | Stay clicks or hop. **map** also uses nav-shaped clicks to lift fog. |
 

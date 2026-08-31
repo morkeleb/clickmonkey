@@ -617,6 +617,9 @@ function tagOverflowAt(issue: QualityIssue, tag: string): QualityIssue {
   return { ...issue, message: `${issue.message}${tag}` };
 }
 
+/** Called while the page is still at the scan width, before restore. */
+export type OverflowViewportShotFn = () => Promise<string | undefined>;
+
 /** Resize, collect, tag, restore — even when collect or resize throws. */
 async function scanOverflowAtViewport(
   page: Page,
@@ -624,6 +627,7 @@ async function scanOverflowAtViewport(
   skipAt: number,
   minHeight: number,
   tag: string,
+  screenshot?: OverflowViewportShotFn,
 ): Promise<QualityIssue[]> {
   const prev = page.viewportSize();
   if (!prev || prev.width <= skipAt) return [];
@@ -633,7 +637,11 @@ async function scanOverflowAtViewport(
       width,
       height: Math.max(minHeight, prev.height),
     });
-    return (await scanOverflow(page)).map((issue) => tagOverflowAt(issue, tag));
+    const issues = (await scanOverflow(page)).map((issue) => tagOverflowAt(issue, tag));
+    if (screenshot && issues.some((i) => i.confidence === "high")) {
+      await screenshot().catch(() => undefined);
+    }
+    return issues;
   } finally {
     await page.setViewportSize(prev);
   }
@@ -643,13 +651,17 @@ async function scanOverflowAtViewport(
  * Same overflow collect at 375px. Always restores the previous viewport.
  * Skips the resize when the viewport is already ≤420px wide.
  */
-export async function scanOverflowMobile(page: Page): Promise<QualityIssue[]> {
+export async function scanOverflowMobile(
+  page: Page,
+  screenshot?: OverflowViewportShotFn,
+): Promise<QualityIssue[]> {
   return scanOverflowAtViewport(
     page,
     MOBILE_OVERFLOW_VW,
     MOBILE_OVERFLOW_SKIP_AT,
     MOBILE_OVERFLOW_MIN_VH,
     MOBILE_OVERFLOW_TAG,
+    screenshot,
   );
 }
 
@@ -657,12 +669,16 @@ export async function scanOverflowMobile(page: Page): Promise<QualityIssue[]> {
  * WCAG 1.4.10 reflow: same collect at 320px. Always restores the previous
  * viewport. Skips when already ≤360px wide.
  */
-export async function scanOverflowReflow(page: Page): Promise<QualityIssue[]> {
+export async function scanOverflowReflow(
+  page: Page,
+  screenshot?: OverflowViewportShotFn,
+): Promise<QualityIssue[]> {
   return scanOverflowAtViewport(
     page,
     REFLOW_OVERFLOW_VW,
     REFLOW_OVERFLOW_SKIP_AT,
     REFLOW_OVERFLOW_MIN_VH,
     REFLOW_OVERFLOW_TAG,
+    screenshot,
   );
 }

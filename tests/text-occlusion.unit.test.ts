@@ -5,8 +5,12 @@ import {
   MAX_HITS,
   MAX_RECTS,
   clipWhere,
+  coverIsRestack,
   describeCover,
   expectedOverlay,
+  isUtilityCoverClass,
+  nodeClassesAreUtilities,
+  stripTailwindVariants,
   isStickyChromeCover,
   isStepperStep,
   isTabChrome,
@@ -66,6 +70,33 @@ describe("text-occlusion helpers", () => {
     assert.equal(textKindFromTag({ tag: "td" }), "Cell");
     assert.equal(textKindFromTag({ tag: "legend" }), "Legend");
     assert.equal(textKindFromTag({ tag: "span" }), "Text");
+  });
+
+  it("treats Tailwind display and shrink classes as unnamed covers", () => {
+    assert.equal(isUtilityCoverClass("block"), true);
+    assert.equal(isUtilityCoverClass("flex"), true);
+    assert.equal(isUtilityCoverClass("absolute"), true);
+    assert.equal(isUtilityCoverClass("min-w-0"), true);
+    assert.equal(isUtilityCoverClass("md:min-w-0"), true);
+    assert.equal(isUtilityCoverClass("gap-2"), true);
+    assert.equal(isUtilityCoverClass("font-medium"), true);
+    assert.equal(isUtilityCoverClass("text-sm"), true);
+    assert.equal(isUtilityCoverClass("rounded-full"), true);
+    assert.equal(stripTailwindVariants("after:absolute"), "absolute");
+    assert.equal(isUtilityCoverClass("after:absolute"), true);
+    assert.equal(isUtilityCoverClass("before:inset-0"), true);
+    assert.equal(isUtilityCoverClass("hover:after:absolute"), true);
+    assert.equal(isUtilityCoverClass("badge"), false);
+    assert.equal(isUtilityCoverClass("chip"), false);
+    assert.equal(nodeClassesAreUtilities("flex min-w-0 gap-2"), true);
+    assert.equal(nodeClassesAreUtilities("min-w-0 badge"), false);
+  });
+
+  it("skips a covering node that restacks the same cell labels", () => {
+    assert.equal(coverIsRestack("Crm Oauth2 date", "Crm · Oauth2 · date"), true);
+    assert.equal(coverIsRestack("Oauth2", "Crm · Oauth2 · date"), true);
+    assert.equal(coverIsRestack("NEW", "Quarterly revenue"), false);
+    assert.equal(coverIsRestack("", "Crm · Oauth2 · date"), false);
   });
 
   it("names a badge or chip as the cover and treats sticky chrome as skip", () => {

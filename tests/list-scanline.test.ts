@@ -47,8 +47,8 @@ describe("scanListScanline", () => {
         `right-locked amounts are a column, got ${JSON.stringify(issues)}`,
       );
       assert.ok(
-        lines.every((i) => !/overflow|primary|menu/i.test(`${i.where} ${i.message}`)),
-        `menubar and overflow menu must not be scanline, got ${JSON.stringify(issues)}`,
+        lines.every((i) => !/overflow|primary|menu|app nav|shortcut/i.test(`${i.where} ${i.message}`)),
+        `menubar, overflow menu, and shortcut-rail ⌘K must not be scanline, got ${JSON.stringify(issues)}`,
       );
     });
   });

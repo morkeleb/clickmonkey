@@ -111,15 +111,15 @@ const RULE_WHY = {
   // visual
   overlap: "Two things occupy the same pixels. Users mis-click or cannot read a label.",
   overflow: "Content leaks out of its card, table, or the viewport. It looks broken and can hide a control.",
-  clip: "Text or a control is cut off mid-glyph, not a clean ellipsis. Names and amounts become unreadable. A trailing icon or %/$ suffix sitting on the letters is the same class. Column headers smashed into the next title are this, not a ragged data column.",
+  clip: "Text or a control is cut off mid-glyph, not a clean ellipsis. Names and amounts become unreadable. A trailing icon or %/$ suffix sitting on the letters is the same class. Column headers smashed into the next title are this, not a ragged data column. Collapsed icon-rail labels (icon-only nav, data-sidebar, or a flush icon strip) are not this.",
   zIndex: "A control is covered so it cannot be read or used. The click hits whatever is on top.",
   align: "A row or column is clearly broken, not a 1px taste difference. The eye cannot scan the list.",
   scanline:
-    "Repeating items, card/list values shoved by variable-width titles, tab titles in a strip, form fields on a row, or a table header vs its cells do not share an edge. Scanning becomes hunting; it usually means mixed padding, a wrapping cell, or a flex row without columns.",
+    "Repeating items, card/list values shoved by variable-width titles, tab titles in a strip, form fields on a row, or a table header vs its cells do not share an edge. Scanning becomes hunting; it usually means mixed padding, a wrapping cell, or a flex row without columns. A Search-row ⌘K / Ctrl+K shortcut chip is not this.",
   sparse:
     "The main pane is left-locked: the form or column stops short and more than half the width is empty on the right. Centered cards are not this; it is unused canvas, not a layout choice.",
   targetSize:
-    "The control is smaller than 24×24 CSS pixels and too close to another target, so taps miss or hit the neighbor. Isolated tiny icons with a 24px-clear circle still pass; inline text links are not this.",
+    "The control is smaller than 24×24 CSS pixels and too close to another target, so taps miss or hit the neighbor. Isolated tiny icons with a 24px-clear circle still pass; inline text links are not this. A 1×1 native select or Close under a custom combobox is not a pointer target.",
   contrast: "Text is unreadable on its background in the screenshot, not only in the WCAG math.",
   broken: "A missing image, empty icon hole, or obvious placeholder instead of content.",
   focusObscured:
@@ -127,7 +127,7 @@ const RULE_WHY = {
   focusVisible:
     "The control takes keyboard focus but shows no ring, glow, or border change (WCAG 2.4.7). Keyboard users cannot tell which control is active.",
   textOcclusion:
-    "Text is hidden under a control, icon, or badge. Labels and values become unreadable even when the DOM still has the full string.",
+    "Text is hidden under a control, icon, or badge. Labels and values become unreadable even when the DOM still has the full string. Chips that restack the same cell labels (`block` / `min-w-0`) are not this.",
   fontSize:
     "Body copy is under 12 CSS pixels. Users zoom or skip the pane; this is not a brand font choice.",
   textSpacing:

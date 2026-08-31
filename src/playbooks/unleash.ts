@@ -15,7 +15,7 @@ import {
   viewWidgetSig,
 } from "../brains/unleash.js";
 import { isFormCommitNote, isFormWorkNote, shouldStampMode } from "../brains/walker-mode.js";
-import { decisionLines, type Brain } from "../brains/types.js";
+import { decisionLines, skipInspectForBurstLine, type Brain } from "../brains/types.js";
 import { parseLine } from "../schema/dsl.js";
 import { bootRun } from "../executor/boot.js";
 import { createExecutor } from "../executor/run.js";
@@ -24,8 +24,8 @@ import { buildView } from "../executor/view.js";
 import { isSilentSubmitMessage } from "../executor/field-validity.js";
 import { shouldPersistFinding } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
-import { loadMapPages, recordMode } from "../persist/fog.js";
-import { jobFogTimes, jobOfBrain, modeFogKey, modeFogTimes, pageFogTimes } from "../schema/fog.js";
+import { loadMapPages, recordFormWork, recordMode } from "../persist/fog.js";
+import { formWorkTimes, jobFogTimes, jobOfBrain, modeFogKey, modeFogTimes, pageFogTimes } from "../schema/fog.js";
 import { stopPresence } from "../persist/presence.js";
 import { requireVisionShots, resolveVision, VisionError, type Config } from "../schema/config.js";
 import type { Finding } from "../schema/finding.js";
@@ -135,12 +135,14 @@ export async function runUnleash(opts: {
     const clicksByPage = new Map<string, string[]>();
     const noopsByPage = new Map<string, string[]>();
     const formHits: Record<string, number> = {};
+    const formSpent: Record<string, true> = {};
     const pageVisits: Record<string, number> = {};
     const pages = loadMapPages(opts.configPath);
     const job = jobOfBrain(brain.name);
     const pageFog: Record<string, string> = {
       ...(job ? jobFogTimes(pages, job) : pageFogTimes(pages)),
     };
+    const formWork: Record<string, string> = { ...(job ? formWorkTimes(pages, job) : {}) };
     const modeFog: Record<string, string> = { ...modeFogTimes(pages) };
     const lockForm = opts.form ? parseFormLock(opts.form).pageId : undefined;
     if (lockForm && !state.model.pages.some((p) => p.id === lockForm)) {
@@ -171,8 +173,10 @@ export async function runUnleash(opts: {
         recentClicks: clicksByPage.get(onPage) ?? [],
         noopIds: noopsByPage.get(onPage) ?? [],
         formHits,
+        formSpent,
         pageVisits,
         pageFog,
+        formWork,
         modeFog,
         ...(job ? { job } : {}),
         ...(huntTarget ? { huntTarget } : {}),
@@ -190,8 +194,10 @@ export async function runUnleash(opts: {
       let formOk = false;
       let saveLine: string | undefined;
       let urlBeforeSave: string | undefined;
-      for (const line of decisionLines(decision)) {
+      const burst = decisionLines(decision);
+      for (let i = 0; i < burst.length; i++) {
         if (stepsUsed >= steps) break;
+        const line = burst[i]!;
         const parsed = parseLine(line);
         const beforeClick =
           parsed && !("comment" in parsed) && parsed.kind === "click"
@@ -201,7 +207,9 @@ export async function runUnleash(opts: {
           parsed && !("comment" in parsed) && parsed.kind === "click"
             ? new Set(formSubmitActions(view.actions, view.surface, view).map((a) => a.id))
             : undefined;
-        const result = await exec.runLine(line);
+        const result = await exec.runLine(line, {
+          skipInspect: skipInspectForBurstLine(i, burst.length),
+        });
         view = result.view;
         stepsUsed += 1;
         if (parsed && !("comment" in parsed) && parsed.kind === "click") {
@@ -257,7 +265,25 @@ export async function runUnleash(opts: {
         modeFog[modeFogKey(onPage, decision.mode)] = at;
         recordMode(state, onPage, decision.mode);
       }
-      if (filledForm && formOk) formHits[formKey] = (formHits[formKey] ?? 0) + 1;
+      if (!lockForm && saveLine) {
+        if (formOk) {
+          formHits[formKey] = (formHits[formKey] ?? 0) + 1;
+          formSpent[formKey] = true;
+          huntTarget = undefined;
+          stayedSaves = 0;
+          const worked = parseFormLock(formKey);
+          recordFormWork(state, worked.pageId, worked.surfaceId);
+          formWork[formKey] = new Date().toISOString();
+        } else {
+          stayedSaves += 1;
+          if (stayedSaves > FORM_COMMIT_RETRIES) {
+            formHits[formKey] = (formHits[formKey] ?? 0) + 1;
+            formSpent[formKey] = true;
+            huntTarget = undefined;
+            stayedSaves = 0;
+          }
+        }
+      }
       const urlNow = state.page.url();
       const leftForm =
         Boolean(lockForm && saveLine) &&

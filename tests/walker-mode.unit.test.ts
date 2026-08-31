@@ -144,6 +144,82 @@ describe("walker modes", () => {
     assert.equal(d.mode, "nav");
   });
 
+  it("does not lock form mode on a list search plus Create dialog opener", () => {
+    const pages: Page[] = [
+      {
+        id: "customers",
+        path: "/customers",
+        params: [],
+        ready: { by: "testId", value: "customers" },
+        surfaces: [
+          {
+            id: "page",
+            kind: "page",
+            fields: [
+              {
+                id: "customers_filter_q",
+                required: false,
+                type: "text",
+                by: "testId",
+                value: "customers-filter-q",
+                status: "ok",
+              },
+            ],
+            actions: [
+              {
+                id: "customers_action_customer_create",
+                by: "testId",
+                value: "customers-action-customer-create",
+                opens: "add_customer",
+                status: "ok",
+              },
+              {
+                id: "customers_row_1",
+                by: "testId",
+                value: "customers-row-1",
+                status: "ok",
+              },
+            ],
+          },
+          {
+            id: "add_customer",
+            kind: "dialog",
+            fields: [
+              { id: "name", required: true, type: "text", by: "name", value: "name", status: "ok" },
+              { id: "notes", required: false, type: "textarea", by: "name", value: "notes", status: "ok" },
+            ],
+            actions: [
+              {
+                id: "form_dialog_customer_create_submit",
+                by: "testId",
+                value: "form-dialog-customer-create-submit",
+                opens: "customers_id1",
+                status: "ok",
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    const view = viewOf({
+      page: "customers",
+      pages: ["customers"],
+      shown: [{ id: "customers_filter_q", value: "", type: "text", label: "Search" }],
+      actions: [
+        { id: "customers_action_customer_create", opens: "add_customer" },
+        { id: "customers_row_1" },
+        { id: "customers_filter_status", role: "combobox" },
+      ],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, writePolicy: "allow", pages };
+    assert.notEqual(detectWalkerMode(ctx).name, "form");
+    const d = decideUnleash(ctx, () => 0);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.doesNotMatch(text, /fill page\.customers_filter_q/);
+    assert.notEqual(d.mode, "form");
+    assert.match(text, /click page\.(customers_action_customer_create|customers_filter_status|customers_row_1)/);
+  });
+
   it("detects nav when there are no fields and a stay button", () => {
     const view = viewOf({
       actions: [{ id: "button_expand" }],
@@ -783,6 +859,113 @@ describe("walker modes", () => {
     );
     assert.equal(d.mode, "dialog");
     assert.equal(d.line, "click page.open_share");
+  });
+
+  it("opens Edit, not Archive/Delete, then hunts another form instead of looping confirms", () => {
+    const record: Page = {
+      id: "customers_id1",
+      path: "/customers/:id1",
+      params: ["id1"],
+      ready: { by: "testId", value: "customer" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "button_edit", by: "testId", value: "edit", status: "ok", opens: "edit" },
+            { id: "button_archive", by: "testId", value: "archive", status: "ok", opens: "archive_" },
+            { id: "button_delete", by: "testId", value: "delete", status: "ok", opens: "delete_" },
+            { id: "link_invoices", by: "testId", value: "invoices", status: "ok", opens: "invoices" },
+          ],
+        },
+        {
+          id: "edit",
+          kind: "dialog",
+          fields: [{ id: "name", required: false, type: "text", by: "name", value: "name", status: "ok" }],
+          actions: [{ id: "button_save", by: "testId", value: "save", status: "ok" }],
+        },
+        {
+          id: "archive_",
+          kind: "dialog",
+          fields: [],
+          actions: [{ id: "button_confirm", by: "testId", value: "confirm", status: "ok" }],
+        },
+        {
+          id: "delete_",
+          kind: "dialog",
+          fields: [],
+          actions: [{ id: "button_confirm", by: "testId", value: "confirm", status: "ok" }],
+        },
+      ],
+    };
+    const invoices: Page = {
+      id: "invoices",
+      path: "/invoices",
+      params: [],
+      ready: { by: "testId", value: "invoices" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "amount", required: false, type: "text", by: "name", value: "amount", status: "ok" }],
+          actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
+        },
+      ],
+    };
+    const view = viewOf({
+      page: "customers_id1",
+      pages: ["customers_id1", "invoices"],
+      actions: [
+        { id: "button_edit", opens: "edit" },
+        { id: "button_archive", opens: "archive_" },
+        { id: "button_delete", opens: "delete_" },
+        { id: "link_invoices", opens: "invoices" },
+      ],
+    });
+    const pages = [record, invoices];
+    const first = decideUnleash({ view, stepsUsed: 2, pages, job: "unleash", writePolicy: "allow" }, () => 0);
+    assert.equal(first.mode, "dialog");
+    assert.equal(first.line, "click page.button_edit");
+    assert.doesNotMatch(first.line, /archive|delete/);
+
+    const afterEdit = decideUnleash(
+      {
+        view,
+        stepsUsed: 4,
+        pages,
+        job: "unleash",
+        writePolicy: "allow",
+        pageVisits: { "customers_id1/edit": 1 },
+      },
+      () => 0.5,
+    );
+    assert.doesNotMatch(afterEdit.line ?? "", /archive|delete/);
+    assert.ok(
+      afterEdit.note === "form hunt" || afterEdit.line === "click page.button_edit",
+      afterEdit.line,
+    );
+
+    const onlyDestroy = viewOf({
+      ...view,
+      actions: [
+        { id: "button_archive", opens: "archive_" },
+        { id: "button_delete", opens: "delete_" },
+        { id: "link_invoices", opens: "invoices" },
+      ],
+    });
+    const unleashSkip = decideUnleash(
+      { view: onlyDestroy, stepsUsed: 2, pages, job: "unleash", writePolicy: "allow" },
+      () => 0.5,
+    );
+    assert.equal(unleashSkip.note, "form hunt");
+    assert.match(unleashSkip.line ?? "", /invoices/);
+    const nasty = decideUnleash(
+      { view: onlyDestroy, stepsUsed: 2, pages, job: "nasty", writePolicy: "allow" },
+      () => 0,
+    );
+    assert.equal(nasty.mode, "dialog");
+    assert.equal(nasty.line, "click page.button_archive");
   });
 
   it("samples list chrome once then opens a row instead of flipping sort", () => {

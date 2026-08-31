@@ -10,13 +10,23 @@ import {
   leftoverFogPath,
   loadMapPages,
   recordFog,
+  recordFormWork,
   recordMode,
   resetFog,
   shouldStampFog,
   stampFog,
 } from "../src/persist/fog.js";
 import { mapPath } from "../src/persist/workspace.js";
-import { jobFogOf, jobFogTimes, jobOfBrain, modeFogTimes, monkeyOfBrain, pageFogTimes } from "../src/schema/fog.js";
+import {
+  formWorkTimes,
+  jobFogOf,
+  jobFogTimes,
+  jobOfBrain,
+  mergePageFog,
+  modeFogTimes,
+  monkeyOfBrain,
+  pageFogTimes,
+} from "../src/schema/fog.js";
 import { emptyConfig } from "../src/schema/config.js";
 import { decideMapScout } from "../src/brains/map-scout.js";
 import { emptyDraft, type Page } from "../src/schema/page-model.js";
@@ -146,6 +156,47 @@ describe("page fog", () => {
     assert.equal(loadConfig(cfg).map.pages.find((p) => p.id === "home")?.fog, undefined);
     assert.equal(existsSync(leftoverFogPath(cfg)), false);
     assert.ok(existsSync(mapPath(cfg)));
+  });
+
+  it("records form work per job and surface without lifting land or the other job", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-fog-form-"));
+    const cfg = join(dir, "clickmonkey.json");
+    seed(cfg, [
+      homePage(),
+      { ...homePage(), id: "customers", path: "/customers", ready: { by: "testId", value: "customers" } },
+    ]);
+    stampFog(cfg, "customers", { at: "2026-04-01T00:00:00.000Z", job: "map" });
+    stampFog(cfg, "customers", {
+      at: "2026-06-01T00:00:00.000Z",
+      job: "unleash",
+      form: "add_customer",
+    });
+    const afterUnleash = loadMapPages(cfg);
+    assert.equal(jobFogTimes(afterUnleash, "unleash").customers, undefined);
+    assert.equal(formWorkTimes(afterUnleash, "unleash")["customers/add_customer"], "2026-06-01T00:00:00.000Z");
+    assert.deepEqual(formWorkTimes(afterUnleash, "nasty"), {});
+    recordFormWork({ configPath: cfg, brain: "unleash" }, "customers", "edit");
+    stampFog(cfg, "customers", {
+      at: "2026-07-01T00:00:00.000Z",
+      job: "nasty",
+      form: "add_customer",
+    });
+    const both = loadMapPages(cfg);
+    assert.equal(formWorkTimes(both, "unleash")["customers/add_customer"], "2026-06-01T00:00:00.000Z");
+    assert.ok(formWorkTimes(both, "unleash")["customers/edit"]);
+    assert.equal(formWorkTimes(both, "nasty")["customers/add_customer"], "2026-07-01T00:00:00.000Z");
+    const merged = mergePageFog(fogOf(both, "customers"), {
+      at: "2026-04-01T00:00:00.000Z",
+      jobs: {},
+      modes: {},
+      forms: { unleash: { add_customer: "2026-01-01T00:00:00.000Z" } },
+    });
+    assert.equal(merged?.forms?.unleash?.add_customer, formWorkTimes(both, "unleash")["customers/add_customer"]);
+    resetFog(cfg, "unleash");
+    const afterReset = loadMapPages(cfg);
+    assert.deepEqual(formWorkTimes(afterReset, "unleash"), {});
+    assert.ok(formWorkTimes(afterReset, "nasty")["customers/add_customer"]);
+    assert.equal(jobFogTimes(afterReset, "map").customers, "2026-04-01T00:00:00.000Z");
   });
 
   it("job reset drops only that clock and leaves at / other jobs / modes", () => {

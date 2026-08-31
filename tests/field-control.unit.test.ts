@@ -8,6 +8,7 @@ import {
   liveLooksEmpty,
   looksLikeListedPicker,
   planControlFill,
+  shouldCloseOverlaysAfterFill,
   skipTextFillMiss,
   textFillMissMessage,
 } from "../src/executor/field-control.js";
@@ -50,6 +51,10 @@ describe("field control registry", () => {
       true,
     );
     assert.equal(looksLikeListedPicker({ id: "party", type: "text" }), false);
+    assert.equal(shouldCloseOverlaysAfterFill({ id: "name", type: "text" }), false);
+    assert.equal(shouldCloseOverlaysAfterFill({ id: "notes", type: "textarea" }), false);
+    assert.equal(shouldCloseOverlaysAfterFill({ id: "country", type: "combobox" }), true);
+    assert.equal(shouldCloseOverlaysAfterFill({ id: "vendorid", type: "text" }), true);
     assert.equal(looksLikeListedPicker({ id: "accountid", type: "number" }), false);
     assert.equal(
       looksLikeListedPicker({ id: "accountid", type: "text", constraints: { htmlType: "number" } }),

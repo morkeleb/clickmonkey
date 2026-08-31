@@ -52,6 +52,11 @@ describe("scanTargetSize", () => {
         false,
         `disabled, hidden, collapsed, and native checkboxes must be skipped, got ${dump}`,
       );
+      assert.equal(
+        hits.some((i) => /native-select|tiny-close|Select is 1×1/i.test(`${i.where ?? ""} ${i.message}`)),
+        false,
+        `1×1 native select and Close are not pointer targets, got ${dump}`,
+      );
     });
   });
 });

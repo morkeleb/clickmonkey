@@ -9,7 +9,7 @@ import {
   mapFormGoals,
   parseFormLock,
 } from "../src/brains/form-hunt.js";
-import { FOG_OLD_MS } from "../src/brains/npc.js";
+import { FOG_OLD_MS, pickHungryGoal } from "../src/brains/npc.js";
 import { decideUnleash } from "../src/brains/unleash.js";
 import type { Page } from "../src/schema/page-model.js";
 import type { View } from "../src/schema/view.js";
@@ -133,6 +133,30 @@ describe("mapFormGoals", () => {
       ["customers/add_customer", "invoices/page"].sort(),
     );
   });
+
+  it("counts a dialog Create that hops to a record page as a form", () => {
+    const hopSubmit = pageOf({
+      id: "customers",
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "customers_filter_q" }],
+          actions: [{ id: "customers_action_customer_create", opens: "add_customer" }],
+        },
+        {
+          id: "add_customer",
+          kind: "dialog",
+          fields: [{ id: "name" }, { id: "notes" }],
+          actions: [
+            { id: "form_dialog_customer_create_submit", opens: "customers_id1" },
+            { id: "button_cancel" },
+          ],
+        },
+      ],
+    });
+    assert.deepEqual(mapFormGoals([hopSubmit]).map(formGoalKey), ["customers/add_customer"]);
+  });
 });
 
 describe("floodHunt", () => {
@@ -216,7 +240,28 @@ describe("decideFormHunt", () => {
     assert.equal(d, undefined);
   });
 
-  it("prefers a never-landed form over a form landed an hour ago", () => {
+  it("prefers a form this job has never filled over one it filled an hour ago", () => {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const d = decideFormHunt(
+      {
+        view: viewOf({
+          actions: [
+            { id: "link_customers", opens: "customers" },
+            { id: "link_invoices", opens: "invoices" },
+          ],
+        }),
+        stepsUsed: 0,
+        pages: [home, customers, invoices],
+        pageFog: { invoices: hourAgo, customers: hourAgo },
+        formWork: { "invoices/page": hourAgo },
+      },
+      () => 0.5,
+    );
+    assert.equal(d?.huntTarget, "customers/add_customer");
+    assert.equal(d?.line, "open customers");
+  });
+
+  it("does not treat a page land as form work", () => {
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const d = decideFormHunt(
       {
@@ -230,11 +275,13 @@ describe("decideFormHunt", () => {
         pages: [home, customers, invoices],
         pageFog: { invoices: hourAgo },
       },
-      () => 0,
+      () => 0.5,
     );
-    assert.equal(d?.huntTarget, "customers/add_customer");
-    assert.equal(d?.line, "open customers");
+    assert.equal(d?.huntTarget, "invoices/page");
+    assert.equal(d?.line, "open invoices");
   });
+
+
 
   it("deprioritises a form that was already filled", () => {
     const ctx = {
@@ -277,7 +324,7 @@ describe("decideFormHunt", () => {
     assert.doesNotMatch(d?.line ?? "", /button_add_customer/);
   });
 
-  it("keeps a committed target instead of flipping", () => {
+  it("picks the closer form when hungers are equal, not a stuck huntTarget", () => {
     const d = decideFormHunt(
       {
         view: viewOf({
@@ -288,12 +335,55 @@ describe("decideFormHunt", () => {
         }),
         stepsUsed: 2,
         pages: [home, customers, invoices],
-        huntTarget: "invoices/page",
+        huntTarget: "customers/add_customer",
       },
       () => 0.5,
     );
     assert.equal(d?.huntTarget, "invoices/page");
     assert.equal(d?.line, "open invoices");
+  });
+
+  it("hunts another form after this surface is spent, even if still standing on it", () => {
+    const d = decideFormHunt(
+      {
+        view: viewOf({
+          page: "invoices",
+          shown: [{ id: "amount", value: "10", type: "text" }],
+          actions: [
+            { id: "submit" },
+            { id: "link_customers", opens: "customers" },
+          ],
+        }),
+        stepsUsed: 4,
+        pages: [home, customers, invoices],
+        formSpent: { "invoices/page": true },
+        formHits: { "invoices/page": 1 },
+      },
+      () => 0.5,
+    );
+    assert.equal(d?.huntTarget, "customers/add_customer");
+  });
+});
+
+describe("pickHungryGoal", () => {
+  it("picks max hunger, then fewer hops, then key order", () => {
+    const goals = [
+      { key: "customers/add_customer", hunger: 1 },
+      { key: "invoices/page", hunger: 1 },
+    ];
+    const dist = (key: string) => (key.startsWith("invoices") ? 1 : 2);
+    assert.equal(pickHungryGoal(goals, dist, () => 0.5)?.key, "invoices/page");
+    assert.equal(
+      pickHungryGoal(
+        [
+          { key: "far/page", hunger: 1 },
+          { key: "near/page", hunger: 0.35 },
+        ],
+        (key) => (key.startsWith("far") ? 5 : 1),
+        () => 0.5,
+      )?.key,
+      "far/page",
+    );
   });
 });
 

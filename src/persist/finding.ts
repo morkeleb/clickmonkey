@@ -29,8 +29,14 @@ function outsideFindings(outDir: string, path: string): boolean {
   return fromFindings === "" || fromFindings.startsWith("..") || isAbsolute(fromFindings);
 }
 
+function underShots(outDir: string, path: string): boolean {
+  const fromShots = relative(resolve(outDir, "shots"), resolve(path));
+  return fromShots !== "" && !fromShots.startsWith("..") && !isAbsolute(fromShots);
+}
+
 function unlinkIfOutsideFindings(outDir: string, path: string): void {
   if (!outsideFindings(outDir, path)) return;
+  if (underShots(outDir, path)) return;
   try {
     unlinkSync(path);
   } catch {
@@ -184,20 +190,47 @@ export type PersistVisualIssueCtx = {
   replayLog?: string;
 };
 
+/** `@ 320px` / `@ 375px` — overflow measured at a resized viewport. */
+export function overflowViewportTag(
+  issue: Pick<QualityIssue, "where" | "message">,
+): "320" | "375" | undefined {
+  const blob = `${issue.where ?? ""} ${issue.message ?? ""}`;
+  if (/@ 320px/.test(blob)) return "320";
+  if (/@ 375px/.test(blob)) return "375";
+  return undefined;
+}
+
+const CROPPED_RULES = new Set(["focusVisible", "clip", "targetSize", "textOcclusion"]);
+
+function matchIssueScreenshot(
+  where: string,
+  shots: ReadonlyArray<VisualIssueScreenshot>,
+): string | undefined {
+  const want = where.replace(/\s+/g, " ").trim();
+  if (!want) return undefined;
+  const parts = new Set(want.split(" · ").map((s) => s.trim()).filter(Boolean));
+  const hit = shots.find((s) => s.where === want || parts.has(s.where));
+  return hit?.screenshotPath;
+}
+
 export function visualIssueScreenshotPath(
-  issue: Pick<QualityIssue, "rule" | "where">,
+  issue: Pick<QualityIssue, "rule" | "where" | "message">,
   ctx: Pick<PersistVisualIssueCtx, "screenshotPath" | "issueScreenshots">,
 ): string | undefined {
+  const shots = ctx.issueScreenshots;
   if (issue.rule === "focusVisible") {
-    const shots = ctx.issueScreenshots;
     if (!shots?.length) return undefined;
-    const where = issue.where?.replace(/\s+/g, " ").trim() ?? "";
-    if (where) {
-      const parts = new Set(where.split(" · ").map((s) => s.trim()).filter(Boolean));
-      const hit = shots.find((s) => s.where === where || parts.has(s.where));
-      if (hit) return hit.screenshotPath;
-    }
-    return undefined;
+    return matchIssueScreenshot(issue.where ?? "", shots);
+  }
+  const vp = issue.rule === "overflow" ? overflowViewportTag(issue) : undefined;
+  if (vp && shots?.length) {
+    const tag = `@ ${vp}px`;
+    const hit = shots.find((s) => s.where === tag || s.where.includes(tag));
+    if (hit) return hit.screenshotPath;
+  }
+  if (CROPPED_RULES.has(issue.rule) && shots?.length) {
+    const cropped = matchIssueScreenshot(issue.where ?? "", shots);
+    if (cropped) return cropped;
   }
   return ctx.screenshotPath;
 }

@@ -40,6 +40,22 @@ describe("scanTextOcclusion", () => {
     });
   });
 
+  it("skips chips restacked over the same table cell (class block or min-w-0)", async () => {
+    await withPage(html, async (page) => {
+      const issues = await scanTextOcclusion(page);
+      const hits = issues.filter((i) => i.rule === "textOcclusion");
+      assert.equal(
+        hits.some((i) => /Crm|Oauth2|connector-cell|min-w-0|font-medium|after:absolute/i.test(`${i.where} ${i.message}`)),
+        false,
+        `chip stack over a cell must not be textOcclusion, got ${JSON.stringify(issues)}`,
+      );
+      assert.ok(
+        hits.some((i) => /Quarterly revenue/i.test(`${i.where} ${i.message}`)),
+        `opaque badge cover must still file, got ${JSON.stringify(issues)}`,
+      );
+    });
+  });
+
   it("skips chrome behind an open dialog covering the page", async () => {
     await withPage(html, async (page) => {
       await page.evaluate(() => {

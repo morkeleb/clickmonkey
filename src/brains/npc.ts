@@ -172,6 +172,27 @@ export function pickWeighted<T>(items: readonly T[], scoreOf: (item: T) => numbe
 
 const DEFAULT_RETHINK = 0.15;
 
+/** Among equal-hunger forms, randomize this often; otherwise fewer hops, then map order. */
+export const HUNGRY_TIE_RANDOM = 0.1;
+
+/** Hungriest goal. Ties: ~10% random, else fewer hops, then key order. Distance is not in the score. */
+export function pickHungryGoal(
+  goals: readonly NpcGoal[],
+  distOf: (key: string) => number,
+  rng: () => number,
+): NpcGoal | undefined {
+  if (goals.length === 0) return undefined;
+  let max = -Infinity;
+  for (const g of goals) {
+    if (g.hunger > max) max = g.hunger;
+  }
+  const tied = goals.filter((g) => g.hunger === max);
+  if (tied.length > 1 && rng() >= 1 - HUNGRY_TIE_RANDOM) {
+    return tied[Math.floor(rng() * tied.length)]!;
+  }
+  return [...tied].sort((a, b) => distOf(a.key) - distOf(b.key) || a.key.localeCompare(b.key))[0];
+}
+
 /** Pick a hungry reachable goal and the first live step toward it. */
 export function planNpc(opts: {
   ctx: BrainContext;
@@ -179,6 +200,8 @@ export function planNpc(opts: {
   rng: () => number;
   committed?: string;
   rethink?: number;
+  /** `hungry` = argmax hunger (form hunt). Default weights hunger × distance (map). */
+  pick?: "weighted" | "hungry";
 }): NpcPlan | undefined {
   const pages = opts.ctx.pages;
   if (!pages || pages.length === 0 || opts.goals.length === 0) return undefined;
@@ -192,13 +215,18 @@ export function planNpc(opts: {
     return Boolean(reach?.first && npcStepLive(opts.ctx, reach.first));
   });
   if (reachable.length === 0) return undefined;
-  const scoreOf = (g: NpcGoal) =>
-    Math.max(0, g.hunger) * (1 + 1 / (1 + (flood.get(g.key)?.dist ?? 0)));
+  const distOf = (key: string) => flood.get(key)?.dist ?? 0;
+  const scoreOf = (g: NpcGoal) => Math.max(0, g.hunger) * (1 + 1 / (1 + distOf(g.key)));
   let goal: NpcGoal | undefined;
   const rethink = opts.rethink ?? DEFAULT_RETHINK;
   const committed = opts.committed ? reachable.find((g) => g.key === opts.committed) : undefined;
-  if (committed && opts.rng() > rethink) goal = committed;
-  goal ??= pickWeighted(reachable, scoreOf, opts.rng);
+  if (opts.pick === "hungry") {
+    if (committed && rethink === 0) goal = committed;
+    else goal = pickHungryGoal(reachable, distOf, opts.rng);
+  } else {
+    if (committed && opts.rng() > rethink) goal = committed;
+    goal ??= pickWeighted(reachable, scoreOf, opts.rng);
+  }
   if (!goal) return undefined;
   const reach = flood.get(goal.key);
   if (!reach?.first || !npcStepLive(opts.ctx, reach.first)) return undefined;

@@ -44,8 +44,10 @@ describe("clickmonkey CLI chassis", () => {
     assert.match(result.stdout, /explore/);
     assert.match(result.stdout, /^\s+mcp\s/m);
     assert.match(result.stdout, /^\s+fog\s/m);
+    assert.match(result.stdout, /^\s+pages\s/m);
     assert.match(result.stdout, /report/);
     assert.match(result.stdout, /^\s+prune\s/m);
+    assert.match(result.stdout, /Not the sitemap/);
     assert.match(result.stdout, /^\s+spec\s/m);
     assert.match(result.stdout, /^\s+emit\s/m);
     assert.match(result.stdout, /^\s+ui\s/m);
@@ -123,6 +125,16 @@ describe("clickmonkey CLI chassis", () => {
     const jobOnly = run(["fog", "--job", "map", "--config", cfg]);
     assert.equal(jobOnly.status, 2);
     assert.match(jobOnly.stderr, /--job is only valid with --reset/);
+  });
+
+  it("prune --help explains report review vs sitemap GC", () => {
+    const result = run(["prune", "--help"]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: clickmonkey prune/);
+    assert.match(result.stdout, /dismissed\.json/);
+    assert.match(result.stdout, /clickmonkey pages/);
+    assert.match(result.stdout, /Does not edit map\.json/);
+    assert.doesNotMatch(result.stdout, /Usage:\n {2}clickmonkey <command>/);
   });
 
   it("emit refuses an empty map", () => {

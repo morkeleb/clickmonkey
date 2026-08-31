@@ -4,6 +4,7 @@ import {
   CANDIDATE_SELECTOR,
   CLIP_HIGH_PX,
   CLIP_PX,
+  ICON_RAIL_MAX_PX,
   MAX_HITS,
   SCANLINE_OWNED,
   clipConfidence,
@@ -15,6 +16,7 @@ import {
   overflowIsScroll,
   scanlineOwnsNode,
   skipChromeBehindDialog,
+  skipIconRailClip,
   skipOpenMenu,
   textClipIssue,
   textClipMessage,
@@ -111,6 +113,18 @@ describe("text-clip helpers", () => {
       false,
     );
     assert.equal(skipChromeBehindDialog({ viewportWidth: 1280, insideDialog: false }), false);
+  });
+
+  it("skips collapsed icon-rail labels, not an expanded nav item", () => {
+    assert.equal(ICON_RAIL_MAX_PX, 72);
+    assert.equal(skipIconRailClip({ inNav: true, hasIcon: true, width: 48 }), true);
+    assert.equal(skipIconRailClip({ inNav: true, hasIcon: true, width: 72 }), true);
+    assert.equal(skipIconRailClip({ inNav: true, hasIcon: true, width: 200 }), false);
+    assert.equal(skipIconRailClip({ inNav: true, hasIcon: false, width: 48 }), false);
+    assert.equal(skipIconRailClip({ inNav: false, hasIcon: true, width: 48 }), false);
+    assert.equal(skipIconRailClip({ inNav: false, hasIcon: true, width: 48, inSidebar: true }), true);
+    assert.equal(skipIconRailClip({ inNav: false, hasIcon: true, width: 48, atViewportEdge: true }), true);
+    assert.equal(skipIconRailClip({ inNav: false, hasIcon: true, width: 200, inSidebar: true }), false);
   });
 
   it("skips menuitems inside an open menu", () => {

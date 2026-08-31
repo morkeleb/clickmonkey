@@ -1,17 +1,24 @@
 import type { Page } from "playwright";
 import type { QualityIssue } from "../schema/quality.js";
+import { evidenceClipFromRect, type EvidenceClip, type ShotClip } from "./focus-visible.js";
 
 /** WCAG 2.5.8 Target Size (Minimum): both axes must be ≥ this. */
 export const TARGET_MIN_PX = 24;
 /** Both axes below this → high confidence; otherwise medium. */
 export const TARGET_HIGH_PX = 20;
 export const TARGET_SIZE_CAP = 8;
+/**
+ * Below this is sr-only / 1×1 native select under a custom combobox, not a
+ * pointer target. 2.5.8 is about painted controls people try to tap.
+ */
+export const TARGET_PAINTED_MIN_PX = 4;
 
 export type TargetSizeHit = {
   kind: string;
   width: number;
   height: number;
   where: string;
+  clip?: ShotClip;
 };
 
 const UA_INPUT = new Set(["checkbox", "radio", "file", "range", "color"]);
@@ -25,8 +32,8 @@ export function isUndersizedTarget(width: number, height: number): boolean {
   return (
     Number.isFinite(width) &&
     Number.isFinite(height) &&
-    width >= 1 &&
-    height >= 1 &&
+    width >= TARGET_PAINTED_MIN_PX &&
+    height >= TARGET_PAINTED_MIN_PX &&
     width < TARGET_MIN_PX &&
     height < TARGET_MIN_PX
   );
@@ -127,6 +134,12 @@ export function dropSpacedHits(samples: TargetSizeSample[]): TargetSizeHit[] {
       width: sample.width,
       height: sample.height,
       where: sample.where,
+      clip: {
+        x: target.left,
+        y: target.top,
+        width: target.right - target.left,
+        height: target.bottom - target.top,
+      },
     });
   }
   return hits;
@@ -157,9 +170,19 @@ export function targetSizeIssue(hit: TargetSizeHit): QualityIssue | undefined {
 }
 
 export function issuesFromTargetHits(hits: TargetSizeHit[]): QualityIssue[] {
+  return targetSizeEvidence(hits).issues;
+}
+
+export function targetSizeEvidence(
+  hits: TargetSizeHit[],
+  viewport?: { width: number; height: number } | null,
+): { issues: QualityIssue[]; clips: EvidenceClip[] } {
   const issues: QualityIssue[] = [];
+  const clips: EvidenceClip[] = [];
   const seen = new Set<string>();
-  if (!Array.isArray(hits)) return issues;
+  const vw = viewport?.width ?? 0;
+  const vh = viewport?.height ?? 0;
+  if (!Array.isArray(hits)) return { issues, clips };
   for (const hit of hits) {
     const issue = targetSizeIssue(hit);
     if (!issue) continue;
@@ -167,9 +190,13 @@ export function issuesFromTargetHits(hits: TargetSizeHit[]): QualityIssue[] {
     if (seen.has(key)) continue;
     seen.add(key);
     issues.push(issue);
+    if (issue.confidence === "high" && issue.where) {
+      const clip = evidenceClipFromRect(hit.clip, vw, vh);
+      if (clip) clips.push({ where: issue.where, clip });
+    }
     if (issues.length >= TARGET_SIZE_CAP) break;
   }
-  return issues;
+  return { issues, clips };
 }
 
 /**
@@ -178,6 +205,7 @@ export function issuesFromTargetHits(hits: TargetSizeHit[]): QualityIssue[] {
  */
 const COLLECT_SRC = `(() => {
   var SEL = "button, [role='button'], a[href], input:not([type='hidden']), select, textarea, [role='tab'], [role='menuitem']";
+  var TARGET_PAINTED_MIN_PX = ${TARGET_PAINTED_MIN_PX};
   var hits = [];
   var seen = {};
 
@@ -204,7 +232,7 @@ const COLLECT_SRC = `(() => {
     if (cs.display === "none" || cs.visibility === "hidden") return false;
     if (parseFloat(cs.opacity) === 0) return false;
     var r = el.getBoundingClientRect();
-    if (r.width < 1 || r.height < 1) return false;
+    if (r.width < TARGET_PAINTED_MIN_PX || r.height < TARGET_PAINTED_MIN_PX) return false;
     if (r.bottom <= 0 || r.right <= 0) return false;
     if (r.top >= (window.innerHeight || 0) || r.left >= (window.innerWidth || 0)) return false;
     return true;
@@ -334,7 +362,7 @@ const COLLECT_SRC = `(() => {
     var ua = itype === "checkbox" || itype === "radio" || itype === "file" || itype === "range" || itype === "color";
     var box = targetBox(el);
     if (!isFinite(box.width) || !isFinite(box.height)) continue;
-    if (box.width < 1 || box.height < 1) continue;
+    if (box.width < TARGET_PAINTED_MIN_PX || box.height < TARGET_PAINTED_MIN_PX) continue;
     var where = describeWhere(el);
     var kind = kindName(el);
     var exempt = Boolean(disabled(el) || ua || inlineTextLink(el));
@@ -356,7 +384,14 @@ const COLLECT_SRC = `(() => {
   return hits;
 })()`;
 
-export async function scanTargetSize(page: Page): Promise<QualityIssue[]> {
+export async function scanTargetSizeEvidence(page: Page): Promise<{
+  issues: QualityIssue[];
+  clips: EvidenceClip[];
+}> {
   const samples = (await page.evaluate(COLLECT_SRC).catch(() => [])) as TargetSizeSample[];
-  return issuesFromTargetHits(dropSpacedHits(samples));
+  return targetSizeEvidence(dropSpacedHits(samples), page.viewportSize());
+}
+
+export async function scanTargetSize(page: Page): Promise<QualityIssue[]> {
+  return (await scanTargetSizeEvidence(page)).issues;
 }

@@ -125,6 +125,7 @@ clickmonkey/
   runs/<id>/broken.json          # 404s seen on that walk
   runs/<id>/verbose/             # --verbose only: per-step HTML + view.txt (safe to delete)
   reports/<id>/findings.md       # shareable reports (one folder per report)
+  dismissed.json                 # fingerprints prune wrote; later report skips them
   replays/<id>/comparison.md     # before/after vs that report
   explore-context.md             # optional: app architecture for explore --skills
   specs/*.md                     # replayable clickmonkey fences
@@ -133,7 +134,7 @@ clickmonkey/
 
 ### Git
 
-Commit the leash, the map, specs, and explore context. Ignore generated walks (screenshots, verbose DOM, presence) — they are large and local.
+Commit the leash, the map, specs, explore context, and `dismissed.json` (false positives you already judged). Ignore generated walks (screenshots, verbose DOM, presence) — they are large and local.
 
 ```gitignore
 # ClickMonkey
@@ -232,7 +233,9 @@ clickmonkey nasty [--config] [--url] [--out] [--steps]
 clickmonkey explore [--config] [--url] [--out] [--steps] [--minutes] [--charter] [--skills]
 clickmonkey mcp [--config]
 clickmonkey fog [--config] [--reset] [--job map|unleash|nasty]
+clickmonkey pages [--config] [--drop id,id]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
+clickmonkey prune [reportId] [--config] [--ids id,id]
 clickmonkey replay <log|report.md> [--config] [--url] [--out]
 clickmonkey spec [file.md] [--check] [--fail-on-findings]
 clickmonkey emit [--config]
@@ -243,6 +246,8 @@ clickmonkey ui --stop
 ```
 
 `clickmonkey emit` writes `clickmonkey/ts/generated.ts` from the map and leash intro. That file is a typed page object: `session()` logs in via intro (`$CLICKMONKEY_*` tokens stay tokens), then you chain mapped ids (`await app.home.openCreate().fill({ name: "Acme" }).submit()`). Call `app.close()` when done, or `await using app = await session()`. The chain is a spec specialization — same executor, inspect, findings, and map presence (live letter **t**). `visualIssue` does not fail the chain; `expectFailed`, unknown ids, and a filled submit under default `writePolicy: "validationOnly"` do (set `"allow"` on a disposable instance to commit). Findings are on `app.findings` / `app.ledger`. Re-run emit when the map changes; do not edit the generated file. Write tests against it. Spec stays markdown fences (`clickmonkey spec`, live letter **s**).
+
+`clickmonkey pages` is sitemap GC. List rooms (path, last land, live inbound doors, 404) and drop ones that are gone. **Recommend drop** is only a document 404 in `broken.json` plus no live inbound `opens`, and never for `entry`, another origin, or a parametric path. Hunger alone is not a recommend. A TTY checkbox pre-checks those rooms. `--drop id,id` skips the prompt for scripts. Doors that `opens` a dropped page lose that hint. Then `clickmonkey emit` if you use the typed page model. This does not touch reports or `dismissed.json`.
 
 `clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists. If the banner says the UI is stale, use **Restart UI** in that banner, or `clickmonkey ui --stop` then `clickmonkey ui`. A report page has **Copy** (markdown + inlined screenshots for pasting into a model) next to **Print**.
 
@@ -273,7 +278,19 @@ Explore exit `1` means findings, not a crash — mark the job `allow_failure`. E
 
 `clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox, none pre-selected), then **Pages with issues?** — default (top 8) or full (every page with its own issues). `--runs id,id` is explicit; `--all` takes every run that has findings. `--quality-full` skips the prompt (scripts). Chapters match the sitemap page sheet: Findings, Testability, Accessibility, Visual, Quality (HTML, SEO, Runtime). `Pages` groups list unique-to-a-route issues (default: top 8; full: every such page). The report also has a By page index: default lists those pages; `--quality-full` indexes every labeled ledger page (chrome as labels on those lines, not extra headings). Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. Findings and ledger rows include a short **Why it matters** paragraph (copy-pasteable). With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF) and Copy (text + screenshots).
 
-`clickmonkey prune` is human review: pick a report, then checkbox findings to drop as false positives. Finding folders on disk stay; the report markdown is rewritten and ids/fingerprints go into `clickmonkey/dismissed.json` so later `report` runs skip them. With `brain` configured the model reads the report first and pre-checks likely walker noise (you can uncheck). Scripts: `clickmonkey prune <reportId> --ids fnd_3_expectFailed,fnd_10_visualIssue`.
+`clickmonkey prune` is human review of a **report**, not the sitemap. After `clickmonkey report` you have `clickmonkey/reports/<id>/findings.md`. Some cards are real bugs; some are walker noise (clip on an icon rail, a 1×1 hidden native `<select>` under a custom combobox). Prune:
+
+1. Pick a report (TTY select, or pass the report id). `clickmonkey prune --help` prints the same story.
+2. Checkbox the findings that are false positives. With `brain` configured, likely noise is pre-checked (uncheck anything real). Scripts: `clickmonkey prune <reportId> --ids fnd_3_expectFailed,fnd_10_visualIssue`.
+3. The markdown is rewritten without those cards. Finding folders under `runs/` stay — the tape is the tape. Replay still has the original walk.
+4. Ids and fingerprints go into `clickmonkey/dismissed.json`. The next `clickmonkey report` skips matches so you do not re-triage the same noise.
+
+It never edits `map.json`. A 404 room still on the sitemap is `clickmonkey pages`.
+
+| Command | Edits | When |
+|---|---|---|
+| `pages` | `map.json` | that URL is gone |
+| `prune` | `findings.md` + `dismissed.json` | that finding is a false positive |
 
 Each run writes `nav.jsonl` (and echoes timestamped lines on stderr): every DSL step (`step` / `ok` / `fail`) plus main-frame redirects, document loads, and in-page URL changes. Gaps between `step` and `ok` are waits. That is not the replay tape — `log.txt` stays click/fill/`open` only.
 

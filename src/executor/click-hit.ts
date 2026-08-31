@@ -167,7 +167,7 @@ const COVER_KIND_SRC = `(p) => {
 const OPEN_PICKER =
   '[role="listbox"]:visible, [role="menu"]:visible, [role="option"]:visible, [role="combobox"][aria-expanded="true"], [aria-haspopup="listbox"][aria-expanded="true"]';
 
-async function pickerStillOpen(page: Page): Promise<boolean> {
+export async function pickerStillOpen(page: Page): Promise<boolean> {
   return (await page.locator(OPEN_PICKER).count().catch(() => 0)) > 0;
 }
 

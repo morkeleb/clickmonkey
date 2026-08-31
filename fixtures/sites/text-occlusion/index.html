@@ -157,6 +157,75 @@
         inset: 0;
         z-index: 2;
       }
+      .chip-cell {
+        position: relative;
+        margin-top: 48px;
+        width: 240px;
+        height: 32px;
+      }
+      .chip-cell table {
+        width: 100%;
+        height: 32px;
+        border-collapse: collapse;
+      }
+      .chip-cell td {
+        padding: 0 8px;
+        line-height: 32px;
+        white-space: nowrap;
+      }
+      .chip-cell .block {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        background: #fff;
+        padding: 0 8px;
+      }
+      .chip-cell .block span {
+        background: #eee;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 12px;
+      }
+      .chip-minw {
+        position: relative;
+        margin-top: 48px;
+        width: 240px;
+        height: 32px;
+      }
+      .chip-minw table {
+        width: 100%;
+        height: 32px;
+        border-collapse: collapse;
+      }
+      .chip-minw td {
+        padding: 0 8px;
+        line-height: 32px;
+        white-space: nowrap;
+      }
+      .chip-minw .chips {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        background: #fff;
+        padding: 0 8px;
+      }
+      .chip-minw .chips span {
+        background: #eee;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 12px;
+      }
+      .chip-minw .min-w-0 {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+      }
     </style>
   </head>
   <body>
@@ -228,6 +297,29 @@
       <div class="step-demo" data-testid="step-cover">
         <h1 data-testid="step-heading">Project heading</h1>
         <div class="step" data-testid="stepper-step">1</div>
+      </div>
+
+      <div class="chip-cell" data-testid="chip-stack">
+        <table>
+          <tr><td data-testid="connector-cell">Crm · Oauth2 · date</td></tr>
+        </table>
+        <div class="block">
+          <span>Crm</span>
+          <span>Oauth2</span>
+          <span>date</span>
+        </div>
+      </div>
+
+      <div class="chip-minw" data-testid="chip-minw">
+        <table>
+          <tr><td data-testid="connector-minw-cell">Crm · Oauth2 · 8/20/2026, 4:37:48 PM</td></tr>
+        </table>
+        <div class="chips">
+          <span>Crm</span>
+          <span>Oauth2</span>
+          <span>8/20/2026, 4:37:48 PM</span>
+        </div>
+        <div class="min-w-0 font-medium after:absolute"></div>
       </div>
     </main>
   </body>

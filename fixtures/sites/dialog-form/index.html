@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Add customer</title>
+  </head>
+  <body>
+    <main data-testid="customers">
+      <button type="button" data-testid="list-action-create">Create</button>
+      <button type="button" data-testid="customers-action-customer-create">Add customer</button>
+      <dialog data-testid="add-customer-dialog" aria-label="Add customer">
+        <form>
+          <label>Name <input data-testid="name" name="name" required /></label>
+          <label>Notes <textarea data-testid="notes" name="notes"></textarea></label>
+          <button type="submit" data-testid="button-create">Create</button>
+        </form>
+      </dialog>
+    </main>
+    <script>
+      const dialog = document.querySelector("[data-testid=add-customer-dialog]");
+      const name = document.querySelector("[data-testid=name]");
+      document.querySelector("[data-testid=customers-action-customer-create]").addEventListener("click", () => {
+        dialog.showModal();
+      });
+      name.addEventListener(
+        "input",
+        () => {
+          window.addEventListener("resize", () => {
+            if (dialog.open) dialog.close();
+          });
+        },
+        { once: true },
+      );
+      dialog.querySelector("form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!name.value) return;
+        document.body.dataset.submitted = "1";
+        dialog.close();
+      });
+    </script>
+  </body>
+</html>

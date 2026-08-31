@@ -21,7 +21,8 @@ import {
   cmdView,
 } from "./commands.js";
 import { cmdEmit } from "./cmd-emit.js";
-import { EXIT_USAGE, printUsage, USAGE } from "./common.js";
+import { cmdPages } from "./cmd-pages.js";
+import { EXIT_USAGE, printUsage, PRUNE_HELP, USAGE } from "./common.js";
 
 try {
   const { values, positionals } = parseArgs({
@@ -54,6 +55,7 @@ try {
       reset: { type: "boolean" },
       job: { type: "string" },
       form: { type: "string" },
+      drop: { type: "string" },
     },
   });
 
@@ -64,6 +66,10 @@ try {
 
   const command = positionals[0];
   if (!command || values.help) {
+    if (command === "prune" && values.help) {
+      printUsage(PRUNE_HELP);
+      process.exit(0);
+    }
     printUsage();
     process.exit(command && values.help ? 0 : 2);
   }
@@ -92,6 +98,7 @@ try {
     reset: Boolean(values.reset),
     job: typeof values.job === "string" ? values.job : undefined,
     form: typeof values.form === "string" ? values.form : undefined,
+    drop: typeof values.drop === "string" ? values.drop : undefined,
   };
 
   const run = async (): Promise<number> => {
@@ -118,6 +125,8 @@ try {
         return cmdMcp(flags);
       case "fog":
         return cmdFog(flags);
+      case "pages":
+        return cmdPages(flags);
       case "report":
         return cmdReport(flags);
       case "prune":

@@ -1,11 +1,12 @@
 import { formatStep, parseLine } from "../schema/dsl.js";
 import type { Page } from "../schema/page-model.js";
-import type { View } from "../schema/view.js";
+import type { ShownAction, View } from "../schema/view.js";
 import type { BrainContext, BrainDecision } from "./types.js";
 import {
   decideForm,
   dialogOpeners,
   formatClick,
+  isDestructiveDialogOpener,
   formFieldsToFill,
   formSubmitAction,
   formSubmitActions,
@@ -30,6 +31,8 @@ import {
   looksLikeUnfinishedForm,
   looksLikeMidForm,
   looksLikeWizard,
+  looksLikePageSearch,
+  looksLikeRowSelectCheckbox,
   emptyBodyFields,
   filledBodyFields,
   searchIsActive,
@@ -73,6 +76,10 @@ function pick<T>(items: readonly T[], rng: () => number): T {
   return items[Math.floor(rng() * items.length)]!;
 }
 
+function pageOfView(ctx: BrainContext): Page | undefined {
+  return ctx.pages?.find((p) => p.id === ctx.view.page);
+}
+
 /** Submit on this surface, including self-`opens`. writePolicy/dialog do not gate detect. */
 function hasSurfaceSubmit(ctx: BrainContext): boolean {
   const { view } = ctx;
@@ -82,6 +89,10 @@ function hasSurfaceSubmit(ctx: BrainContext): boolean {
       formSubmitAction(view.actions, view.surface, view) ??
       mappedPrimaryCommits(view, ctx.pages)[0],
   );
+}
+
+function hasFormBody(view: View): boolean {
+  return view.shown.some((f) => !looksLikePageSearch(f) && !looksLikeRowSelectCheckbox(f));
 }
 
 function hasEmptyFormField(view: View): boolean {
@@ -97,7 +108,11 @@ function filledThisForm(ctx: BrainContext): boolean {
 }
 
 function hasCommit(ctx: BrainContext): boolean {
-  return ctx.view.actions.some(isPrimaryFormCommit) || mappedPrimaryCommits(ctx.view, ctx.pages).length > 0;
+  const page = pageOfView(ctx);
+  return (
+    ctx.view.actions.some((a) => isPrimaryFormCommit(a, page, ctx.view.surface)) ||
+    mappedPrimaryCommits(ctx.view, ctx.pages).length > 0
+  );
 }
 
 function hasListedTypeaheadOptions(view: View): boolean {
@@ -110,6 +125,7 @@ function saveNotTried(ctx: BrainContext): boolean {
 
 /** Empty body fields plus Save, a still-disabled create form, or we already started filling. */
 function shouldStayOnForm(ctx: BrainContext): boolean {
+  if (ctx.formSpent?.[formHitKey(ctx)]) return false;
   if (hasListedTypeaheadOptions(ctx.view) && hasCommit(ctx)) return true;
   if (hasEmptyFormField(ctx.view)) {
     if (hasCommit(ctx)) return true;
@@ -290,7 +306,7 @@ const wizardMode: WalkerMode = {
 const formMode: WalkerMode = {
   name: "form",
   detect: (ctx) =>
-    (ctx.view.shown.length > 0 && hasSurfaceSubmit(ctx)) ||
+    (hasFormBody(ctx.view) && hasSurfaceSubmit(ctx)) ||
     looksLikeUnfinishedForm(ctx.view) ||
     looksLikeMidForm(ctx.view) ||
     (filledThisForm(ctx) && hasEmptyFormField(ctx.view)) ||
@@ -314,15 +330,28 @@ function decideEmpty(ctx: BrainContext, rng: () => number, _fill: FillFn): Brain
   return hopOrChromeFallback(ctx.view, rng, ctx);
 }
 
-function decideDialog(ctx: BrainContext, rng: () => number, _fill: FillFn): BrainDecision {
+function legalDialogOpeners(ctx: BrainContext): ShownAction[] {
   const openers = usableClicks(dialogOpeners(ctx.view, ctx.pages), ctx);
-  if (openers.length === 0) return hopOrChromeFallback(ctx.view, rng, ctx);
+  if (ctx.job === "nasty") return openers;
+  const page = ctx.pages?.find((p) => p.id === ctx.view.page);
+  return openers.filter((a) => !isDestructiveDialogOpener(a, page));
+}
+
+function decideDialog(ctx: BrainContext, rng: () => number, _fill: FillFn): BrainDecision {
+  const openers = legalDialogOpeners(ctx);
   const fresh = openers.filter((a) => {
     if (!a.opens) return false;
     return (ctx.pageVisits?.[`${ctx.view.page}/${a.opens}`] ?? 0) === 0;
   });
-  const pool = fresh.length > 0 ? fresh : openers;
-  return { line: formatClick(ctx.view.surface, pick(pool, rng)), note: "dialog" };
+  if (fresh.length > 0) {
+    return { line: formatClick(ctx.view.surface, pick(fresh, rng)), note: "dialog" };
+  }
+  return huntOrLocal(ctx, rng, () => {
+    if (openers.length > 0) {
+      return { line: formatClick(ctx.view.surface, pick(openers, rng)), note: "dialog" };
+    }
+    return hopOrChromeFallback(ctx.view, rng, ctx);
+  });
 }
 
 const listMode: WalkerMode = {

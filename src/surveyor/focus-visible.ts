@@ -25,6 +25,9 @@ export type ShotClip = { x: number; y: number; width: number; height: number };
 
 export type FocusVisibleClip = { where: string; clip: ShotClip };
 
+/** Crop for clip / targetSize / textOcclusion — same padding as 2.4.7. */
+export type EvidenceClip = { where: string; clip: ShotClip };
+
 export type FocusVisibleScan = { issues: QualityIssue[]; clips: FocusVisibleClip[] };
 
 /** Viewport padding around a focused control when clipping a 2.4.7 shot. */
@@ -239,6 +242,24 @@ export function focusShotClip(
     bottom = vh;
   }
   return parseShotClip({ x, y, width: right - x, height: bottom - y });
+}
+
+/** Viewport box → padded screenshot clip. Accepts ClientRect or Playwright clip. */
+export function evidenceClipFromRect(
+  rect:
+    | { left?: number; top?: number; right?: number; bottom?: number; x?: number; y?: number; width?: number; height?: number }
+    | null
+    | undefined,
+  vw: number,
+  vh: number,
+): ShotClip | undefined {
+  if (!rect) return undefined;
+  const left = Number(rect.left ?? rect.x);
+  const top = Number(rect.top ?? rect.y);
+  const width = Number(rect.width ?? (Number(rect.right) - left));
+  const height = Number(rect.height ?? (Number(rect.bottom) - top));
+  if (![left, top, width, height].every(Number.isFinite)) return undefined;
+  return focusShotClip({ left, top, right: left + width, bottom: top + height }, vw, vh);
 }
 
 export function focusVisibleClipsFromHits(hits: FocusVisibleHit[]): FocusVisibleClip[] {

@@ -13,7 +13,9 @@ _clickmonkey() {
     'explore:Paladin: charter-driven LLM walk'
     'mcp:Exploratory testing over MCP (stdio)'
     'fog:Print or reset fog clocks on the sitemap'
+    'pages:Drop gone rooms from the sitemap (not findings)'
     'report:Markdown findings report from selected runs'
+    'prune:Drop false-positive findings from a report (not the sitemap)'
     'replay:Replay a log or a findings-report markdown file'
     'spec:Markdown specs under clickmonkey/specs/ [--check] [--fail-on-findings]'
     'emit:Generate clickmonkey/ts/generated.ts from the map'
@@ -46,6 +48,8 @@ _clickmonkey() {
     '--fail-on-findings[Exit 1 when a spec run finds a bug]' \
     '--reset[Wipe lands.json fog clocks (fog)]' \
     '--job[Reset one job clock]:job:(map unleash nasty)' \
+    '--drop[Drop sitemap page ids without a prompt (pages)]:ids:' \
+    '--ids[Finding ids to drop without a prompt (prune)]:ids:' \
     '1:command:->cmds' \
     '*::arg:->args'
 

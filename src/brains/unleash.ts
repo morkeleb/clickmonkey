@@ -36,6 +36,7 @@ export function formatClick(surface: string, action: ShownAction): string {
 
 const WRITE_ID =
   /^(submit|save|delete|remove|destroy|confirm|send|update|apply|publish|add_to_cart|add_to_bag)$/i;
+export const DESTRUCTIVE = /delete|remove|destroy/i;
 const WRITE_LABEL =
   /\b(submit|save|delete|remove|destroy|confirm|send|update|apply|publish|add to (?:cart|bag))\b/i;
 const LEAVE_ID =
@@ -128,6 +129,21 @@ export function isDialogOpener(
 
 export function dialogOpeners(view: View, pages?: readonly Page[]): ShownAction[] {
   return view.actions.filter((a) => isDialogOpener(a, view, pages));
+}
+
+/** Archive/Delete confirm — not Edit. `opens` id or label, or a field-less confirm dialog. */
+export function isDestructiveDialogOpener(
+  action: { id: string; label?: string; opens?: string },
+  page?: Pick<Page, "surfaces">,
+): boolean {
+  const blob = `${action.id} ${action.label ?? ""} ${action.opens ?? ""}`;
+  if (DESTRUCTIVE.test(blob) || /archive/i.test(blob)) return true;
+  if (!action.opens || !page) return false;
+  const surface = page.surfaces.find((s) => s.kind === "dialog" && s.id === action.opens);
+  if (!surface) return false;
+  const body = surface.fields.filter((f) => f.status === "ok" && !looksLikeSearchField({ id: f.id, value: "", type: f.type }));
+  if (body.length > 0) return false;
+  return surface.actions.some((a) => DESTRUCTIVE.test(a.id) || /(^|_)(confirm|archive)(_|$)/i.test(a.id));
 }
 
 /** `opens` another map page — a hop, not a dialog on this surface. */
@@ -290,8 +306,8 @@ export function looksLikeSearchField(field: ShownField): boolean {
 }
 
 /**
- * Landmark search (Lois, bare `q`/`search`) — not a form body picker like
- * `vendortype_search`. Form fill skips only this.
+ * Landmark / list search (Lois, bare `q`/`search`, `customers_filter_q`).
+ * Not a form body picker like `vendortype_search`.
  */
 export function looksLikePageSearch(field: ShownField): boolean {
   const id = field.id.toLowerCase();
@@ -299,7 +315,9 @@ export function looksLikePageSearch(field: ShownField): boolean {
   const blob = `${id.replace(/[_-]+/g, " ")} ${label}`;
   if (/\blois\b|\btalk to\b/.test(blob)) return true;
   const stem = id.replace(/^(textbox|input|field)_/, "");
-  return /^(q|query|search|filter|find)(_input)?$/.test(stem);
+  if (/^(q|query|search|filter|find)(_input)?$/.test(stem)) return true;
+  // List/table filter chrome — not a type-in body field.
+  return /(^|_)filter(_|$)/.test(id);
 }
 
 /**
@@ -497,7 +515,6 @@ export function plausibleFill(
   return fakerFill(field, rng);
 }
 
-const DESTRUCTIVE = /delete|remove|destroy/i;
 /** Commit verb is the last id segment (`button_save`, not `create_client_…_add_row`). */
 const SUBMIT_ID = /(^|_)(submit|save|create|apply|publish|send|update|confirm|run|next|continue|done|finish|ok)$/i;
 const SUBMIT_LABEL =
@@ -597,6 +614,16 @@ export function isSelfOpen(action: { opens?: string }, surface?: string): boolea
   return Boolean(surface && action.opens === surface);
 }
 
+/** Add/Create that opens a dialog — not Save. A submit that hops to a record page is not this. */
+export function opensPageDialog(
+  action: { opens?: string },
+  page?: Pick<Page, "surfaces">,
+  surfaceId?: string,
+): boolean {
+  if (!action.opens || isSelfOpen(action, surfaceId)) return false;
+  return Boolean(page?.surfaces.some((s) => s.kind === "dialog" && s.id === action.opens));
+}
+
 function hasPagerPair(actions: readonly ShownAction[]): boolean {
   const pool = actions.filter((a) => !a.nav && !looksLikeNavWidget(a) && isPaginationAction(a));
   const hasPrev = pool.some((a) => /(^|_)(previous|prev)$/i.test(a.id));
@@ -635,6 +662,13 @@ export function formSubmitIsListPager(actions: readonly ShownAction[], view?: Vi
   return comboOrSort && hasPagerPair(actions);
 }
 
+/** Existing / Create-new segmented modes are not Save. */
+export function looksLikeModeSwitch(action: { id: string; label?: string }): boolean {
+  if (/_mode_/.test(action.id)) return true;
+  const label = (action.label ?? "").toLowerCase().trim();
+  return /^(existing|create new)$/.test(label);
+}
+
 export function isFormSubmit(
   a: ShownAction,
   surface: string | undefined,
@@ -644,6 +678,7 @@ export function isFormSubmit(
   if (/(^|_)open_/.test(a.id)) return false;
   if (isDismissAction(a) || isLeaveAction(a)) return false;
   if (isSortToggleAction(a)) return false;
+  if (looksLikeModeSwitch(a)) return false;
   if (isPaginationAction(a) && listPager) return false;
   if (isAddRepeatingRowAction(a)) return false;
   if (/(^|_)add_filter(_|$)/i.test(a.id)) return false;
@@ -677,11 +712,17 @@ export function commitKindRank(action: { id: string; label?: string }): number {
   return 3;
 }
 
-/** Save/Create/Submit/Publish — not Apply/Next/filter, and never Close. */
-export function isPrimaryFormCommit(action: { id: string; label?: string; name?: string }): boolean {
+/** Save/Create/Submit/Publish — not Apply/Next/filter, Close, mode toggle, or a dialog opener. */
+export function isPrimaryFormCommit(
+  action: { id: string; label?: string; name?: string; opens?: string },
+  page?: Pick<Page, "surfaces">,
+  surfaceId?: string,
+): boolean {
   const label = action.label ?? action.name;
   const bare = { id: action.id, ...(label ? { label } : {}) };
   if (isLeaveAction(bare) || isDismissAction(bare)) return false;
+  if (looksLikeModeSwitch(bare)) return false;
+  if (opensPageDialog(action, page, surfaceId)) return false;
   return submitRank(bare) === 0;
 }
 
@@ -690,13 +731,18 @@ export function mappedPrimaryCommits(view: View, pages?: readonly Page[]): Shown
   if (!pages || pages.length === 0) return [];
   const page = pages.find((p) => p.id === view.page);
   if (!page) return [];
-  const surfaces = page.surfaces.filter((s) => s.id === view.surface || s.kind === "page");
+  const current = page.surfaces.find((s) => s.id === view.surface);
+  // Page-level Create (`list_action_create`) is not the dialog Save.
+  const surfaces =
+    current && current.kind !== "page"
+      ? [current]
+      : page.surfaces.filter((s) => s.id === view.surface || s.kind === "page");
   const out: ShownAction[] = [];
   const seen = new Set<string>();
   for (const surface of surfaces) {
     for (const a of surface.actions) {
       if (a.status !== "ok") continue;
-      if (!isPrimaryFormCommit(a)) continue;
+      if (!isPrimaryFormCommit(a, page, surface.id)) continue;
       if (seen.has(a.id)) continue;
       seen.add(a.id);
       out.push({ id: a.id, ...(a.opens ? { opens: a.opens } : {}) });

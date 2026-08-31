@@ -48,9 +48,48 @@
         display: block;
       }
       button.roomy { margin-top: 16px; }
+      .rail {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 48px;
+        height: 100%;
+        overflow: hidden;
+        background: #111;
+        color: #fff;
+      }
+      .rail button {
+        display: block;
+        width: 48px;
+        height: 48px;
+        overflow: hidden;
+        text-overflow: clip;
+        white-space: nowrap;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: 14px/48px sans-serif;
+      }
+      .rail svg { display: inline-block; vertical-align: middle; margin: 0 16px 0 16px; }
+      main { margin-left: 64px; }
     </style>
   </head>
   <body>
+    <div class="rail" data-sidebar="sidebar" data-collapsible="icon" aria-label="Primary" data-testid="icon-rail">
+      <button type="button" data-sidebar="menu-button" data-testid="rail-overview">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" fill="currentColor"/></svg>
+        Overview
+      </button>
+      <button type="button" data-sidebar="menu-button" data-testid="rail-customers">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" fill="currentColor"/></svg>
+        Customers
+      </button>
+      <button type="button" data-sidebar="menu-button" data-testid="rail-orchestration">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" fill="currentColor"/></svg>
+        Orchestration
+      </button>
+    </div>
     <main data-testid="home">
       <h1>Vouchers</h1>
       <div role="tablist">

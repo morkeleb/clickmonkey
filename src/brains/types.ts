@@ -22,6 +22,11 @@ export function decisionLines(d: BrainDecision): string[] {
   return line ? [line] : [];
 }
 
+/** Mid-burst fills skip layout/axe/resize; the last line inspects. */
+export function skipInspectForBurstLine(index: number, count: number): boolean {
+  return count > 1 && index < count - 1;
+}
+
 export interface BrainContext {
   view: View;
   stepsUsed: number;
@@ -36,6 +41,8 @@ export interface BrainContext {
   noopIds?: readonly string[];
   /** Times a map form (`page/surface`) was filled this run. Hunt deprioritises high counts. */
   formHits?: Readonly<Record<string, number>>;
+  /** Forms this run already committed or gave up on. Hunt may leave even if still on the surface. */
+  formSpent?: Readonly<Record<string, true>>;
   /** Form hunt target (`page/surface`) the walker is walking toward. */
   huntTarget?: string;
   /** Pin unleash to this map page until submit leaves it (`--form`). */
@@ -46,6 +53,8 @@ export interface BrainContext {
   pageVisits?: Readonly<Record<string, number>>;
   /** Last-land ISO times by page id for this job (`page.fog` on the sitemap). */
   pageFog?: Readonly<Record<string, string>>;
+  /** Last successful form work for this job, keyed `page/surface`. */
+  formWork?: Readonly<Record<string, string>>;
   /** Last mode ISO times keyed `page/mode`. */
   modeFog?: Readonly<Record<string, string>>;
   /** map / unleash / nasty. Hunger uses this monkey's clock. */

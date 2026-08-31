@@ -6,9 +6,11 @@ import {
   circleHitsRect,
   dropSpacedHits,
   issuesFromTargetHits,
+  targetSizeEvidence,
   isUndersizedTarget,
   isUserAgentInputType,
   spacingExceptionHolds,
+  TARGET_PAINTED_MIN_PX,
   TARGET_SIZE_CAP,
   targetSizeConfidence,
   targetSizeIssue,
@@ -75,6 +77,14 @@ describe("targetSizeIssue", () => {
     assert.equal(isUndersizedTarget(40, 40), false);
   });
 
+  it("does not flag a 1×1 sr-only control (hidden native select / tiny Close)", () => {
+    assert.equal(TARGET_PAINTED_MIN_PX, 4);
+    assert.equal(isUndersizedTarget(1, 1), false);
+    assert.equal(isUndersizedTarget(3, 3), false);
+    assert.equal(targetSizeIssue(hit({ width: 1, height: 1, kind: "Select", where: "select" })), undefined);
+    assert.equal(isUndersizedTarget(4, 4), true);
+  });
+
   it("treats native checkbox/radio/file as user-agent controls", () => {
     assert.equal(isUserAgentInputType("checkbox"), true);
     assert.equal(isUserAgentInputType("radio"), true);
@@ -114,6 +124,25 @@ describe("targetSizeIssue", () => {
       hit({ width: 16, height: 16 }),
     ]);
     assert.equal(duped.length, 1);
+  });
+
+  it("keeps a viewport crop for a high-confidence 16×16 control", () => {
+    const { issues, clips } = targetSizeEvidence(
+      [
+        {
+          kind: "Button",
+          width: 16,
+          height: 16,
+          where: 'button[data-testid="icon-btn"]',
+          clip: { x: 10, y: 10, width: 16, height: 16 },
+        },
+      ],
+      { width: 1280, height: 720 },
+    );
+    assert.equal(issues.length, 1);
+    assert.equal(clips.length, 1);
+    assert.equal(clips[0]?.where, 'button[data-testid="icon-btn"]');
+    assert.ok((clips[0]?.clip.width ?? 0) >= 16);
   });
 });
 

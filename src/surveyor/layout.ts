@@ -3,7 +3,7 @@ import { mergeQualityIssues, type QualityIssue } from "../schema/quality.js";
 import { scanBroken } from "./broken.js";
 import { scanDeadHash } from "./dead-hash.js";
 import { scanFocusObscured } from "./focus-obscured.js";
-import { scanFocusVisible, type FocusVisibleClip } from "./focus-visible.js";
+import { scanFocusVisible, type EvidenceClip, type FocusVisibleClip } from "./focus-visible.js";
 import { scanFormTab } from "./form-tab.js";
 import { scanFontSize } from "./font-size.js";
 import { scanImplicitSubmit } from "./implicit-submit.js";
@@ -19,13 +19,14 @@ import {
   scanOverflow,
   scanOverflowMobile,
   scanOverflowReflow,
+  type OverflowViewportShotFn,
 } from "./overflow.js";
 import { scanPointerEvents } from "./pointer-events.js";
 import { scanTableLayout } from "./scanline.js";
 import { scanScrollPadding } from "./scroll-padding.js";
-import { scanTargetSize } from "./target-size.js";
-import { scanTextClip } from "./text-clip.js";
-import { scanTextOcclusion } from "./text-occlusion.js";
+import { scanTargetSizeEvidence } from "./target-size.js";
+import { scanTextClipEvidence } from "./text-clip.js";
+import { scanTextOcclusionEvidence } from "./text-occlusion.js";
 import { scanTextSpacing } from "./text-spacing.js";
 
 async function runScan(
@@ -56,6 +57,15 @@ export type LayoutScan = {
   issues: QualityIssue[];
   complete: boolean;
   focusVisibleClips?: FocusVisibleClip[];
+  /** Overflow stills taken at 375/320 before the viewport is restored. */
+  overflowShots?: { where: string; screenshotPath: string }[];
+  /** Viewport crops for clip / targetSize / textOcclusion. */
+  widgetClips?: EvidenceClip[];
+};
+
+export type LayoutScanOpts = {
+  /** Capture a PNG while the page is still at this overflow width. */
+  overflowShot?: (width: number) => Promise<string | undefined>;
 };
 
 /**
@@ -63,10 +73,20 @@ export type LayoutScan = {
  * text-spacing, then 375/320 overflow; scroll is restored after those.
  * `complete` is false if any scanner threw — callers must not replaceDom.
  */
-export async function scanLayout(page: Page): Promise<LayoutScan> {
+export async function scanLayout(page: Page, opts?: LayoutScanOpts): Promise<LayoutScan> {
   const issues: QualityIssue[] = [];
   let complete = true;
   let focusVisibleClips: FocusVisibleClip[] = [];
+  const overflowShots: { where: string; screenshotPath: string }[] = [];
+  const widgetClips: EvidenceClip[] = [];
+  const takeOverflowShot = (width: number, tag: string): OverflowViewportShotFn | undefined => {
+    if (!opts?.overflowShot) return undefined;
+    return async () => {
+      const path = await opts.overflowShot!(width);
+      if (path) overflowShots.push({ where: tag, screenshotPath: path });
+      return path;
+    };
+  };
   const take = async (scan: (page: Page) => Promise<QualityIssue[]>): Promise<void> => {
     const hits = await runScan(scan, page);
     if (hits === undefined) complete = false;
@@ -81,14 +101,11 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
     scanTableLayout,
     scanOverflow,
     scanBroken,
-    scanTextClip,
     scanOverlap,
     scanListScanline,
     scanTabScanline,
     scanFormScanline,
     scanAdornmentClip,
-    scanTargetSize,
-    scanTextOcclusion,
     scanFontSize,
     scanDeadHash,
     scanImplicitSubmit,
@@ -98,6 +115,27 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
   ]) {
     await take(scan);
   }
+  const takeEvidence = async (
+    scan: (page: Page) => Promise<{ issues: QualityIssue[]; clips: EvidenceClip[] }>,
+  ): Promise<void> => {
+    try {
+      const scanned = await scan(page);
+      if (!scanned || !Array.isArray(scanned.issues)) {
+        complete = false;
+        return;
+      }
+      for (const hit of scanned.issues) {
+        if (!hit.via) hit.via = "dom";
+      }
+      issues.push(...scanned.issues);
+      if (Array.isArray(scanned.clips)) widgetClips.push(...scanned.clips);
+    } catch {
+      complete = false;
+    }
+  };
+  await takeEvidence(scanTextClipEvidence);
+  await takeEvidence(scanTargetSizeEvidence);
+  await takeEvidence(scanTextOcclusionEvidence);
   const prevView = page.viewportSize();
   const scroll = (await page
     .evaluate(`({ x: window.scrollX || 0, y: window.scrollY || 0 })`)
@@ -122,9 +160,9 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
   const desktopPagePx = issues
     .map((i) => (i.rule === "overflow" ? pageWidthOverflowPx(i.message) : undefined))
     .find((px) => px !== undefined);
-  await take(scanOverflowMobile);
+  await take((p) => scanOverflowMobile(p, takeOverflowShot(375, "@ 375px")));
   await take(async (p) => {
-    const hits = await scanOverflowReflow(p);
+    const hits = await scanOverflowReflow(p, takeOverflowShot(320, "@ 320px"));
     return hits.filter((h) => {
       const px = pageWidthOverflowPx(h.message);
       if (px === undefined) return true;
@@ -137,5 +175,7 @@ export async function scanLayout(page: Page): Promise<LayoutScan> {
     issues: mergeQualityIssues(issues).map((i) => ({ ...i, via: "dom" as const })),
     complete,
     ...(focusVisibleClips.length > 0 ? { focusVisibleClips } : {}),
+    ...(overflowShots.length > 0 ? { overflowShots } : {}),
+    ...(widgetClips.length > 0 ? { widgetClips } : {}),
   };
 }

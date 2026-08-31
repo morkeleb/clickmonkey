@@ -5,6 +5,14 @@ export * from "./surveyor/merge.js";
 export * from "./persist/config.js";
 export * from "./persist/workspace.js";
 export * from "./persist/broken.js";
+export {
+  pageGcRows,
+  inboundDoors,
+  formatPagesStatus,
+  dropMapPages,
+  loadBrokenForGc,
+} from "./persist/pages.js";
+export type { PageGcRow, InboundDoor } from "./persist/pages.js";
 export * from "./persist/testability.js";
 export * from "./persist/quality.js";
 export * from "./persist/log.js";
@@ -116,7 +124,7 @@ export { auditVisible, formatTestabilityLine } from "./surveyor/audit.js";
 export type { InspectResult, SurveyorContext } from "./surveyor/inspect.js";
 export { captureStepShot } from "./executor/steps.js";
 export { createExecutor, attachOracles } from "./executor/run.js";
-export type { AfterStep, RunState, StepResult } from "./executor/run.js";
+export type { AfterStep, RunState, RunStepOpts, StepResult } from "./executor/run.js";
 export { createSession, SessionRuntime } from "./ts/session.js";
 export type { SessionOpts } from "./ts/session.js";
 export { SurfaceChain, SessionStepError, secret } from "./ts/handle.js";
@@ -221,6 +229,7 @@ export {
   stampFog,
   recordFog,
   recordMode,
+  recordFormWork,
   resetFog,
   leftoverFogPath,
   shouldStampFog,
@@ -251,6 +260,7 @@ export {
   isEmptyStateAction,
   isTabAction,
   isDialogOpener,
+  isDestructiveDialogOpener,
   dialogOpeners,
   sharedChromeIds,
   formSubmitAction,
@@ -309,6 +319,7 @@ export {
   jobFogOf,
   modeFogTimes,
   modeFogKey,
+  formWorkTimes,
   mergePageFog,
 } from "./schema/fog.js";
 export type { WalkerJobName, WalkerModeName, MonkeyName } from "./schema/fog.js";
@@ -324,6 +335,8 @@ export {
   npcScore,
   pageSurfaceId,
   planNpc,
+  pickHungryGoal,
+  HUNGRY_TIE_RANDOM,
 } from "./brains/npc.js";
 export type { NpcEdge, NpcGoal, NpcNode, NpcPlan, NpcReach } from "./brains/npc.js";
 export {
@@ -341,7 +354,7 @@ export {
 export type { FormGoal, HuntEdge, HuntNode, HuntReach } from "./brains/form-hunt.js";
 export { decideMapScout, fogClicks, visitKey } from "./brains/map-scout.js";
 export type { WalkerMode } from "./brains/walker-mode.js";
-export { decisionLines } from "./brains/types.js";
+export { decisionLines, skipInspectForBurstLine } from "./brains/types.js";
 export { fakerFill, fillRuleId } from "./brains/faker-fill.js";
 export { pickNasty, pickNastyFill, decideUnleashNasty, listCatalogs, samplePayloads, textContainsNastyPayload } from "./brains/nasty.js";
 export type { NastyCatalogInfo } from "./brains/nasty.js";

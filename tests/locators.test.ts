@@ -40,6 +40,17 @@ describe("toPlaywrightLocator", () => {
 });
 
 describe("pickActable", () => {
+  it("does not wait when the control is missing from the DOM", async () => {
+    await withRun({}, async ({ page }) => {
+      await page.setContent(`<button data-testid="go">Go</button>`);
+      const loc = page.getByTestId("nope");
+      const t0 = Date.now();
+      assert.equal(await pickActable(loc, page, { timeoutMs: 5_000 }), undefined);
+      assert.ok(Date.now() - t0 < 800, "missing widgets must not sit on --timeout");
+      assert.equal(await explainActableMiss(loc, page), "missing");
+    });
+  });
+
   it("waits for a painted-but-disabled button to enable", async () => {
     await withRun({}, async ({ page }) => {
       await page.setContent(`

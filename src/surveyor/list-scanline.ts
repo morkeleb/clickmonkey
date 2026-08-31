@@ -28,6 +28,40 @@ export type ListScanSample = {
   boxes: ListScanBox[];
 };
 
+/** ⌘K / Ctrl+K — not an amount. Keep this tight so "$12.00" and labels stay values. */
+const SHORTCUT_TEXT =
+  /^(?:[⌘⌃⌥⇧]|ctrl|control|cmd|command|alt|option|shift|super|win|meta)(?:\s*[+–-]?\s*.{1,6})?$/i;
+
+export function looksLikeShortcutText(text: string): boolean {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t || t.length > 16) return false;
+  return SHORTCUT_TEXT.test(t);
+}
+
+/** Tailwind `ml-auto` / `ms-auto`, or an inline margin-left:auto. Computed used value is px. */
+export function looksLikeAutoStartMargin(opts: { className?: string; style?: string }): boolean {
+  const cls = opts.className ?? "";
+  if (/(^|\s)(ml|ms)-auto(\s|$)/.test(cls)) return true;
+  return /margin-(?:left|inline-start)\s*:\s*auto/i.test(opts.style ?? "");
+}
+
+/**
+ * Keyboard-shortcut chrome on a row (Search ⌘K). Not a trailing amount.
+ * `<kbd>` is enough; a chord plus start-auto margin covers a span without `<kbd>`.
+ */
+export function looksLikeShortcutChrome(opts: {
+  tag?: string;
+  className?: string;
+  style?: string;
+  text?: string;
+  inKbd?: boolean;
+}): boolean {
+  const tag = (opts.tag || "").toLowerCase();
+  if (tag === "kbd" || opts.inKbd) return true;
+  if (!looksLikeShortcutText(opts.text ?? "")) return false;
+  return looksLikeAutoStartMargin(opts);
+}
+
 /**
  * Browser-side. Collect repeating list/nav/card rows — not tables.
  * Source string so tsx/esbuild `__name` helpers are not serialized into the page.
@@ -172,6 +206,20 @@ const COLLECT_SRC = `(() => {
     return null;
   }
 
+  function isShortcutChrome(el) {
+    if (!el) return false;
+    var tag = (el.tagName || "").toLowerCase();
+    if (tag === "kbd") return true;
+    if (el.closest && el.closest("kbd")) return true;
+    var cls = (el.getAttribute && el.getAttribute("class")) || "";
+    var style = (el.getAttribute && el.getAttribute("style")) || "";
+    var t = (el.innerText || "").replace(/\\s+/g, " ").trim();
+    if (!t || t.length > 16) return false;
+    var auto = /(^|\\s)(ml|ms)-auto(\\s|$)/.test(cls) || /margin-(?:left|inline-start)\\s*:\\s*auto/i.test(style);
+    if (!auto) return false;
+    return /^(?:[⌘⌃⌥⇧]|ctrl|control|cmd|command|alt|option|shift|super|win|meta)(?:\\s*[+–-]?\\s*.{1,6})?$/i.test(t);
+  }
+
   /** Trailing token on the row — amounts/meta shoved by a variable-width title. */
   function pickValue(item) {
     var title = pickTitle(item);
@@ -179,13 +227,22 @@ const COLLECT_SRC = `(() => {
     var icon = pickIcon(item);
     var track = pickTrack(item);
     var last = track && track.length >= 2 ? track[track.length - 1].el : null;
-    if (last && last !== title && last !== action && last !== icon && last !== item) {
+    var lastInTitle = Boolean(title && last && title.contains && title.contains(last));
+    if (
+      last &&
+      last !== title &&
+      last !== action &&
+      last !== icon &&
+      last !== item &&
+      !lastInTitle &&
+      !isShortcutChrome(last)
+    ) {
       var t = (last.innerText || "").replace(/\\s+/g, " ").trim();
       if (t) return last;
     }
     if (!title) return null;
     var tr = title.getBoundingClientRect();
-    var nodes = item.querySelectorAll("span, p, time, data, strong, em, small, b");
+    var nodes = item.querySelectorAll("span, p, time, data, strong, em, small, b, kbd");
     var best = null;
     var bestLeft = -Infinity;
     var i;
@@ -193,6 +250,7 @@ const COLLECT_SRC = `(() => {
       var el = nodes[i];
       if (!shown(el) || skipHost(el) || el === title || el === action || el === icon) continue;
       if (title.contains && title.contains(el)) continue;
+      if (isShortcutChrome(el)) continue;
       var r = el.getBoundingClientRect();
       if (r.left < tr.right + 4) continue;
       var txt = (el.innerText || "").replace(/\\s+/g, " ").trim();

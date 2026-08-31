@@ -75,9 +75,11 @@ still old, so the next decide on that tile is list.
 | Spec / replay | none | none |
 
 Land is stamped **once per page stay** (`recordFog`, skipped on replay and
-404). Mode is stamped **every exercise** (`recordMode`). Brain names that
-stamp a job: `map`, `unleash`, `unleash-nasty`. `explore` and `mcp` do not
-(they are different live units on the map: **e** vs **c**).
+404). Mode is stamped **every exercise** (`recordMode`). Successful form
+work is stamped per job per surface (`fog.forms.unleash.add_customer`) —
+unleash and nasty do not share that clock. Brain names that stamp a job:
+`map`, `unleash`, `unleash-nasty`. `explore` and `mcp` do not (they are
+different live units on the map: **e** vs **c**).
 
 Code: `src/schema/fog.ts`, `src/persist/fog.ts`.
 
@@ -95,10 +97,14 @@ Room / form score:
 
 `npcHunger(hitsThisRun, staleMs) = (1 / (1 + hits)) × fogHunger(staleMs)`
 
-The planner (`planNpc`) weights that by path length:
-`hunger × (1 + 1 / (1 + dist))`, and stays on the current hunt ~85% of the
-time. Hits this run keep a walker from grinding one form; last-land fog
-pulls it back days later.
+**map** weights that by path length (`hunger × (1 + 1/(1+dist))`) and stays
+on the current hunt ~85% of the time. Last-**land** fog is the clock.
+
+**unleash / nasty** hunt mapped forms with the **form-work** clock
+(`fog.forms[job][surface]`), not page land. They pick the hungriest reachable
+form (argmax). Equal hunger: ~10% random, else fewer hops, then map order.
+A successful Save (or the Save retry cap this run) spends that form so they
+walk to the next. Unleash filling a form does not feed nasty hunger.
 
 Mode pick (unleash / nasty / explore / mcp, on the tile they already stand on): **wizard
 locks** while the stepper is up. Other applicable modes compete by
@@ -113,8 +119,9 @@ clicks that door here (`fogClicks`) before pathfinding. Grow the map first.
 
 **Stale job** — mapped, but *this* monkey has not landed recently. **map**
 pathfinds to rooms by `jobs.map`. **unleash** / **nasty** pathfind to mapped
-forms (fields + submit) by `jobs.unleash` / `jobs.nasty`. Distance matters,
-but a far stale form beats a near form you already filled this run.
+forms (fields + submit) by last **form work** on that surface for that job.
+A far untested form beats a near form this job already filled. Landing on
+the list does not count as testing the create dialog.
 
 **Stale mode** — the walker is already on the tile. Least-recent
 applicable mode runs. That is how lists, tabs, dialogs, and empty states

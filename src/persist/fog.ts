@@ -93,6 +93,8 @@ export type FogStamp = {
   at?: string;
   job?: WalkerJobName;
   mode?: WalkerModeName;
+  /** Surface id for a successful form-work stamp (`fog.forms[job][surface]`). */
+  form?: string;
 };
 
 function stampOf(atOrStamp?: string | FogStamp): Required<Pick<FogStamp, "at">> & FogStamp {
@@ -103,13 +105,25 @@ function stampOf(atOrStamp?: string | FogStamp): Required<Pick<FogStamp, "at">> 
 }
 
 function applyStamp(prev: PageFog | undefined, stamp: Required<Pick<FogStamp, "at">> & FogStamp): PageFog {
+  const forms: NonNullable<PageFog["forms"]> = {};
+  for (const [job, surfaces] of Object.entries(prev?.forms ?? {})) {
+    forms[job] = { ...surfaces };
+  }
+  const formOnly = Boolean(stamp.job && stamp.form);
   const next: PageFog = {
-    at: stamp.at,
+    at: formOnly && prev?.at ? prev.at : stamp.at,
     jobs: { ...prev?.jobs },
     modes: { ...prev?.modes },
+    ...(Object.keys(forms).length > 0 ? { forms } : {}),
   };
-  if (stamp.job) next.jobs[stamp.job] = stamp.at;
+  if (stamp.job && !stamp.form) next.jobs[stamp.job] = stamp.at;
   if (stamp.mode) next.modes[stamp.mode] = stamp.at;
+  if (stamp.job && stamp.form) {
+    next.forms = {
+      ...next.forms,
+      [stamp.job]: { ...next.forms?.[stamp.job], [stamp.form]: stamp.at },
+    };
+  }
   return next;
 }
 
@@ -143,6 +157,24 @@ export function recordMode(
   if (!id) return;
   try {
     stampFog(state.configPath, id, { mode });
+  } catch {
+    // fog write must not stall the walk
+  }
+}
+
+/** Stamp last successful form work for this job on `page/surface`. Does not lift the other job. */
+export function recordFormWork(
+  state: { configPath?: string; replay?: boolean; brain?: string },
+  pageId: string,
+  surfaceId: string,
+): void {
+  if (state.replay || !state.configPath) return;
+  const id = pageId.trim();
+  const surface = surfaceId.trim();
+  const job = jobOfBrain(state.brain);
+  if (!id || !surface || !job) return;
+  try {
+    stampFog(state.configPath, id, { job, form: surface });
   } catch {
     // fog write must not stall the walk
   }
@@ -185,6 +217,7 @@ export function resetFog(configPath: string, job?: WalkerJobName): PageModelDraf
         continue;
       }
       delete page.fog.jobs[job];
+      if (page.fog.forms) delete page.fog.forms[job];
     }
     writeJson(path, map);
     dropLeftoverFog(configPath);

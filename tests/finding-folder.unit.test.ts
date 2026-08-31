@@ -6,9 +6,11 @@ import { describe, it } from "node:test";
 import {
   appendFindingReport,
   persistFinding,
+  overflowViewportTag,
   persistVisualIssueFindings,
   shouldPersistFinding,
   visualIssueMessage,
+  visualIssueScreenshotPath,
 } from "../src/persist/finding.js";
 import { collectFindingCases, countFindings } from "../src/persist/runs.js";
 import type { QualityIssue } from "../src/schema/quality.js";
@@ -514,6 +516,95 @@ describe("finding folder", () => {
     assert.equal(readFileSync(join(overlapDir, "screenshot.png"), "utf8"), "png-page");
     assert.equal(readFileSync(join(fvDir, "screenshot.png"), "utf8"), "png-clip");
     assert.ok(existsSync(shot), "step screenshot must stay");
+  });
+
+  it("attaches the 320 still to overflow@320, not the 1280 step shot", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-overflow-vp-"));
+    const shot = join(outDir, "shots", "step-003.png");
+    const vpShot = join(outDir, "shots", "step-003-overflow-320.png");
+    mkdirSync(join(outDir, "shots"), { recursive: true });
+    writeFileSync(shot, "png-1280");
+    writeFileSync(vpShot, "png-320");
+    const issue: QualityIssue = {
+      source: "visual",
+      rule: "overflow",
+      severity: "error",
+      message: "Connectors SharePoint extends 35px past the viewport",
+      count: 1,
+      confidence: "high",
+      where: "div @ 320px",
+    };
+    assert.equal(overflowViewportTag(issue), "320");
+    assert.equal(
+      visualIssueScreenshotPath(issue, {
+        screenshotPath: shot,
+        issueScreenshots: [{ where: "@ 320px", screenshotPath: vpShot }],
+      }),
+      vpShot,
+    );
+    const written = persistVisualIssueFindings(outDir, [issue], {
+      stepIndex: 3,
+      screenshotPath: shot,
+      issueScreenshots: [{ where: "@ 320px", screenshotPath: vpShot }],
+      tapePath: join(outDir, "replay.log"),
+    });
+    assert.equal(written.length, 1);
+    const dir = join(outDir, "findings", findingId(3, "visualIssue"));
+    assert.equal(readFileSync(join(dir, "screenshot.png"), "utf8"), "png-320");
+    assert.ok(existsSync(shot), "step screenshot must stay");
+  });
+
+  it("attaches a widget crop for clip, not the full step shot", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-clip-crop-"));
+    const shot = join(outDir, "shots", "step-003.png");
+    const crop = join(outDir, "shots", "step-003-widget-00.png");
+    mkdirSync(join(outDir, "shots"), { recursive: true });
+    writeFileSync(shot, "png-page");
+    writeFileSync(crop, "png-crop");
+    const issue: QualityIssue = {
+      source: "visual",
+      rule: "clip",
+      severity: "error",
+      message: "Button label is cut mid-word without an ellipsis",
+      count: 1,
+      confidence: "high",
+      where: "Overview",
+    };
+    assert.equal(
+      visualIssueScreenshotPath(issue, {
+        screenshotPath: shot,
+        issueScreenshots: [{ where: "Overview", screenshotPath: crop }],
+      }),
+      crop,
+    );
+    const written = persistVisualIssueFindings(outDir, [issue], {
+      stepIndex: 3,
+      screenshotPath: shot,
+      issueScreenshots: [{ where: "Overview", screenshotPath: crop }],
+      tapePath: join(outDir, "replay.log"),
+    });
+    assert.equal(written.length, 1);
+    const dir = join(outDir, "findings", findingId(3, "visualIssue"));
+    assert.equal(readFileSync(join(dir, "screenshot.png"), "utf8"), "png-crop");
+    assert.ok(existsSync(shot), "step screenshot must stay");
+  });
+
+  it("does not unlink a step still under shots/ when reused as evidence", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-keep-shot-"));
+    const shot = join(outDir, "shots", "step-002.png");
+    mkdirSync(join(outDir, "shots"), { recursive: true });
+    writeFileSync(shot, "png-prev");
+    const finding: Finding = {
+      schemaVersion: 1,
+      id: findingId(3, "expectFailed"),
+      kind: "expectFailed",
+      message: "add_customer.notes was not found",
+      tapePath: join(outDir, "replay.log"),
+      stepIndex: 3,
+    };
+    persistFinding(outDir, finding, { screenshotPath: shot });
+    assert.ok(existsSync(shot), "previous step still must stay");
+    assert.equal(readFileSync(join(outDir, "findings", finding.id, "screenshot.png"), "utf8"), "png-prev");
   });
 
   it("does not reuse another control's focused clip for focusVisible", () => {

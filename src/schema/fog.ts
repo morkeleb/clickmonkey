@@ -53,7 +53,19 @@ export function mergePageFog(keep?: PageFog, other?: PageFog): PageFog | undefin
     if (next) modes[key] = next;
   }
   const at = laterClock(keep.at, other.at) ?? keep.at;
-  return { at, jobs, modes };
+  const forms: NonNullable<PageFog["forms"]> = {};
+  for (const src of [keep.forms, other.forms]) {
+    if (!src) continue;
+    for (const [job, surfaces] of Object.entries(src)) {
+      const slot = { ...forms[job] };
+      for (const [surfaceId, when] of Object.entries(surfaces)) {
+        const next = laterClock(slot[surfaceId], when);
+        if (next) slot[surfaceId] = next;
+      }
+      forms[job] = slot;
+    }
+  }
+  return { at, jobs, modes, ...(Object.keys(forms).length > 0 ? { forms } : {}) };
 }
 
 export function pageFogTimes(pages: readonly Pick<Page, "id" | "fog">[]): Record<string, string> {
@@ -96,6 +108,22 @@ export function modeFogTimes(pages: readonly Pick<Page, "id" | "fog">[]): Record
   for (const page of pages) {
     for (const [mode, at] of Object.entries(page.fog?.modes ?? {})) {
       out[`${page.id}/${mode}`] = at;
+    }
+  }
+  return out;
+}
+
+/** Last successful form work for this job, keyed `page/surface`. Missing = full hunger. */
+export function formWorkTimes(
+  pages: readonly Pick<Page, "id" | "fog">[],
+  job: WalkerJobName,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const page of pages) {
+    const surfaces = page.fog?.forms?.[job];
+    if (!surfaces) continue;
+    for (const [surfaceId, at] of Object.entries(surfaces)) {
+      if (at) out[`${page.id}/${surfaceId}`] = at;
     }
   }
   return out;

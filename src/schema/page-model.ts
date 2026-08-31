@@ -97,6 +97,8 @@ export const PageFog = z
     at: z.string().min(1),
     jobs: z.record(z.string().min(1), z.string().min(1)).default({}),
     modes: z.record(z.string().min(1), z.string().min(1)).default({}),
+    /** Last successful form work per job, keyed by surface id. Unleash and nasty do not share. */
+    forms: z.record(z.string().min(1), z.record(z.string().min(1), z.string().min(1))).optional(),
   })
   .strict();
 export type PageFog = z.infer<typeof PageFog>;

@@ -1,5 +1,4 @@
 import type { Locator as PwLocator, Page } from "playwright";
-import { textContainsNastyPayload } from "../brains/nasty.js";
 import { looksLikeSearchField } from "../brains/unleash.js";
 import type { PageErrorFillCtx } from "../schema/finding.js";
 import type { ShownFieldConstraints } from "../schema/view.js";
@@ -182,7 +181,6 @@ export function fillShouldLookInvalid(
     return false;
   }
   if (field.required && value.trim() === "") return true;
-  if (textContainsNastyPayload(value)) return true;
   const html = (field.constraints?.htmlType ?? field.type ?? "").toLowerCase();
   if (value.trim() && typedValueLooksWrong(html, value)) return true;
   const pattern = field.constraints?.pattern;

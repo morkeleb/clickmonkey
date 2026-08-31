@@ -28,8 +28,9 @@ Commands:
   explore     Charter-driven LLM walk of legal map ids (needs brain)
   mcp         Host-LLM walk + spec freeze/replay (stdio)
   fog         Print fog clocks on the sitemap, or --reset to force a full retest [--job map|unleash|nasty]
+  pages       Drop gone rooms from the sitemap (checkbox; --drop id,id for scripts). Not findings.
   report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
-  prune       Drop false positives from a report (inquirer; --ids for scripts)
+  prune       After report: drop false-positive findings (rewrites findings.md + dismissed.json). Not the sitemap.
   replay      Replay a log file or a findings-report markdown file
   spec        Markdown specs under clickmonkey/specs/ [--check] [--fail-on-findings]
   emit        Generate clickmonkey/ts/generated.ts (typed page model from the map)
@@ -41,6 +42,27 @@ Options:
   --verbose   Write per-step HTML + view dumps under <run>/verbose/
 
 Run clickmonkey <command> --help for command options.
+`;
+
+export const PRUNE_HELP = `Usage: clickmonkey prune [reportId] [--config] [--ids id,id]
+
+Drop false-positive findings from a shareable report. This is not sitemap GC
+(gone rooms are \`clickmonkey pages\`).
+
+A report is clickmonkey/reports/<id>/findings.md from \`clickmonkey report\`.
+Some cards are real bugs; some are walker noise (clip on an icon rail, a 1×1
+hidden native <select> under a custom combobox). Prune is the human pass.
+
+TTY (no --ids): pick a report if you omit reportId, then checkbox findings.
+With brain configured, likely noise is pre-checked (uncheck anything real).
+Scripts: clickmonkey prune <reportId> --ids fnd_3_expectFailed,fnd_10_visualIssue
+
+Writes:
+  clickmonkey/reports/<id>/findings.md  rewritten without the dropped cards
+  clickmonkey/dismissed.json            fingerprints so later \`report\` skips them
+
+Does not edit map.json. Finding folders under clickmonkey/runs/ stay (the tape
+is the tape). Replay still has the original walk.
 `;
 
 export function printUsage(extra?: string): void {

@@ -13,6 +13,7 @@ import { oneLineBug } from "../schema/dsl.js";
 import {
   clickFailureMessage,
   closeOpenOverlays,
+  pickerStillOpen,
   coveredByMessage,
   describeClickHit,
   dismissLeftoverMenuCover,
@@ -51,13 +52,15 @@ import {
   type TrackedFill,
   type WatchedRequest,
 } from "./field-validity.js";
-import { applyFieldFill, resolveFieldControl } from "./field-control.js";
+import { applyFieldFill, resolveFieldControl, shouldCloseOverlaysAfterFill } from "./field-control.js";
 
 export type StepFailure = {
   kind: FindingKind | RunControlKind;
   message: string;
   widgetRef?: string;
   url?: string;
+  /** Still taken at first miss, before inspect/layout. */
+  screenshotPath?: string;
 };
 
 export { locatorOf as widgetLocator } from "../schema/locator.js";
@@ -368,6 +371,16 @@ async function checkSilentFailedSubmit(
   return { kind: "expectFailed", message: SILENT_SUBMIT_MESSAGE, widgetRef };
 }
 
+async function captureMissShot(state: RunState): Promise<string | undefined> {
+  if (state.config.screenshots === false) return undefined;
+  const dir = join(state.outDir, "shots");
+  mkdirSync(dir, { recursive: true });
+  const n = String(state.log.steps.length).padStart(3, "0");
+  const path = join(dir, `step-${n}-miss.png`);
+  await state.page.screenshot({ path, fullPage: true }).catch(() => undefined);
+  return existsSync(path) ? path : undefined;
+}
+
 async function pickClickable(
   state: RunState,
   loc: ReturnType<typeof widgetLocator>,
@@ -387,10 +400,30 @@ async function pickClickable(
   if (!pw) {
     const miss = await explainActableMiss(loc, state.page);
     if (miss === "covered") {
+      const missShot = await captureMissShot(state);
       const hit = await describeClickHit(loc.first(), state.page);
-      return { ok: false, failure: { kind: "expectFailed", message: coveredByMessage(key, hit), widgetRef: key } };
+      return {
+        ok: false,
+        failure: {
+          kind: "expectFailed",
+          message: coveredByMessage(key, hit),
+          widgetRef: key,
+          ...(missShot ? { screenshotPath: missShot } : {}),
+        },
+      };
     }
-    return { ok: false, failure: await actableMissFailure(state, key, loc) };
+    const failure = await actableMissFailure(state, key, loc);
+    if (miss === "missing" || miss === "hidden") {
+      return { ok: false, failure };
+    }
+    const missShot = await captureMissShot(state);
+    return {
+      ok: false,
+      failure: {
+        ...failure,
+        ...(missShot ? { screenshotPath: missShot } : {}),
+      },
+    };
   }
   return { ok: true, locator: pw };
 }
@@ -435,7 +468,10 @@ async function performClick(
     }
   }
   recordLocator(state, actable.key, actable.locator);
-  const primary = !isField(actable.widget) && isPrimaryFormCommit(actable.widget);
+  const mappedPage = state.model.pages.find((p) => p.id === state.pageId);
+  const primary =
+    !isField(actable.widget) &&
+    isPrimaryFormCommit(actable.widget, mappedPage, actable.surface.id);
   const watchingSubmit =
     !isField(actable.widget) && looksLikeSubmitClick(actable.widget, actable.surface.actions);
   const urlBefore = watchingSubmit || primary ? state.page.url() : undefined;
@@ -505,7 +541,9 @@ async function performFill(
   recordLocator(state, actable.key, actable.locator);
   const field = isField(actable.widget) ? actable.widget : undefined;
   const applied = await applyFieldFill(pw.locator, state.page, field, resolved, actable.key);
-  await closeOpenOverlays(state.page, pw.locator);
+  if (shouldCloseOverlaysAfterFill(field) || (await pickerStillOpen(state.page))) {
+    await closeOpenOverlays(state.page, pw.locator);
+  }
   if (!applied.ok) {
     return { kind: "expectFailed", message: applied.message, widgetRef: actable.key };
   }

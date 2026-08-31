@@ -8,6 +8,7 @@
     <main data-testid="home">
       <form novalidate>
         <label>Name <input data-testid="name" name="name" required /></label>
+        <label>Email <input data-testid="email" name="email" type="email" /></label>
         <button data-testid="submit" type="submit">Submit</button>
       </form>
     </main>
@@ -16,12 +17,13 @@
       document.querySelector("form").addEventListener("submit", (event) => {
         event.preventDefault();
         const value = name.value;
+        const email = document.querySelector('[data-testid="email"]');
         // Client-side validation: reject quotes/tags, but do not paint invalid marks.
-        if (/['"<>]/.test(value)) return;
+        if (/['"<>]/.test(value) || /['"<>]/.test(email.value)) return;
         fetch("/", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: value }),
+          body: JSON.stringify({ name: value, email: email.value }),
         });
       });
     </script>

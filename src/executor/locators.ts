@@ -153,10 +153,15 @@ export async function pickActable(
 ): Promise<PwLocator | undefined> {
   const timeoutMs = opts?.timeoutMs ?? 0;
   const scroll = Boolean(opts?.scroll);
+  const hit = await pickActableNow(loc, page, scroll);
+  if (hit) return hit;
+  if (timeoutMs <= 0) return undefined;
+  const n = await loc.count().catch(() => 0);
+  if (n === 0) return undefined;
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const hit = await pickActableNow(loc, page, scroll);
-    if (hit) return hit;
+    const again = await pickActableNow(loc, page, scroll);
+    if (again) return again;
     const remaining = deadline - Date.now();
     if (remaining <= 0) return undefined;
     await new Promise((r) => setTimeout(r, Math.min(ACTABLE_POLL_MS, remaining)));

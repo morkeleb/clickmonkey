@@ -57,6 +57,7 @@ import {
   blurActiveElement,
   fitShotClip,
   refocusWhereForClip,
+  type EvidenceClip,
   type FocusVisibleClip,
 } from "../surveyor/focus-visible.js";
 import {
@@ -141,6 +142,11 @@ export interface StepResult {
   writePolicyBlocked?: boolean;
   view: View;
 }
+
+/** Form-burst fills skip layout/axe/vision/map inspect; the last line inspects. */
+export type RunStepOpts = {
+  skipInspect?: boolean;
+};
 
 const attachedPages = new WeakSet<Page>();
 
@@ -259,11 +265,26 @@ async function screenshotFinding(
   let screenshotPath: string | undefined;
   if (shouldPersistFinding(kind)) {
     mkdirSync(state.outDir, { recursive: true });
+    const fromFailure =
+      "screenshotPath" in partial && typeof (partial as { screenshotPath?: string }).screenshotPath === "string"
+        ? (partial as { screenshotPath?: string }).screenshotPath
+        : undefined;
     const liveShot =
       step?.kind === "screenshot" && state.lastScreenshotPath && existsSync(state.lastScreenshotPath)
         ? state.lastScreenshotPath
         : undefined;
-    screenshotPath = liveShot;
+    if (fromFailure && existsSync(fromFailure)) {
+      screenshotPath = fromFailure;
+    } else if (
+      kind === "expectFailed" &&
+      state.lastScreenshotPath &&
+      existsSync(state.lastScreenshotPath)
+    ) {
+      // Dialog/page as it was after the last ok step — not after a long miss wait.
+      screenshotPath = state.lastScreenshotPath;
+    } else {
+      screenshotPath = liveShot;
+    }
     if (!screenshotPath) {
       screenshotPath = join(state.outDir, `.shot-${id}.png`);
       await state.page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => undefined);
@@ -348,6 +369,27 @@ function applyFocusVisibleEvidence(
     if (visualIssueScreenshotPath(issue, { issueScreenshots: shots })) return issue;
     return { ...issue, confidence: "medium" as const };
   });
+}
+
+async function captureEvidenceClips(
+  state: RunState,
+  clips: EvidenceClip[],
+  slug: string,
+): Promise<VisualIssueScreenshot[]> {
+  if (clips.length === 0) return [];
+  const dir = join(state.outDir, "shots");
+  mkdirSync(dir, { recursive: true });
+  const n = String(state.log.steps.length).padStart(3, "0");
+  const viewport = state.page.viewportSize();
+  const shots: VisualIssueScreenshot[] = [];
+  for (const [i, item] of clips.entries()) {
+    const clip = fitShotClip(item.clip, viewport);
+    if (!clip) continue;
+    const path = join(dir, `step-${n}-${slug}-${String(i).padStart(2, "0")}.png`);
+    await state.page.screenshot({ path, clip }).catch(() => undefined);
+    if (existsSync(path)) shots.push({ where: item.where, screenshotPath: path });
+  }
+  return shots;
 }
 
 async function captureFocusVisibleShots(
@@ -611,6 +653,7 @@ async function finish(
   step: Step,
   stepFailure: StepFailure | undefined,
   hrefBefore: string,
+  opts?: RunStepOpts,
 ): Promise<StepResult> {
   state.lastAction = lastActionFromStep(state, step);
   if (step.kind === "click" || step.kind === "open") {
@@ -640,7 +683,7 @@ async function finish(
   } else if (await isNotFoundPage(state.page)) {
     finding = await captureNotFoundFinding(state, step, href);
   } else {
-    runInspect = true;
+    runInspect = !opts?.skipInspect;
     if (stepFailure && isFindingKind(stepFailure.kind)) {
       finding = await screenshotFinding(state, stepFailure, step);
     } else if (state.pendingFindings[0]) {
@@ -697,10 +740,30 @@ async function finish(
         if (await pageLooksLikeLoading(state.page)) {
           measured = measuredHits(prev?.visual);
         } else {
-          const layout = await scanLayout(state.page);
+          const n = String(state.log.steps.length).padStart(3, "0");
+          const layout = await scanLayout(state.page, {
+            overflowShot:
+              state.config.screenshots === false
+                ? undefined
+                : async (width) => {
+                    const dir = join(state.outDir, "shots");
+                    mkdirSync(dir, { recursive: true });
+                    const path = join(dir, `step-${n}-overflow-${width}.png`);
+                    await state.page.screenshot({ path, fullPage: true }).catch(() => undefined);
+                    return existsSync(path) ? path : undefined;
+                  },
+          });
           let issueScreenshots: VisualIssueScreenshot[] | undefined;
+          if (layout.overflowShots?.length) {
+            issueScreenshots = [...layout.overflowShots];
+          }
+          if (layout.widgetClips?.length && state.config.screenshots !== false) {
+            const crops = await captureEvidenceClips(state, layout.widgetClips, "widget");
+            issueScreenshots = [...(issueScreenshots ?? []), ...crops];
+          }
           if (layout.focusVisibleClips?.length && state.config.screenshots !== false) {
-            issueScreenshots = await captureFocusVisibleShots(state, layout.focusVisibleClips);
+            const clips = await captureFocusVisibleShots(state, layout.focusVisibleClips);
+            issueScreenshots = [...(issueScreenshots ?? []), ...clips];
           }
           const visual = applyFocusVisibleEvidence(layout.issues, issueScreenshots);
           persistQualityVisual(
@@ -826,13 +889,13 @@ async function finish(
 }
 
 export function createExecutor(state: RunState): {
-  runStep(step: Step): Promise<StepResult>;
-  runLine(line: string): Promise<StepResult>;
+  runStep(step: Step, opts?: RunStepOpts): Promise<StepResult>;
+  runLine(line: string, opts?: RunStepOpts): Promise<StepResult>;
   runIntro(): Promise<void>;
 } {
   attachOracles({ ...state, appOrigin: originOfHref(state.config.url) });
 
-  async function runStep(step: Step): Promise<StepResult> {
+  async function runStep(step: Step, opts?: RunStepOpts): Promise<StepResult> {
     const line = redactEnvInText(formatStep(step));
     const phase = state.inIntro ? "intro" : "walk";
     if (state.navMeta) {
@@ -860,7 +923,7 @@ export function createExecutor(state: RunState): {
         message: err instanceof Error ? err.message : String(err),
       };
     }
-    const result = await finish(state, step, failure, hrefBefore);
+    const result = await finish(state, step, failure, hrefBefore, opts);
     if (state.navLogPath) {
       logStepDone(state.navLogPath, {
         line: redactEnvInText(formatStep(step)),
@@ -879,12 +942,12 @@ export function createExecutor(state: RunState): {
     return result;
   }
 
-  async function runLine(line: string): Promise<StepResult> {
+  async function runLine(line: string, opts?: RunStepOpts): Promise<StepResult> {
     const parsed = parseLine(line);
     if (!parsed || "comment" in parsed) {
       throw new Error(`not a step: ${line}`);
     }
-    return runStep(parsed);
+    return runStep(parsed, opts);
   }
 
   async function runIntro(): Promise<void> {

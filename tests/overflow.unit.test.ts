@@ -261,4 +261,28 @@ describe("scanOverflowReflow restore", () => {
     assert.deepEqual(sizes.at(-1), prev);
     assert.equal(sizes.some((s) => s.width === 320), true);
   });
+
+  it("takes the evidence still at 320 before restoring the viewport", async () => {
+    let current = { width: 1280, height: 720 };
+    const sizes: number[] = [];
+    const shotAt: number[] = [];
+    const page = {
+      viewportSize: () => current,
+      async setViewportSize(size: { width: number; height: number }) {
+        current = { ...size };
+        sizes.push(size.width);
+      },
+      async evaluate() {
+        return [{ where: "hero", px: 80, kind: "document", label: "Hero" }];
+      },
+    };
+    const issues = await scanOverflowReflow(page as unknown as Page, async () => {
+      shotAt.push(current.width);
+      return "/tmp/overflow-320.png";
+    });
+    assert.ok(issues.some((i) => i.rule === "overflow" && /@ 320px/.test(`${i.where} ${i.message}`)));
+    assert.deepEqual(shotAt, [320]);
+    assert.equal(sizes.at(-1), 1280);
+    assert.ok(sizes.includes(320));
+  });
 });

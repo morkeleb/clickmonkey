@@ -35,6 +35,14 @@ function pageFormConfig(url: string): Config {
                   value: "name",
                   status: "ok",
                 },
+                {
+                  id: "email",
+                  required: false,
+                  type: "email",
+                  by: "testId",
+                  value: "email",
+                  status: "ok",
+                },
               ],
               actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
             },
@@ -131,18 +139,25 @@ describe("after-submit validation miss", () => {
       await withRun({ timeout: 8_000 }, async (handle) => {
         const state = await bootRun(handle, pageFormConfig(baseUrl), outDir);
         const exec = createExecutor(state);
-        const fill = await exec.runStep({
+        const name = await exec.runStep({
           kind: "fill",
           surface: "page",
           id: "name",
-          value: "javascript:alert(1)",
+          value: "Ada",
+        });
+        assert.equal(name.ok, true, name.finding?.message);
+        const fill = await exec.runStep({
+          kind: "fill",
+          surface: "page",
+          id: "email",
+          value: "not-an-email",
         });
         assert.equal(fill.ok, true, fill.finding?.message);
         const submit = await exec.runStep({ kind: "click", surface: "page", id: "submit" });
         assert.equal(submit.ok, false);
         assert.equal(submit.finding?.kind, "expectFailed");
         assert.match(submit.finding?.message ?? "", /Validation did not catch junk/);
-        assert.match(submit.finding?.message ?? "", /javascript:alert\(1\)/);
+        assert.match(submit.finding?.message ?? "", /not-an-email/);
       });
     } finally {
       rmSync(outDir, { recursive: true, force: true });
@@ -150,7 +165,7 @@ describe("after-submit validation miss", () => {
     }
   });
 
-  it("flags junk when submit closes the form without invalid marks", async () => {
+  it("does not treat SQLi in a free-text name as invalid-accepted when submit leaves", async () => {
     const { baseUrl, close } = await serveSite("accepts-empty");
     const outDir = mkdtempSync(join(tmpdir(), "cm-gone-junk-"));
     try {
@@ -167,9 +182,8 @@ describe("after-submit validation miss", () => {
         });
         assert.equal(fill.ok, true, fill.finding?.message);
         const submit = await exec.runStep({ kind: "click", surface: "create", id: "submit" });
-        assert.equal(submit.ok, false);
-        assert.equal(submit.finding?.kind, "expectFailed");
-        assert.match(submit.finding?.message ?? "", /Validation did not catch junk/);
+        assert.equal(submit.ok, true, submit.finding?.message);
+        assert.doesNotMatch(submit.finding?.message ?? "", /Validation did not catch junk/);
       });
     } finally {
       rmSync(outDir, { recursive: true, force: true });

@@ -203,7 +203,7 @@ export const CHECKS = [
     chapter: "visual",
     title: "Broken scanline",
     summary: "Repeating items or form chrome do not share an edge. Scanning becomes hunting.",
-    detail: "List/table row edges, tab titles, form fields on a row, or a header vs its cells. Nested nav indent, masonry, and two-column details grids (each field already has a row partner) are not this.",
+    detail: "List/table row edges, tab titles, form fields on a row, or a header vs its cells. Nested nav indent, masonry, two-column details grids (each field already has a row partner), and a Search-row ⌘K / Ctrl+K (`<kbd>` or `ml-auto` shortcut chip) are not this.",
   },
   {
     id: "V-06",

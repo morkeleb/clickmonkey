@@ -9,6 +9,9 @@ import {
   isStaggeredGrid,
   listScanlineIssue,
   listScanlineIssues,
+  looksLikeAutoStartMargin,
+  looksLikeShortcutChrome,
+  looksLikeShortcutText,
   similarHeightBoxes,
   type ListScanBox,
   type ListScanSample,
@@ -21,6 +24,23 @@ function box(left: number, top: number, extra?: Partial<ListScanBox>): ListScanB
 function titles(boxes: ListScanBox[], where = "Threads"): ListScanSample {
   return { kind: "titles", where, boxes };
 }
+
+describe("shortcut chrome is not a row value", () => {
+  it("matches kbd, ⌘K / Ctrl+K with ml-auto, not amounts or labels", () => {
+    assert.equal(looksLikeShortcutText("⌘K"), true);
+    assert.equal(looksLikeShortcutText("Ctrl+K"), true);
+    assert.equal(looksLikeShortcutText("ctrl+k"), true);
+    assert.equal(looksLikeShortcutText("$12.00"), false);
+    assert.equal(looksLikeShortcutText("Overview"), false);
+    assert.equal(looksLikeAutoStartMargin({ className: "pointer-events-none ml-auto hidden h-5" }), true);
+    assert.equal(looksLikeAutoStartMargin({ className: "px-2" }), false);
+    assert.equal(looksLikeAutoStartMargin({ style: "margin-left: auto" }), true);
+    assert.equal(looksLikeShortcutChrome({ tag: "kbd", text: "⌘K" }), true);
+    assert.equal(looksLikeShortcutChrome({ tag: "span", className: "ml-auto", text: "⌘K" }), true);
+    assert.equal(looksLikeShortcutChrome({ tag: "span", className: "ml-auto", text: "$12.00" }), false);
+    assert.equal(looksLikeShortcutChrome({ tag: "span", text: "⌘K" }), false);
+  });
+});
 
 describe("list scanline geometry", () => {
   it("treats 16px as aligned and 28px as high", () => {

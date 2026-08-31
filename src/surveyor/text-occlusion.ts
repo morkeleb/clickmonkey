@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import type { QualityIssue } from "../schema/quality.js";
+import { evidenceClipFromRect, type EvidenceClip } from "./focus-visible.js";
 
 export const MAX_HITS = 8;
 export const MAX_RECTS = 3;
@@ -32,6 +33,7 @@ export type TextOcclusionHit = {
   cover: string;
   probed: number;
   occluded: number;
+  clip?: { x: number; y: number; width: number; height: number };
 };
 
 const OVERLAY_KINDS = new Set<string>(["listbox", "menu", "dialog", "popover", "tooltip"]);
@@ -138,6 +140,94 @@ export function clipWhere(text: string, max = WHERE_MAX): string {
   const one = String(text || "").replace(/\s+/g, " ").trim();
   if (!one) return "";
   return one.length <= max ? one : `${one.slice(0, max - 1)}…`;
+}
+
+const UTILITY_EXACT = new Set([
+  "block",
+  "flex",
+  "inline",
+  "inline-block",
+  "inline-flex",
+  "grid",
+  "contents",
+  "absolute",
+  "relative",
+  "fixed",
+  "sticky",
+  "hidden",
+  "truncate",
+  "grow",
+  "shrink",
+  "sr-only",
+  "inset-0",
+  "overflow-hidden",
+  "w-full",
+  "h-full",
+  "w-auto",
+  "h-auto",
+  "antialiased",
+  "tabular-nums",
+  "underline",
+  "italic",
+]);
+
+const UTILITY_PREFIX =
+  /^(min|max)-[wh]-|^(flex|grow|shrink|basis|overflow|inset|gap|col|row)-|^(p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml)-|^(items|justify|self|content)-|^(font|text|leading|tracking|rounded|border|shadow|ring|opacity|z)-|^[wh]-/;
+
+/** Drop Tailwind variants (`md:`, `after:`, `data-[state=open]:`) so the remainder can be a utility. */
+export function stripTailwindVariants(name: string): string {
+  let t = String(name || "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+  for (;;) {
+    const prefix = t.match(/^(?:[a-z][\w-]*|data-\[[^\]]+\]|aria-\[[^\]]+\]):/);
+    if (!prefix) break;
+    t = t.slice(prefix[0].length);
+  }
+  return t;
+}
+
+/** Tailwind/display utilities — not a named overlay (`min-w-0`, `after:absolute`, `font-medium`). */
+export function isUtilityCoverClass(name: string | undefined | null): boolean {
+  const t = stripTailwindVariants(String(name || ""));
+  if (!t) return true;
+  if (UTILITY_EXACT.has(t)) return true;
+  return UTILITY_PREFIX.test(t);
+}
+
+/** Every class on the node is a layout utility (or there are none). */
+export function nodeClassesAreUtilities(className: string | undefined | null): boolean {
+  const parts = String(className || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return true;
+  return parts.every((c) => isUtilityCoverClass(c));
+}
+
+/** Chip / token labels in a cell — separators become spaces. */
+export function normalizeCoverText(text: string | undefined | null): string {
+  return String(text || "")
+    .replace(/[·•|,;/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Covering node restacks the same labels (chips in a cell).
+ * A badge "NEW" on "Quarterly revenue" is not this.
+ */
+export function coverIsRestack(
+  coverText: string | undefined | null,
+  candidateText: string | undefined | null,
+): boolean {
+  const cover = normalizeCoverText(coverText);
+  const hay = normalizeCoverText(candidateText);
+  if (!cover || !hay) return false;
+  if (cover === hay) return true;
+  if (cover.length > 48) return false;
+  return ` ${hay} `.includes(` ${cover} `);
 }
 
 export function textKindFromTag(opts: { tag?: string; role?: string }): TextKind {
@@ -283,9 +373,19 @@ export function textOcclusionIssue(hit: TextOcclusionHit): QualityIssue | undefi
 }
 
 export function issuesFromHits(hits: TextOcclusionHit[]): QualityIssue[] {
+  return textOcclusionEvidence(hits).issues;
+}
+
+export function textOcclusionEvidence(
+  hits: TextOcclusionHit[],
+  viewport?: { width: number; height: number } | null,
+): { issues: QualityIssue[]; clips: EvidenceClip[] } {
   const issues: QualityIssue[] = [];
+  const clips: EvidenceClip[] = [];
   const seen = new Set<string>();
-  if (!Array.isArray(hits)) return issues;
+  const vw = viewport?.width ?? 0;
+  const vh = viewport?.height ?? 0;
+  if (!Array.isArray(hits)) return { issues, clips };
   for (const hit of hits) {
     const issue = textOcclusionIssue(hit);
     if (!issue) continue;
@@ -293,9 +393,13 @@ export function issuesFromHits(hits: TextOcclusionHit[]): QualityIssue[] {
     if (seen.has(key)) continue;
     seen.add(key);
     issues.push(issue);
+    if (issue.confidence === "high" && issue.where) {
+      const clip = evidenceClipFromRect(hit.clip, vw, vh);
+      if (clip) clips.push({ where: issue.where, clip });
+    }
     if (issues.length >= MAX_HITS) break;
   }
-  return issues;
+  return { issues, clips };
 }
 
 /**
@@ -566,11 +670,110 @@ const COLLECT_SRC = `(() => {
     return "";
   }
 
+  function isUtilityCoverClass(name) {
+    var t = String(name || "").replace(/\\s+/g, "").toLowerCase();
+    var prefix;
+    if (!t) return true;
+    while (true) {
+      prefix = t.match(/^(?:[a-z][\\w-]*|data-\\[[^\\]]+\\]|aria-\\[[^\\]]+\\]):/);
+      if (!prefix) break;
+      t = t.slice(prefix[0].length);
+    }
+    if (!t) return true;
+    if (
+      t === "block" ||
+      t === "flex" ||
+      t === "inline" ||
+      t === "inline-block" ||
+      t === "inline-flex" ||
+      t === "grid" ||
+      t === "contents" ||
+      t === "absolute" ||
+      t === "relative" ||
+      t === "fixed" ||
+      t === "sticky" ||
+      t === "hidden" ||
+      t === "truncate" ||
+      t === "grow" ||
+      t === "shrink" ||
+      t === "sr-only" ||
+      t === "inset-0" ||
+      t === "overflow-hidden" ||
+      t === "w-full" ||
+      t === "h-full" ||
+      t === "w-auto" ||
+      t === "h-auto" ||
+      t === "antialiased" ||
+      t === "tabular-nums" ||
+      t === "underline" ||
+      t === "italic"
+    ) {
+      return true;
+    }
+    return /^(min|max)-[wh]-|^(flex|grow|shrink|basis|overflow|inset|gap|col|row)-|^(p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml)-|^(items|justify|self|content)-|^(font|text|leading|tracking|rounded|border|shadow|ring|opacity|z)-|^[wh]-/.test(
+      t,
+    );
+  }
+
+  function nodeClassesAreUtilities(className) {
+    var parts = String(className || "").trim().split(/\\s+/).filter(Boolean);
+    var i;
+    if (parts.length === 0) return true;
+    for (i = 0; i < parts.length; i++) {
+      if (!isUtilityCoverClass(parts[i])) return false;
+    }
+    return true;
+  }
+
+  function normalizeCoverText(s) {
+    return String(s || "").replace(/[·•|,;/]+/g, " ").replace(/\\s+/g, " ").trim().toLowerCase();
+  }
+
+  function coverIsRestack(coverText, candidateText) {
+    var cover = normalizeCoverText(coverText);
+    var hay = normalizeCoverText(candidateText);
+    if (!cover || !hay) return false;
+    if (cover === hay) return true;
+    if (cover.length > 48) return false;
+    return (" " + hay + " ").indexOf(" " + cover + " ") >= 0;
+  }
+
+  function coverWalkRestack(top, candidateText, textEl) {
+    var node = top;
+    var depth = 0;
+    while (node && node !== document.body && node !== document.documentElement && depth < 6) {
+      if (textEl.contains(node) || node.contains(textEl)) break;
+      if (coverIsRestack(node.innerText || "", candidateText)) return true;
+      node = node.parentElement;
+      depth++;
+    }
+    return false;
+  }
+
+  /** Empty Tailwind shrink/flex box over a cell — chip layout, not a sticker. */
+  function emptyUtilityCover(top, textEl) {
+    if (!nodeClassesAreUtilities(top.getAttribute && top.getAttribute("class"))) return false;
+    if (clipText(top.innerText || "", 48)) return false;
+    if (coverFromNode(top)) return false;
+    var node = top.parentElement;
+    var depth = 0;
+    while (node && node !== document.body && node !== document.documentElement && depth < 4) {
+      if (textEl.contains(node) || node.contains(textEl)) break;
+      if (coverFromNode(node)) return false;
+      node = node.parentElement;
+      depth++;
+    }
+    return true;
+  }
+
   function coverFallback(el) {
     var aria = el.getAttribute("aria-label");
     if (aria && aria.trim()) return clipText(aria, 40);
-    var cls = (el.getAttribute("class") || "").trim().split(/\\s+/)[0];
-    if (cls) return clipText(cls, 24);
+    var classes = (el.getAttribute("class") || "").trim().split(/\\s+/);
+    var c;
+    for (c = 0; c < classes.length; c++) {
+      if (classes[c] && !isUtilityCoverClass(classes[c])) return clipText(classes[c], 24);
+    }
     var id = el.id && String(el.id).trim();
     if (id && id.charAt(0) !== ":") return clipText(id, 24);
     var text = clipText(el.innerText || "", 24);
@@ -673,6 +876,8 @@ const COLLECT_SRC = `(() => {
       if (!top) continue;
       if (el === top || el.contains(top) || top.contains(el)) continue;
       if (!hitPaints(top)) continue;
+      if (coverWalkRestack(top, text, el)) continue;
+      if ((el.tagName === "TD" || el.tagName === "TH") && emptyUtilityCover(top, el)) continue;
       var coverInfo = overlayInfo(top);
       if (coverInfo.overlay && (textOverlay.overlayId !== coverInfo.overlayId)) continue;
       if (stickyChromeCover(top, el)) continue;
@@ -686,19 +891,28 @@ const COLLECT_SRC = `(() => {
     var key = kind + "\\0" + where + "\\0" + cover;
     if (seen[key]) continue;
     seen[key] = true;
+    var box = el.getBoundingClientRect();
     hits.push({
       kind: kind,
       where: where,
       cover: cover || "another layer",
       probed: probed,
       occluded: occluded,
+      clip: { x: box.left, y: box.top, width: box.width, height: box.height },
     });
   }
   return hits;
 })()`;
 
-export async function scanTextOcclusion(page: Page): Promise<QualityIssue[]> {
+export async function scanTextOcclusionEvidence(page: Page): Promise<{
+  issues: QualityIssue[];
+  clips: EvidenceClip[];
+}> {
   const raw = (await page.evaluate(COLLECT_SRC).catch(() => [])) as TextOcclusionHit[];
-  if (!Array.isArray(raw)) return [];
-  return issuesFromHits(raw);
+  if (!Array.isArray(raw)) return { issues: [], clips: [] };
+  return textOcclusionEvidence(raw, page.viewportSize());
+}
+
+export async function scanTextOcclusion(page: Page): Promise<QualityIssue[]> {
+  return (await scanTextOcclusionEvidence(page)).issues;
 }

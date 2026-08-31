@@ -79,6 +79,13 @@
         <li role="menuitem" data-testid="collapsed-item" class="icon">Copy</li>
       </ul>
       <button type="button" class="icon lonely" data-testid="lonely-icon" aria-label="Help">?</button>
+      <div role="combobox" aria-haspopup="listbox" aria-expanded="false" data-testid="custom-combo">
+        <select data-testid="native-select" aria-label="Status" style="width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden">
+          <option>Open</option>
+        </select>
+        <button type="button" class="ok" data-testid="combo-trigger">Open</button>
+      </div>
+      <button type="button" data-testid="tiny-close" aria-label="Close" style="width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden">×</button>
     </main>
   </body>
 </html>

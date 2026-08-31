@@ -30,6 +30,30 @@
       [role="menu"] { margin: 24px 0; padding: 8px; border: 1px solid #ccc; width: 240px; }
       [role="menuitem"] a { display: block; padding-left: 8px; }
       [role="menuitem"]:nth-child(2) a { padding-left: 48px; }
+      ul.shortcut-rail { list-style: none; margin: 24px 0; padding: 0; width: 220px; }
+      ul.shortcut-rail li { margin: 0; }
+      ul.shortcut-rail button,
+      ul.shortcut-rail a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 220px;
+        height: 32px;
+        padding: 0 8px;
+        box-sizing: border-box;
+        text-decoration: none;
+        color: inherit;
+        background: transparent;
+        border: 0;
+        font: inherit;
+      }
+      ul.shortcut-rail svg { width: 16px; height: 16px; flex-shrink: 0; }
+      ul.shortcut-rail kbd {
+        margin-left: auto;
+        font: 11px/1.2 ui-monospace, monospace;
+        border: 1px solid #ccc;
+        padding: 2px 4px;
+      }
     </style>
   </head>
   <body>
@@ -40,6 +64,33 @@
         <a href="#team">Team</a>
         <a href="#help">Help</a>
       </nav>
+      <ul class="shortcut-rail" aria-label="App nav" data-testid="shortcut-rail">
+        <li>
+          <button type="button">
+            <svg aria-hidden="true" viewBox="0 0 16 16"><rect width="16" height="16" fill="currentColor"/></svg>
+            <span>Search…</span>
+            <kbd class="ml-auto">⌘K</kbd>
+          </button>
+        </li>
+        <li>
+          <a href="#overview">
+            <svg aria-hidden="true" viewBox="0 0 16 16"><rect width="16" height="16" fill="currentColor"/></svg>
+            <span>Overview</span>
+          </a>
+        </li>
+        <li>
+          <a href="#customers">
+            <svg aria-hidden="true" viewBox="0 0 16 16"><rect width="16" height="16" fill="currentColor"/></svg>
+            <span>Customers</span>
+          </a>
+        </li>
+        <li>
+          <a href="#orchestration">
+            <svg aria-hidden="true" viewBox="0 0 16 16"><rect width="16" height="16" fill="currentColor"/></svg>
+            <span>Orchestration</span>
+          </a>
+        </li>
+      </ul>
       <h1>Inbox</h1>
       <div role="list" class="threads" aria-label="Threads" data-testid="threads">
         <div role="listitem"><a href="#1">Alpha thread</a></div>

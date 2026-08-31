@@ -20,10 +20,18 @@ import { findingReportTitle, findingTapeBug, httpErrorTitle, validationMissExpla
 const valid: TrackedFill["validity"] = { ariaInvalid: false, errorVisible: false, nativeInvalid: false };
 
 describe("fillShouldLookInvalid", () => {
-  it("treats nasty payloads and typed junk as values that should look invalid", () => {
+  it("treats typed junk and empty required as invalid, not XSS in a free-text field", () => {
+    assert.equal(
+      fillShouldLookInvalid({ id: "notes", type: "textarea" }, '"><img onerror=alert(1) src=x>'),
+      false,
+    );
+    assert.equal(
+      fillShouldLookInvalid({ id: "name", type: "text" }, "' OR 'x'='x"),
+      false,
+    );
     assert.equal(
       fillShouldLookInvalid({ id: "from_date", type: "text" }, "%00%00%00%00"),
-      true,
+      false,
     );
     assert.equal(
       fillShouldLookInvalid({ id: "email", type: "email", constraints: { htmlType: "email" } }, "not-an-email"),
@@ -113,7 +121,7 @@ describe("fillCtxForPageError", () => {
     assert.equal(ctx?.field, "page.from_date");
     assert.equal(ctx?.value, "%00%00%00%00");
     assert.equal(ctx?.markedInvalid, undefined);
-    assert.equal(ctx?.shouldInvalid, true);
+    assert.equal(ctx?.shouldInvalid, false);
   });
 
   it("after a click, names the last junk fill", () => {
@@ -348,6 +356,7 @@ describe("looksLikeSubmitClick", () => {
     assert.equal(isPrimaryFormCommit({ id: "submit" }), true);
     assert.equal(isPrimaryFormCommit({ id: "next", name: "Next" }), false);
     assert.equal(isPrimaryFormCommit({ id: "apply", name: "Apply" }), false);
+    assert.equal(isPrimaryFormCommit({ id: "wizard_source_mode_create", name: "Create new" }), false);
     assert.equal(looksLikeSubmitClick({ id: "next", by: "role" }), true);
     assert.equal(looksLikeSubmitClick({ id: "submit", by: "css" }), true);
   });
