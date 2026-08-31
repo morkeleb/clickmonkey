@@ -431,8 +431,8 @@ export async function scanTextClipEvidence(page: Page): Promise<{
   const issues: QualityIssue[] = [];
   const clips: EvidenceClip[] = [];
   if (!Array.isArray(hits)) return { issues, clips };
-  const vw = page.viewportSize()?.width ?? 0;
-  const vh = page.viewportSize()?.height ?? 0;
+  const vw = page.viewportSize?.()?.width ?? 0;
+  const vh = page.viewportSize?.()?.height ?? 0;
   for (const hit of hits) {
     if (hit.rule !== "clip") continue;
     if (!hit.message || !hit.where) continue;
