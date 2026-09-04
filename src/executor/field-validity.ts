@@ -79,16 +79,28 @@ export function isSilentSubmitMessage(message: string): boolean {
   );
 }
 
+const UNFILLED_VALUE = /^(select|choose|pick|search)\b/i;
+
+/** Blank, password mask, or a leftover Select/Search chip — not a committed value. */
+export function fillValueLooksUnfilled(value: string): boolean {
+  const v = value.trim();
+  if (!v || v === "••••") return true;
+  return UNFILLED_VALUE.test(v);
+}
+
 /** True when a submit click left the user with no send, no leave, and no invalid marks. */
 export function shouldReportSilentSubmit(opts: {
   urlChanged: boolean;
   submitVisible: boolean;
   requests: readonly WatchedRequest[];
   validity: readonly FieldValidity[];
+  /** Listed/required fills that never stuck — incomplete walk, not a silent Save. */
+  trackedFills?: readonly { value: string }[];
 }): boolean {
   if (opts.urlChanged || !opts.submitVisible) return false;
   if (opts.requests.some(requestLooksLikeWrite)) return false;
   if (opts.validity.some(fieldLooksInvalid)) return false;
+  if (opts.trackedFills?.some((f) => fillValueLooksUnfilled(f.value))) return false;
   return true;
 }
 

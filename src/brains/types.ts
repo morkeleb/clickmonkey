@@ -43,6 +43,8 @@ export interface BrainContext {
   formHits?: Readonly<Record<string, number>>;
   /** Forms this run already committed or gave up on. Hunt may leave even if still on the surface. */
   formSpent?: Readonly<Record<string, true>>;
+  /** Field ids already filled this page-stay. Listed pickers are not retried while still empty. */
+  fillTried?: Readonly<Record<string, true>>;
   /** Form hunt target (`page/surface`) the walker is walking toward. */
   huntTarget?: string;
   /** Pin unleash to this map page until submit leaves it (`--form`). */

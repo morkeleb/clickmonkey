@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { saveConfig } from "../src/persist/config.js";
 import { persistFinding } from "../src/persist/finding.js";
-import { exploreOutlineOf, setPresenceOutline, startPresence } from "../src/persist/presence.js";
+import { exploreOutlineOf, setPresenceOutline, startPresence, stopPresence } from "../src/persist/presence.js";
 import { emptyConfig } from "../src/schema/config.js";
 import {
   buildRunDetail,
@@ -553,6 +553,7 @@ describe("buildRunDetail", () => {
     const json = JSON.stringify(detail);
     assert.equal(json.includes(runDir), false);
     assert.equal(json.includes("tapePath"), false);
+    stopPresence(runDir);
   });
 
   it("uses the landing page when a finding.json has no pageId", () => {

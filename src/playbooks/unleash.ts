@@ -25,12 +25,21 @@ import { isSilentSubmitMessage } from "../executor/field-validity.js";
 import { shouldPersistFinding } from "../persist/finding.js";
 import { writeLog } from "../persist/log.js";
 import { loadMapPages, recordFormWork, recordMode } from "../persist/fog.js";
-import { formWorkTimes, jobFogTimes, jobOfBrain, modeFogKey, modeFogTimes, pageFogTimes } from "../schema/fog.js";
+import {
+  formWorkTimes,
+  jobFogTimes,
+  jobOfBrain,
+  mergeLaterClocks,
+  modeFogKey,
+  modeFogTimes,
+  pageFogTimes,
+} from "../schema/fog.js";
 import { stopPresence } from "../persist/presence.js";
 import { requireVisionShots, resolveVision, VisionError, type Config } from "../schema/config.js";
 import type { Finding } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
 import { probeVisionChat } from "../surveyor/vision.js";
+import { recoverLeashIfNeeded, liveHref, viewOfState } from "./leash.js";
 import { pickSeedPageId, resetToSeed } from "./seed.js";
 
 export const UNLEASH_DEFAULT_STEPS = 50;
@@ -136,6 +145,8 @@ export async function runUnleash(opts: {
     const noopsByPage = new Map<string, string[]>();
     const formHits: Record<string, number> = {};
     const formSpent: Record<string, true> = {};
+    const fillTried: Record<string, true> = {};
+    let fillTriedKey = "";
     const pageVisits: Record<string, number> = {};
     const pages = loadMapPages(opts.configPath);
     const job = jobOfBrain(brain.name);
@@ -155,13 +166,47 @@ export async function runUnleash(opts: {
     let lootSteps = 0;
     let submitted: UnleashResult["submitted"];
     let stayedSaves = 0;
+    const leash = { tries: 0 };
+    const echoLeash = (line: string): void => {
+      const formatted = `${formatLiveLine(line)}\n`;
+      process.stderr.write(formatted);
+      opts.echo?.write(formatted);
+    };
     while (stepsUsed < steps) {
+      const rec = await recoverLeashIfNeeded({
+        pageId: view.page,
+        href: liveHref(state),
+        pages: state.model.pages,
+        exec,
+        state,
+        budget: leash,
+        echo: echoLeash,
+      });
+      if (rec.attempted || rec.gaveUp) {
+        view = await viewOfState(state);
+      }
+      if (rec.gaveUp) break;
+      if (rec.recovered || rec.attempted) continue;
       const last = view.last
         ? { ok: view.last.ok, ...(view.last.finding ? { finding: view.last.finding } : {}) }
         : undefined;
       const onPage = view.page;
       const urlAtStart = state.page.url();
       const hereKey = `${view.page}/${view.surface}`;
+      if (hereKey !== fillTriedKey) {
+        for (const id of Object.keys(fillTried)) delete fillTried[id];
+        fillTriedKey = hereKey;
+      }
+      if (opts.configPath) {
+        const disk = loadMapPages(opts.configPath);
+        if (job) {
+          mergeLaterClocks(pageFog, jobFogTimes(disk, job));
+          mergeLaterClocks(formWork, formWorkTimes(disk, job));
+        } else {
+          mergeLaterClocks(pageFog, pageFogTimes(disk));
+        }
+        mergeLaterClocks(modeFog, modeFogTimes(disk));
+      }
       pageVisits[hereKey] = (pageVisits[hereKey] ?? 0) + 1;
       pageFog[view.page] = new Date().toISOString();
       const decision = await brain.decide({
@@ -174,6 +219,7 @@ export async function runUnleash(opts: {
         noopIds: noopsByPage.get(onPage) ?? [],
         formHits,
         formSpent,
+        fillTried,
         pageVisits,
         pageFog,
         formWork,
@@ -207,11 +253,23 @@ export async function runUnleash(opts: {
           parsed && !("comment" in parsed) && parsed.kind === "click"
             ? new Set(formSubmitActions(view.actions, view.surface, view).map((a) => a.id))
             : undefined;
+        if (
+          parsed &&
+          !("comment" in parsed) &&
+          parsed.kind === "click" &&
+          isPrimaryFormCommit(parsed) &&
+          view.page !== onPage
+        ) {
+          break;
+        }
         const result = await exec.runLine(line, {
           skipInspect: skipInspectForBurstLine(i, burst.length),
         });
         view = result.view;
         stepsUsed += 1;
+        if (parsed && !("comment" in parsed) && parsed.kind === "fill") {
+          fillTried[parsed.id] = true;
+        }
         if (parsed && !("comment" in parsed) && parsed.kind === "click") {
           clicksByPage.set(onPage, rememberClick(clicksByPage.get(onPage) ?? [], parsed.id));
           if (isPrimaryFormCommit(parsed) && (submitIds?.has(parsed.id) || Boolean(lockForm))) {
@@ -259,6 +317,9 @@ export async function runUnleash(opts: {
           break;
         }
         if (result.ok) formOk = true;
+        if (parsed && !("comment" in parsed) && parsed.kind === "fill" && view.page !== onPage) {
+          break;
+        }
       }
       if (formOk && shouldStampMode(decision) && decision.mode) {
         const at = new Date().toISOString();

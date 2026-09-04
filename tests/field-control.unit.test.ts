@@ -5,6 +5,7 @@ import {
   isListedControl,
   isTypedValueField,
   listedFillResult,
+  listedLiveOrPicked,
   liveLooksEmpty,
   looksLikeListedPicker,
   planControlFill,
@@ -35,7 +36,7 @@ describe("field control registry", () => {
       typeahead?.applies({ id: "create_client_billing_splits_attorney_0", type: "text", value: "Select attorney" }, false),
       true,
     );
-    assert.equal(typeahead?.applies({ id: "create_client_billing_splits_attorney_0", type: "text" }, false), false);
+    assert.equal(typeahead?.applies({ id: "create_client_billing_splits_attorney_0", type: "text" }, false), true);
     assert.equal(typeahead?.applies({ id: "create_client_billing_splits_attorney_0", type: "text" }, true), true);
     assert.equal(FIELD_CONTROLS.find((c) => c.kind === "select")?.applies({ type: "select" }, true), false);
     assert.equal(isTypedValueField({ id: "lineitems_0__amount", type: "number" }), true);
@@ -44,7 +45,13 @@ describe("field control registry", () => {
     assert.equal(looksLikeListedPicker({ id: "lineitems_0__amount", type: "text", constraints: { htmlType: "number" } }), false);
     assert.equal(typeahead?.applies({ id: "lineitems_0__amount", type: "number" }, true), false);
     assert.equal(looksLikeListedPicker({ id: "matter" }), false);
+    assert.equal(looksLikeListedPicker({ id: "vendor" }), true);
     assert.equal(looksLikeListedPicker({ id: "vendorid", type: "text" }), true);
+    assert.equal(looksLikeListedPicker({ id: "vendortype_search", type: "text" }), true);
+    assert.equal(looksLikeListedPicker({ id: "vendor_create_places_search", type: "text" }), false);
+    assert.equal(looksLikeListedPicker({ id: "create_client_billing_splits_attorney_0", type: "text" }), true);
+    assert.equal(looksLikeListedPicker({ id: "attorney_notes", type: "text" }), false);
+    assert.equal(looksLikeListedPicker({ id: "attorney_email", type: "text" }), false);
     assert.equal(looksLikeListedPicker({ id: "party", type: "text", value: "Select a party" }), true);
     assert.equal(
       looksLikeListedPicker({ id: "vendor", type: "text", constraints: { placeholder: "Search vendors" } }),
@@ -92,6 +99,18 @@ describe("field control registry", () => {
       "NO",
     );
     assert.equal(planControlFill({ id: "name", value: "", type: "text" }, () => 0.9, false), undefined);
+    assert.equal(planControlFill({ id: "vendorid", value: "", type: "text" }, () => 0, false), "a");
+    assert.equal(planControlFill({ id: "vendorid", value: "", type: "text" }, () => 0.9, false), "e");
+    assert.equal(planControlFill({ id: "vendortype_search", value: "", type: "text" }, () => 0, false), "a");
+    assert.equal(
+      planControlFill({ id: "create_client_billing_splits_attorney_0", value: "", type: "text" }, () => 0, false),
+      "a",
+    );
+    assert.equal(planControlFill({ id: "vendorid", value: "", type: "text" }, () => 0, true), "a");
+    assert.equal(
+      planControlFill({ id: "party", value: "Select a party", type: "text" }, () => 0, false),
+      "a",
+    );
   });
 
   it("treats a live placeholder as empty for read/empty", () => {
@@ -124,6 +143,17 @@ describe("field control registry", () => {
       label: "Party",
     });
     assert.equal(leftover.ok, false);
+    assert.equal(listedLiveOrPicked("a", "Aisha Rahman"), "Aisha Rahman");
+    assert.equal(listedLiveOrPicked("Aisha Rahman", "a"), "Aisha Rahman");
+    const kept = listedFillResult({
+      wanted: "a",
+      live: listedLiveOrPicked("a", "Aisha Rahman"),
+      listed: true,
+      required: true,
+      widgetKey: "page.attorney",
+    });
+    assert.equal(kept.ok, true);
+    if (kept.ok) assert.equal(kept.value, "Aisha Rahman");
   });
 
   it("optional listed empty can skip", () => {

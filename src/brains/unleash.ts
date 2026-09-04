@@ -1,6 +1,7 @@
 import { formatStep } from "../schema/dsl.js";
 import type { Page } from "../schema/page-model.js";
 import type { ShownAction, ShownField, View } from "../schema/view.js";
+import { dateFillValue, looksLikeDateFieldName } from "../executor/date-mask.js";
 import { looksLikeListedPicker, planControlFill } from "../executor/field-control.js";
 import { fakerFill } from "./faker-fill.js";
 import type { Brain, BrainContext, BrainDecision } from "./types.js";
@@ -175,13 +176,34 @@ export function looksLikeNavWidget(action: ShownAction): boolean {
   return action.id.toLowerCase().startsWith("menuitem_");
 }
 
-/** In-page actions minus dismiss while a form is on screen. */
+/** New/Create that is not the empty-list CTA. */
+export function isStandardCreateAction(action: ShownAction): boolean {
+  if (isEmptyStateAction(action) || isRecordRowAction(action) || isTabAction(action)) return false;
+  const id = action.id.toLowerCase();
+  if (id.includes("tab")) return false;
+  const label = (action.label ?? "").toLowerCase();
+  if (/(^|_)(new|create)(_|$)/.test(id)) return true;
+  if (/\b(new|create)\b/.test(label)) return true;
+  return false;
+}
+
+/** List already has rows — “Create your first …” is leftover map chrome. */
+export function listLooksPopulated(view: View, _pages?: readonly Page[]): boolean {
+  void _pages;
+  if (view.shown.some(looksLikeDataRowSelectCheckbox)) return true;
+  if (repeatingRowCount(view) > 0) return true;
+  if (view.actions.some((a) => isRecordRowAction(a) && !looksLikeNavWidget(a))) return true;
+  return view.actions.some(isEmptyStateAction) && view.actions.some(isStandardCreateAction);
+}
+
 export function legalUnleashActions(view: View, pages?: readonly Page[]): ShownAction[] {
   const actions = inPageActions(view, pages);
   const live =
     view.shown.length === 0 ? actions : actions.filter((a) => !isDismissAction(a) && !isLeaveAction(a));
-  if (!searchIsActive(view)) return live;
-  return live.filter((a) => !isEmptyStateAction(a));
+  if (searchIsActive(view) || listLooksPopulated(view, pages)) {
+    return live.filter((a) => !isEmptyStateAction(a));
+  }
+  return live;
 }
 
 /** Repeating line/split rows to fill (`lineitems_0__…`, `items[0].…`). Do not spawn more. */
@@ -201,7 +223,7 @@ export function stayActions(view: View, pages?: readonly Page[]): ShownAction[] 
     if (looksLikeNavWidget(a) || isRecordRowAction(a)) return false;
     if (isAddRepeatingRowAction(a) && rows >= FORM_CHILD_ROWS) return false;
     if (holdForm && /(_remove_|_add_row)/i.test(a.id)) return false;
-    if (holdForm && isTabAction(a)) return false;
+    if (holdForm && (isTabAction(a) || /(^|_)active_tabs(_|$)/.test(a.id.toLowerCase()))) return false;
     return true;
   });
 }
@@ -276,6 +298,7 @@ export function isTabAction(action: ShownAction): boolean {
   if ((action.role ?? "").toLowerCase() === "tab") return true;
   const id = action.id.toLowerCase();
   if (NOT_TAB_ID.test(id)) return false;
+  if (/(^|_)active_tabs(_|$)/.test(id)) return false;
   if (id.includes("tablist") || TAB_ID.test(id)) return true;
   const label = (action.label ?? "").toLowerCase();
   if (!/\btabs?\b/.test(label) || /\btable\b/.test(label) || NOT_TAB_LABEL.test(label)) return false;
@@ -321,8 +344,111 @@ export function looksLikePageSearch(field: ShownField): boolean {
 }
 
 /**
- * TanStack/shadcn row checkboxes share one aria-label and vanish when the
- * table is empty. Not a form field; filling them is a false "not found".
+ * List-view chrome: the list's own status/period switcher.
+ * Not a form body `status` / `period` on create/edit.
+ */
+export function looksLikeListFilterField(field: { id: string; label?: string }): boolean {
+  const id = field.id.toLowerCase();
+  if (/(^|_)list_(status|period|filter|type|view)(_|$)/.test(id)) return true;
+  if (/(^|_)switch_(period|view|range|status)(_|$)/.test(id)) return true;
+  return false;
+}
+
+function isListChromeField(field: ShownField): boolean {
+  return looksLikePageSearch(field) || looksLikeListFilterField(field);
+}
+
+function fieldNameTokens(field: { id: string; label?: string }): Set<string> {
+  const tokens = new Set<string>();
+  for (const raw of [field.id, field.label ?? ""]) {
+    if (!raw) continue;
+    const camel = raw.replace(/([a-z])([A-Z])/g, "$1 $2");
+    for (const t of camel.toLowerCase().split(/[^a-z0-9]+/)) {
+      if (t.length >= 2) tokens.add(t);
+    }
+  }
+  const rangeHeads = new Set(["from", "start", "after", "min", "to", "until", "end", "before", "max", "due"]);
+  for (const t of [...tokens]) {
+    for (const suffix of ["datetime", "date", "time"] as const) {
+      if (t.length <= suffix.length || !t.endsWith(suffix)) continue;
+      const head = t.slice(0, -suffix.length);
+      if (rangeHeads.has(head)) {
+        tokens.add(suffix);
+        tokens.add(head);
+      }
+    }
+  }
+  return tokens;
+}
+
+const RANGE_START_TOKENS = new Set(["from", "start", "after", "min"]);
+const RANGE_END_TOKENS = new Set(["to", "until", "end", "before", "max"]);
+
+export function looksLikeDateTypedField(field: {
+  id: string;
+  type?: string;
+  label?: string;
+  constraints?: { htmlType?: string; placeholder?: string };
+}): boolean {
+  const type = (field.type ?? "").toLowerCase();
+  if (type === "date" || type === "datetime") return true;
+  const html = (field.constraints?.htmlType ?? "").toLowerCase();
+  if (html === "date" || html === "datetime-local") return true;
+  return looksLikeDateFieldName(field.id, field.label);
+}
+
+function rangeRole(field: {
+  id: string;
+  type?: string;
+  label?: string;
+  constraints?: { htmlType?: string };
+}): "start" | "end" | undefined {
+  if (!looksLikeDateTypedField(field)) return undefined;
+  const tokens = fieldNameTokens(field);
+  const start = [...RANGE_START_TOKENS].some((t) => tokens.has(t));
+  const end = [...RANGE_END_TOKENS].some((t) => tokens.has(t));
+  if (start && !end) return "start";
+  if (end && !start) return "end";
+  return undefined;
+}
+
+/** Date/datetime range start (`from`/`start`/`after`/`min`, including `due_from`). */
+export function looksLikeRangeStart(field: {
+  id: string;
+  type?: string;
+  label?: string;
+  constraints?: { htmlType?: string };
+}): boolean {
+  return rangeRole(field) === "start";
+}
+
+/** Date/datetime range end (`to`/`until`/`end`/`before`/`max`, including `due_to`). */
+export function looksLikeRangeEnd(field: {
+  id: string;
+  type?: string;
+  label?: string;
+  constraints?: { htmlType?: string };
+}): boolean {
+  return rangeRole(field) === "end";
+}
+
+function rangeStem(field: { id: string; label?: string }): string {
+  const skip = new Set([...RANGE_START_TOKENS, ...RANGE_END_TOKENS, "date", "time", "datetime"]);
+  return [...fieldNameTokens(field)].filter((t) => !skip.has(t)).sort().join("_");
+}
+
+function fieldNameBlob(field: { id: string; label?: string }): string {
+  return `${field.id} ${field.label ?? ""}`.toLowerCase();
+}
+
+function looksLikeRowKeyedId(id: string): boolean {
+  return /(?:^|_)row(?:_|$)|select_row|row_select/.test(id.toLowerCase());
+}
+
+/**
+ * Table selection chrome (row toggle, header/select-all, column selection).
+ * Empty-table checkboxes vanish — filling them is a false "not found".
+ * Header/select-all is never filled; a batch/submit burst may check one data row.
  */
 export function looksLikeRowSelectCheckbox(field: {
   id: string;
@@ -330,12 +456,106 @@ export function looksLikeRowSelectCheckbox(field: {
   label?: string;
 }): boolean {
   if (field.type && field.type !== "checkbox") return false;
-  const blob = `${field.id} ${field.label ?? ""}`.toLowerCase();
-  return /row.?selection|toggle_row_selection|press_space_to_toggle/.test(blob);
+  const id = field.id.toLowerCase();
+  if (/(^|_)(select_all|toggle_all)(_\d+)?$/.test(id)) return true;
+  const blob = fieldNameBlob(field);
+  if (/row.?selection|toggle_row_selection|header_selection/.test(blob)) {
+    return true;
+  }
+  if (/press_space_to_toggle/.test(blob) && /row|selection/.test(blob)) return true;
+  if (/column.+selection/.test(blob.replace(/[_-]+/g, " "))) return true;
+  const tokens = fieldNameTokens(field);
+  const tableChrome = tokens.has("row") || tokens.has("column") || tokens.has("header");
+  if (tokens.has("select") && tokens.has("all") && tableChrome) return true;
+  if (tokens.has("toggle") && tokens.has("all") && tableChrome) return true;
+  if (tokens.has("select") && tokens.has("row")) return true;
+  if (tokens.has("column") && tokens.has("selection")) return true;
+  if (tokens.has("header") && tokens.has("selection")) return true;
+  return false;
+}
+
+/** Header / select-all table chrome. Never random-toggled. */
+export function looksLikeHeaderSelectCheckbox(field: {
+  id: string;
+  type?: string;
+  label?: string;
+}): boolean {
+  if (!looksLikeRowSelectCheckbox(field)) return false;
+  const id = field.id.toLowerCase();
+  const tokens = fieldNameTokens(field);
+  if (/header|(^|_)all(_|$)|select_all|toggle_all|header_selection/.test(id)) return true;
+  if (tokens.has("header")) return true;
+  if (tokens.has("all") && (tokens.has("select") || tokens.has("toggle"))) return true;
+  if (looksLikeRowKeyedId(id)) return false;
+  if (tokens.has("column") && tokens.has("selection")) return true;
+  return false;
+}
+
+/** Data-row table checkbox (`row_`, `select_row`), not header/select-all. */
+export function looksLikeDataRowSelectCheckbox(field: {
+  id: string;
+  type?: string;
+  label?: string;
+}): boolean {
+  if (!looksLikeRowSelectCheckbox(field)) return false;
+  if (looksLikeHeaderSelectCheckbox(field)) return false;
+  const id = field.id.toLowerCase();
+  const blob = fieldNameBlob(field);
+  return looksLikeRowKeyedId(id) || /row.?selection|toggle_row_selection|select_row|row_select/.test(blob);
+}
+
+/** Last id segment that looks like a grid/virtualized cell key, not a field name. */
+function looksLikeCellKey(seg: string): boolean {
+  if (/^[a-z]\d{2,}$/i.test(seg)) return true;
+  if (/^[a-z]{1,3}\d+[a-z0-9]*$/i.test(seg)) return true;
+  if (/^\d{2,}$/.test(seg)) return true;
+  if (/^[0-9a-f]{6,}$/i.test(seg) && /\d/.test(seg)) return true;
+  return false;
+}
+
+function checkboxGroupStem(id: string): string | undefined {
+  const parts = id.toLowerCase().split(/[_-]+/).filter(Boolean);
+  if (parts.length < 2) return undefined;
+  const last = parts[parts.length - 1]!;
+  if (!looksLikeCellKey(last)) return undefined;
+  return parts.slice(0, -1).join("_");
+}
+
+/** How many same-stem checkboxes count as a virtualized grid, not one settings toggle. */
+export const GRID_CHECKBOX_MIN = 4;
+
+/**
+ * Clustered grid-cell checkboxes (`active_for_a102`, `active_for_a103`, …).
+ * A single `active` / `agree` checkbox is not this.
+ */
+export function looksLikeGridCellCheckbox(
+  field: { id: string; type?: string },
+  shown: readonly { id: string; type?: string }[],
+): boolean {
+  if (field.type && field.type !== "checkbox") return false;
+  const stem = checkboxGroupStem(field.id);
+  if (!stem) return false;
+  let n = 0;
+  for (const f of shown) {
+    if (f.type && f.type !== "checkbox") continue;
+    if (checkboxGroupStem(f.id) === stem) n += 1;
+    if (n >= GRID_CHECKBOX_MIN) return true;
+  }
+  return false;
 }
 
 function isBodyField(field: ShownField): boolean {
-  return field.type !== "checkbox" && !looksLikePageSearch(field) && !looksLikeRowSelectCheckbox(field);
+  return (
+    field.type !== "checkbox" &&
+    !isListChromeField(field) &&
+    !looksLikeRowSelectCheckbox(field) &&
+    !looksLikeFileField(field)
+  );
+}
+
+/** We do not attach files. Empty file inputs must not keep the walker on the form. */
+export function looksLikeFileField(field: Pick<ShownField, "type" | "constraints">): boolean {
+  return (field.constraints?.htmlType ?? "").toLowerCase() === "file";
 }
 
 const SELECT_PLACEHOLDER = /^(select|choose|pick|search)\b/i;
@@ -369,13 +589,23 @@ function commitFailed(ctx?: Pick<BrainContext, "last">): boolean {
 
 function isFormFillCandidate(
   field: ShownField,
+  shown: readonly ShownField[],
   skipId: string | undefined,
   checkboxes: boolean,
+  fillTried?: Readonly<Record<string, true>>,
 ): boolean {
-  if (looksLikePageSearch(field) || looksLikeRowSelectCheckbox(field) || skipRepeatingChildField(field.id)) {
+  if (
+    isListChromeField(field) ||
+    looksLikeRowSelectCheckbox(field) ||
+    looksLikeGridCellCheckbox(field, shown) ||
+    looksLikeFileField(field) ||
+    skipRepeatingChildField(field.id)
+  ) {
     return false;
   }
   if (skipId && field.id === skipId) return false;
+  // Listed chip already attempted this stay — do not loop empty `*id` fills.
+  if (fillTried?.[field.id] && looksLikeListedPicker(field)) return false;
   if (field.type === "checkbox") return checkboxes;
   return looksLikeEmptyValue(field);
 }
@@ -383,12 +613,13 @@ function isFormFillCandidate(
 /** Empty body fields on this form, required first. Listed pickers are fields too. */
 export function formFieldsToFill(
   view: View,
-  ctx?: Pick<BrainContext, "recentClicks" | "last">,
+  ctx?: Pick<BrainContext, "recentClicks" | "last" | "fillTried">,
   opts?: { checkboxes?: boolean },
 ): ShownField[] {
-  void ctx;
   const skipId = lastFailedFillId(view);
-  const candidates = view.shown.filter((f) => isFormFillCandidate(f, skipId, opts?.checkboxes !== false));
+  const candidates = view.shown.filter((f) =>
+    isFormFillCandidate(f, view.shown, skipId, opts?.checkboxes !== false, ctx?.fillTried),
+  );
   return candidates.sort((a, b) => Number(Boolean(b.required)) - Number(Boolean(a.required)));
 }
 
@@ -483,6 +714,50 @@ export function listRowActions(view: View, pages?: readonly Page[]): ShownAction
   });
 }
 
+/** Login / logout rooms. Not `/auth/tokens` or `auth_settings`. */
+const AUTH_ROOM =
+  /^(u_)?(log[-_]?in|log[-_]?out|sign[-_]?in|sign[-_]?out|signin|signout)(_|$)|^(sso|auth)$|^(sso|auth)[_-](log[-_]?in|log[-_]?out|sign[-_]?in|callback)/i;
+const AUTH_LOGIN_PATH =
+  /(?:^|\/|#\/)(?:log[-_]?in|log[-_]?out|sign[-_]?in|sign[-_]?out|signin|signout)(?:\/|$|\?|#)/i;
+const AUTH_SSO_PATH =
+  /(?:^|\/|#\/)(sso|auth)(?:\/(?:log[-_]?in|log[-_]?out|sign[-_]?in|callback))?(?:\/)?$/i;
+
+export function isAuthGatePage(
+  pageId: string,
+  pages?: readonly Pick<Page, "id" | "path">[],
+): boolean {
+  if (AUTH_ROOM.test(pageId)) return true;
+  const path = (pages?.find((p) => p.id === pageId)?.path ?? "").toLowerCase();
+  return path.length > 0 && (AUTH_LOGIN_PATH.test(path) || AUTH_SSO_PATH.test(path));
+}
+
+/** Live URL (path or hash-route) is a login / logout / SSO room. */
+export function isAuthGateHref(href: string): boolean {
+  const raw = href.trim();
+  if (!raw) return false;
+  try {
+    const u = new URL(raw);
+    const path = u.pathname;
+    if (AUTH_LOGIN_PATH.test(path) || AUTH_SSO_PATH.test(path)) return true;
+    const hash = u.hash.startsWith("#") ? u.hash.slice(1) : u.hash;
+    if (!hash) return false;
+    const hp = hash.startsWith("/") ? hash : `/${hash}`;
+    return AUTH_LOGIN_PATH.test(hp) || AUTH_SSO_PATH.test(hp);
+  } catch {
+    return AUTH_LOGIN_PATH.test(raw) || AUTH_SSO_PATH.test(raw);
+  }
+}
+
+/** Mapped page or live URL is the auth gate — re-enter via the leash, do not hunt. */
+export function needsLeashReentry(
+  pageId: string,
+  href?: string,
+  pages?: readonly Pick<Page, "id" | "path">[],
+): boolean {
+  if (isAuthGatePage(pageId, pages)) return true;
+  return Boolean(href && isAuthGateHref(href));
+}
+
 export function hopPage(view: View, rng: () => number): BrainDecision {
   const pages = view.pages ?? [];
   const others = pages.filter((id) => id !== view.page);
@@ -513,6 +788,120 @@ export function plausibleFill(
   if (planned !== undefined) return planned;
   if (emptyOk && rng() < 0.5) return "";
   return fakerFill(field, rng);
+}
+
+type PlannedDate = { ms: number; day: string; hm?: string };
+
+function pad2(n: string): string {
+  return n.length === 1 ? `0${n}` : n;
+}
+
+function plannedDateFromParts(y: string, month: string, d: string, hm?: string): PlannedDate | undefined {
+  const day = `${y}-${pad2(month)}-${pad2(d)}`;
+  const ms = Date.parse(`${day}T${hm ?? "00:00"}:00Z`);
+  if (Number.isNaN(ms)) return undefined;
+  return { ms, day, ...(hm ? { hm } : {}) };
+}
+
+function parsePlannedDate(value: string): PlannedDate | undefined {
+  const v = value.trim();
+  if (!v) return undefined;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(v);
+  if (iso) return plannedDateFromParts(iso[1]!, iso[2]!, iso[3]!, iso[4] && iso[5] ? `${iso[4]}:${iso[5]}` : undefined);
+  const slash = /^(\d{1,4})[/\-.](\d{1,2})[/\-.](\d{1,4})$/.exec(v);
+  if (!slash) return undefined;
+  const a = slash[1]!;
+  const b = slash[2]!;
+  const c = slash[3]!;
+  if (a.length === 4) return plannedDateFromParts(a, b, c);
+  if (c.length !== 4) return undefined;
+  const n1 = Number(a);
+  if (n1 > 12) return plannedDateFromParts(c, b, a);
+  return plannedDateFromParts(c, a, b);
+}
+
+function formatRangeDate(parsed: PlannedDate, field: ShownField): string {
+  const type = (field.type ?? "").toLowerCase();
+  const html = (field.constraints?.htmlType ?? "").toLowerCase();
+  if (type === "datetime" || html === "datetime-local") {
+    return `${parsed.day}T${parsed.hm ?? "00:00"}`;
+  }
+  return dateFillValue(parsed.day, {
+    placeholder: field.constraints?.placeholder,
+    htmlType: field.constraints?.htmlType,
+    fieldType: field.type,
+  });
+}
+
+function laterDateValue(a: string | undefined, b: string): string {
+  if (!a) return b;
+  const pa = parsePlannedDate(a);
+  const pb = parsePlannedDate(b);
+  if (!pa) return b;
+  if (!pb) return a;
+  return pb.ms >= pa.ms ? b : a;
+}
+
+function withConstraintMin(field: ShownField, minValue: string): ShownField {
+  const parsed = parsePlannedDate(minValue);
+  if (!parsed) return field;
+  return {
+    ...field,
+    constraints: { ...field.constraints, min: parsed.day },
+  };
+}
+
+function clampDateOnOrAfter(value: string, minValue: string, field: ShownField): string {
+  const parsed = parsePlannedDate(value);
+  const min = parsePlannedDate(minValue);
+  if (!parsed || !min || parsed.ms >= min.ms) return value;
+  return formatRangeDate(min, field);
+}
+
+function dateRangeBurstRank(field: ShownField): number {
+  if (looksLikeRangeStart(field)) return 0;
+  if (looksLikeRangeEnd(field)) return 2;
+  return 1;
+}
+
+/**
+ * Plan fill values for one form burst. Range starts are generated first so
+ * matching `to`/`until`/`end` dates are on or after `from`/`start`.
+ */
+export function planFormBurstFills(
+  fields: readonly ShownField[],
+  fill: FillFn,
+): { field: ShownField; value: string }[] {
+  const ordered = [...fields].sort((a, b) => dateRangeBurstRank(a) - dateRangeBurstRank(b));
+  const startByStem = new Map<string, string>();
+  let latestStart: string | undefined;
+  const out: { field: ShownField; value: string }[] = [];
+  for (const field of ordered) {
+    const startMin = looksLikeRangeEnd(field)
+      ? (startByStem.get(rangeStem(field)) ?? latestStart)
+      : undefined;
+    const source = startMin ? withConstraintMin(field, startMin) : field;
+    let value = fill(source);
+    if (startMin) value = clampDateOnOrAfter(value, startMin, field);
+    out.push({ field, value });
+    if (looksLikeRangeStart(field) && parsePlannedDate(value)) {
+      latestStart = laterDateValue(latestStart, value);
+      startByStem.set(rangeStem(field), laterDateValue(startByStem.get(rangeStem(field)), value));
+    }
+  }
+  return out;
+}
+
+function checkboxIsOn(field: ShownField): boolean {
+  const v = field.value.trim().toLowerCase();
+  return v === "true" || v === "on" || v === "checked" || v === "1" || v === "yes";
+}
+
+/** One data-row checkbox to check on a batch/submit form. Skip empty tables and header/select-all. */
+export function pickDataRowSelectToCheck(shown: readonly ShownField[]): ShownField | undefined {
+  const rows = shown.filter(looksLikeDataRowSelectCheckbox);
+  if (rows.length === 0 || rows.some(checkboxIsOn)) return undefined;
+  return rows[0];
 }
 
 /** Commit verb is the last id segment (`button_save`, not `create_client_…_add_row`). */
@@ -790,8 +1179,9 @@ export function decideForm(
   actions: ShownAction[],
   rng: () => number,
   fill: FillFn,
-  ctx?: Pick<BrainContext, "recentClicks" | "noopIds" | "pages" | "last" | "lockForm">,
+  ctx?: Pick<BrainContext, "recentClicks" | "noopIds" | "pages" | "last" | "lockForm" | "formSpent" | "fillTried">,
 ): BrainDecision | undefined {
+  if (ctx?.formSpent?.[`${view.page}/${view.surface}`]) return undefined;
   const fields = view.shown;
   const commits = formCommitActions(view, actions, ctx?.pages);
   // Leftover option_* rows (previous combobox, painted NAICS, a chip) are not
@@ -813,12 +1203,21 @@ export function decideForm(
   }
   if (finishPool.length === 0) return undefined;
   const ranked = formFieldsToFill(view, ctx);
-  const lines: string[] = ranked.map((field) =>
+  const planned = planFormBurstFills(ranked, fill);
+  const page = ctx?.pages?.find((p) => p.id === view.page);
+  const primary =
+    view.actions.some((a) => isPrimaryFormCommit(a, page, view.surface)) ||
+    mappedPrimaryCommits(view, ctx?.pages).length > 0;
+  if (primary) {
+    const row = pickDataRowSelectToCheck(view.shown);
+    if (row) planned.push({ field: row, value: "true" });
+  }
+  const lines: string[] = planned.map(({ field, value }) =>
     formatStep({
       kind: "fill",
       surface: view.surface,
       id: field.id,
-      value: fill(field),
+      value,
     }),
   );
   const dismiss = formDismissAction(view.actions);
@@ -833,7 +1232,7 @@ export function decideForm(
   return {
     line: lines[0]!,
     lines,
-    note: finish.id === dismiss?.id ? "form dismiss" : ranked.length > 0 ? "form" : "form submit",
+    note: finish.id === dismiss?.id ? "form dismiss" : planned.length > 0 ? "form" : "form submit",
   };
 }
 

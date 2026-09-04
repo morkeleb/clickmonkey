@@ -33,23 +33,26 @@ export function MapNode({ data, selected }: NodeProps<GraphNode>) {
       )
     : undefined;
   return (
-    <div className="relative h-full w-full overflow-visible">
+    <div className="relative h-full w-full">
       <Handle type="target" position={Position.Left} className="!size-1.5 !border-zinc-600 !bg-zinc-500" />
+      {data.rings.length > 0 ? (
+        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+          {data.rings.map((ring, i) => (
+            <span
+              key={`${ring.name}-${i}`}
+              className="absolute animate-pulse rounded-lg"
+              style={{
+                inset: -(3 + i * 4),
+                boxShadow: `0 0 0 2px ${runHue(ring.hue)}`,
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       <div
-        className="relative overflow-visible"
+        className="relative"
         style={sized ? { width: data.cardWidth, height: data.cardHeight } : { width: "100%", height: "100%" }}
       >
-        {data.rings.map((ring, i) => (
-          <span
-            key={`${ring.name}-${i}`}
-            className="pointer-events-none absolute animate-pulse rounded-lg"
-            style={{
-              inset: -(3 + i * 4),
-              boxShadow: `0 0 0 2px ${runHue(ring.hue)}`,
-            }}
-            aria-hidden
-          />
-        ))}
         <div
           className={cn(
             "relative flex h-full w-full items-center gap-2 rounded-lg border px-2.5 py-1.5",

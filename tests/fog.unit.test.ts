@@ -19,9 +19,11 @@ import {
 import { mapPath } from "../src/persist/workspace.js";
 import {
   formWorkTimes,
+  brainStampsSpec,
   jobFogOf,
   jobFogTimes,
   jobOfBrain,
+  mergeLaterClocks,
   mergePageFog,
   modeFogTimes,
   monkeyOfBrain,
@@ -135,6 +137,9 @@ describe("page fog", () => {
     assert.equal(jobOfBrain("explore"), undefined);
     assert.equal(jobOfBrain("spec"), undefined);
     assert.equal(jobOfBrain("test"), undefined);
+    assert.equal(brainStampsSpec("spec"), true);
+    assert.equal(brainStampsSpec("test"), true);
+    assert.equal(brainStampsSpec("unleash"), false);
     assert.equal(monkeyOfBrain("unleash-nasty"), "nasty");
     assert.equal(monkeyOfBrain("explore"), "explore");
     assert.equal(monkeyOfBrain("mcp"), "mcp");
@@ -234,7 +239,64 @@ describe("page fog", () => {
       now,
     );
     assert.match(lined, /1 page/);
-    assert.match(lined, /home  at 1h  map 2d  unleash never  nasty never  form now/);
+    assert.match(lined, /home  at 1h  map 2d  unleash never  nasty never  spec never  form now/);
+  });
+
+  it("stamps a shared spec coverage pip for spec and typed tests, not hunt jobs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-fog-spec-"));
+    const cfg = join(dir, "clickmonkey.json");
+    seed(cfg);
+    stampFog(cfg, "home", { at: "2026-04-01T00:00:00.000Z", job: "map" });
+    const specState = {
+      configPath: cfg,
+      pageId: "home",
+      lastFogPageId: undefined as string | undefined,
+      brain: "spec",
+    };
+    recordFog(specState);
+    const afterSpec = fogOf(loadMapPages(cfg), "home");
+    assert.ok(afterSpec?.spec);
+    assert.equal(afterSpec?.jobs.map, "2026-04-01T00:00:00.000Z");
+    assert.equal(afterSpec?.jobs.unleash, undefined);
+    assert.deepEqual(jobFogOf(afterSpec)?.spec, afterSpec?.spec);
+    const testState = {
+      configPath: cfg,
+      pageId: "home",
+      lastFogPageId: specState.lastFogPageId,
+      brain: "test",
+    };
+    recordFog(testState);
+    assert.equal(fogOf(loadMapPages(cfg), "home")?.spec, afterSpec?.spec);
+    testState.lastFogPageId = undefined;
+    recordFog(testState);
+    const afterTest = fogOf(loadMapPages(cfg), "home");
+    assert.ok(afterTest?.spec);
+    assert.notEqual(afterTest?.spec, afterSpec?.spec);
+    assert.equal(afterTest?.jobs.map, "2026-04-01T00:00:00.000Z");
+    resetFog(cfg, "spec");
+    const afterReset = fogOf(loadMapPages(cfg), "home");
+    assert.equal(afterReset?.spec, undefined);
+    assert.equal(afterReset?.jobs.map, "2026-04-01T00:00:00.000Z");
+    assert.ok(afterReset?.at);
+    const merged = mergePageFog(
+      { at: "2026-04-01T00:00:00.000Z", jobs: {}, modes: {}, spec: "2026-01-01T00:00:00.000Z" },
+      { at: "2026-04-01T00:00:00.000Z", jobs: {}, modes: {}, spec: "2026-08-01T00:00:00.000Z" },
+    );
+    assert.equal(merged?.spec, "2026-08-01T00:00:00.000Z");
+  });
+});
+
+describe("mergeLaterClocks", () => {
+  it("keeps the later ISO per key and inserts missing keys", () => {
+    const into = { home: "2026-01-01T00:00:00.000Z", invoices: "2026-06-01T00:00:00.000Z" };
+    mergeLaterClocks(into, {
+      home: "2026-08-01T00:00:00.000Z",
+      invoices: "2026-03-01T00:00:00.000Z",
+      extra: "2026-07-01T00:00:00.000Z",
+    });
+    assert.equal(into.home, "2026-08-01T00:00:00.000Z");
+    assert.equal(into.invoices, "2026-06-01T00:00:00.000Z");
+    assert.equal(into.extra, "2026-07-01T00:00:00.000Z");
   });
 });
 

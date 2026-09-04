@@ -312,11 +312,23 @@ describe("shouldReportSilentSubmit", () => {
     );
     assert.equal(shouldReportSilentSubmit({ ...stay, urlChanged: true }), false);
     assert.equal(shouldReportSilentSubmit({ ...stay, submitVisible: false }), false);
+    assert.equal(
+      shouldReportSilentSubmit({ ...stay, trackedFills: [{ value: "" }, { value: "Ada" }] }),
+      false,
+    );
+    assert.equal(
+      shouldReportSilentSubmit({ ...stay, trackedFills: [{ value: "Select a vendor" }] }),
+      false,
+    );
+    assert.equal(
+      shouldReportSilentSubmit({ ...stay, trackedFills: [{ value: "Ada Lovelace" }] }),
+      true,
+    );
   });
 });
 
 describe("looksLikeRowSelectCheckbox", () => {
-  it("matches TanStack row-toggle names, not a normal agree box", () => {
+  it("matches TanStack row-toggle and header/select-all names, not a normal agree box", () => {
     assert.equal(
       looksLikeRowSelectCheckbox({
         id: "checkbox_press_space_to_toggle_row_selection__unchecked_",
@@ -327,9 +339,19 @@ describe("looksLikeRowSelectCheckbox", () => {
     );
     assert.equal(
       looksLikeRowSelectCheckbox({ id: "checkbox_column_with_header_selection", type: "checkbox" }),
+      true,
+    );
+    assert.equal(looksLikeRowSelectCheckbox({ id: "select_all", type: "checkbox" }), true);
+    assert.equal(looksLikeRowSelectCheckbox({ id: "toggle_all", type: "checkbox" }), true);
+    assert.equal(looksLikeRowSelectCheckbox({ id: "select_row_1", type: "checkbox" }), true);
+    assert.equal(looksLikeRowSelectCheckbox({ id: "row_select_0", type: "checkbox" }), true);
+    assert.equal(looksLikeRowSelectCheckbox({ id: "agree", type: "checkbox", label: "I agree" }), false);
+    assert.equal(looksLikeRowSelectCheckbox({ id: "email_selection", type: "checkbox" }), false);
+    assert.equal(
+      looksLikeRowSelectCheckbox({ id: "select_all_that_apply", type: "checkbox", label: "Select all that apply" }),
       false,
     );
-    assert.equal(looksLikeRowSelectCheckbox({ id: "agree", type: "checkbox", label: "I agree" }), false);
+    assert.equal(looksLikeRowSelectCheckbox({ id: "press_space_to_toggle", type: "checkbox" }), false);
   });
 });
 

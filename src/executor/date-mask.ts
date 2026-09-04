@@ -13,6 +13,38 @@ const MASKS: readonly { re: RegExp; order: DateMaskOrder }[] = [
   { re: /^(y{2,4})([/\-.])(m{1,2})\2(d{1,2})$/i, order: "ymd" },
 ];
 
+/** Whole ids that end in `date` but are not date fields (`update`, `candidate`). */
+const NOT_DATE_IDS = new Set(["update", "candidate", "validate", "mandate", "predate", "antedate"]);
+
+/**
+ * Name looks like a date even on `type=text`: `due_from`, `invoicedate`, `posted_date`.
+ * Not English words that merely end in those letters (`update`).
+ */
+export function looksLikeDateFieldName(id: string, label?: string): boolean {
+  const tokens = new Set<string>();
+  for (const raw of [id, label ?? ""]) {
+    if (!raw) continue;
+    const camel = raw.replace(/([a-z])([A-Z])/g, "$1 $2");
+    for (const t of camel.toLowerCase().split(/[^a-z0-9]+/)) {
+      if (t.length >= 2) tokens.add(t);
+    }
+    const compact = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (compact.endsWith("datetime") && compact.length > "datetime".length) {
+      tokens.add("datetime");
+    } else if (
+      compact.endsWith("date") &&
+      !compact.endsWith("time") &&
+      compact.length - 4 >= 3 &&
+      !NOT_DATE_IDS.has(compact)
+    ) {
+      tokens.add("date");
+    }
+  }
+  if (tokens.has("date") || tokens.has("datetime")) return true;
+  // `due_from` / bare `due`, not `amount_due` or `due_diligence`.
+  return tokens.has("due") && (tokens.has("from") || tokens.has("to") || tokens.has("on") || tokens.size === 1);
+}
+
 /** Letter-token date placeholders (`MM/DD/YYYY`, `dd.mm.yyyy`, `yyyy-mm-dd`). Not "Enter a date". */
 export function parseDateMask(placeholder: string | undefined): DateMask | undefined {
   const raw = (placeholder ?? "").replace(/\s+/g, "");

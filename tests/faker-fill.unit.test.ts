@@ -38,6 +38,12 @@ describe("fill rule matching", () => {
     assert.equal(fillRuleId(field({ id: "salespersonemail", type: "text" })), "email");
     assert.equal(fillRuleId(field({ id: "first", type: "text" })), "firstName");
     assert.equal(fillRuleId(field({ id: "ssn", type: "text" })), "ssn");
+    assert.equal(fillRuleId(field({ id: "taxidentificationnumber", type: "text" })), "ssn");
+    assert.equal(fillRuleId(field({ id: "clientcode", type: "text" })), "recordCode");
+    assert.equal(fillRuleId(field({ id: "shortcode", type: "text" })), "recordCode");
+    assert.equal(fillRuleId(field({ id: "vendor_create_places_search", type: "text" })), "street");
+    assert.notEqual(fillRuleId(field({ id: "protein", type: "text" })), "ssn");
+    assert.notEqual(fillRuleId(field({ id: "marketplace", type: "text" })), "street");
   });
 
   it("matches a same-length typo and does not turn estate into state", () => {
@@ -51,6 +57,10 @@ describe("fill rule matching", () => {
     assert.equal(fillRuleId(field({ id: "transactiondate" })), "date");
     assert.equal(fillRuleId(field({ id: "invoicedate" })), "date");
     assert.equal(fillRuleId(field({ id: "duedate" })), "date");
+    assert.equal(fillRuleId(field({ id: "due_from" })), "date");
+    assert.equal(fillRuleId(field({ id: "due_to" })), "date");
+    assert.equal(fillRuleId(field({ id: "amount_due", type: "number" })), "amount");
+    assert.notEqual(fillRuleId(field({ id: "due_diligence" })), "date");
     assert.equal(fillRuleId(field({ id: "lineitems_0__transactiondate" })), "date");
     assert.equal(fillRuleId(field({ id: "when", constraints: { placeholder: "MM/DD/YYYY" } })), "date");
     assert.equal(fillRuleId(field({ id: "when", type: "date" })), "date");
@@ -160,6 +170,28 @@ describe("fakerFill", () => {
       () => 0.3,
     );
     assert.match(nativeMasked, /^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("keeps a native date on or after constraints.min", () => {
+    const value = fakerFill(
+      field({ id: "due_to", type: "date", constraints: { min: "2026-06-23", htmlType: "date" } }),
+      () => 0.2,
+    );
+    assert.match(value, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(value >= "2026-06-23", value);
+  });
+
+  it("fills client codes and tax ids as compact identifiers, not lorem", () => {
+    const code = fakerFill(field({ id: "clientcode" }), () => 0.3);
+    assert.match(code, /^[A-Z0-9]{6,10}$/);
+    assert.doesNotMatch(code, /\s/);
+    const tin = fakerFill(field({ id: "taxidentificationnumber" }), () => 0.3);
+    assert.match(tin, /^\d{2}-\d{7}$/);
+    const ssn = fakerFill(field({ id: "ssn" }), () => 0.3);
+    assert.match(ssn, /^\d{3}-\d{2}-\d{4}$/);
+    const street = fakerFill(field({ id: "vendor_create_places_search" }), () => 0.3);
+    assert.match(street, /\d/);
+    assert.ok(street.length > 5, street);
   });
 
   it("fills a text currency field with a code, not a money amount", () => {

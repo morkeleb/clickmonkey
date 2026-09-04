@@ -15,6 +15,7 @@ import {
   shouldProbeListed,
   shouldProbeTypeahead,
   liveLooksLikePick,
+  listedRowClickResult,
   typeaheadChipText,
   typeaheadMissMessage,
   LISTED_CLICK_LOCATOR_COUNT,
@@ -38,6 +39,8 @@ describe("liveLooksLikePick", () => {
   it("rejects a leftover 1-char probe and accepts the listed label", () => {
     const denmark = { value: "Denmark", label: "Denmark" };
     assert.equal(liveLooksLikePick("a", denmark), false);
+    assert.equal(listedRowClickResult("a", denmark, COUNTRIES, "a").label, "Denmark");
+    assert.equal(listedRowClickResult("Denmark", denmark, COUNTRIES, "a").label, "Denmark");
     assert.equal(liveLooksLikePick("Denmark", denmark), true);
     assert.equal(liveLooksLikePick("Great Basin", { value: "1", label: "Great Basin Logistics" }), true);
   });
@@ -151,6 +154,17 @@ describe("pickOpenTypeahead", () => {
     const matched = listedPicksToTry(matters, "Holloway retainer Holloway & Associates PC");
     assert.equal(matched[0]?.value, "2");
   });
+
+  it("does not prefer a letter-index row when the planned fill is a search probe", () => {
+    const rows = [
+      { value: "A", label: "A" },
+      { value: "1", label: "Ada Lovelace" },
+      { value: "2", label: "Zoe Mitchell" },
+    ];
+    const tries = listedPicksToTry(rows, "a");
+    assert.equal(tries[0]?.label, "Ada Lovelace");
+    assert.ok(tries.every((o) => o.label !== "A"));
+  });
 });
 
 describe("pollListedOptions", () => {
@@ -219,6 +233,10 @@ describe("typeaheadMissMessage", () => {
     assert.equal(
       shouldProbeListed({ wanted: "beatus bos", options: [], force: false, openedEmpty: true }),
       false,
+    );
+    assert.equal(
+      shouldProbeListed({ wanted: "consectetur bonus", options: [], combobox: true, openedEmpty: true }),
+      true,
     );
     assert.equal(shouldProbeListed({ wanted: "Alice", options: [], force: false, openedEmpty: false }), true);
     assert.equal(shouldProbeListed({ wanted: "x", options: NAICS, force: true }), false);

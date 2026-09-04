@@ -32,6 +32,10 @@ describe("applyLastFog", () => {
     assert.equal(next.graph.nodes.find((n) => n.id === "home")?.jobFog?.map, "2026-01-01T00:00:00.000Z");
     assert.equal(next.graph.nodes.find((n) => n.id === "invoices")?.fogAt, "2026-06-01T00:00:00.000Z");
     assert.equal(next.graph.nodes.find((n) => n.id === "invoices")?.jobFog?.unleash, "2026-06-01T00:00:00.000Z");
+    const withSpec = applyLastFog(prev, {
+      home: { at: "2026-01-01T00:00:00.000Z", spec: "2026-01-02T00:00:00.000Z" },
+    });
+    assert.equal(withSpec.graph.nodes.find((n) => n.id === "home")?.jobFog?.spec, "2026-01-02T00:00:00.000Z");
     const cleared = applyLastFog(next, { invoices: { at: "2026-06-01T00:00:00.000Z" } });
     assert.equal(cleared.graph.nodes.find((n) => n.id === "home")?.fogAt, undefined);
     assert.equal(cleared.graph.nodes.find((n) => n.id === "home")?.jobFog, undefined);

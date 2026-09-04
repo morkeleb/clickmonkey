@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { saveConfig } from "../src/persist/config.js";
-import { exploreOutlineOf, setPresenceOutline, startPresence } from "../src/persist/presence.js";
+import { exploreOutlineOf, setPresenceOutline, startPresence, stopPresence } from "../src/persist/presence.js";
 import { emptyConfig } from "../src/schema/config.js";
 import { stampFog } from "../src/persist/fog.js";
 import { livePatchEqual, livePatchKey } from "../src/ui/live-patch.js";
@@ -98,6 +98,7 @@ describe("buildUiSnapshot", () => {
       assert.equal(run.outline?.charter, "walk invoices");
       assert.equal(run.outline?.now, "open invoices");
       assert.equal(run.steps, undefined);
+      stopPresence(runDir);
     } finally {
       if (prevKey === undefined) delete process.env.XAI_API_KEY;
       else process.env.XAI_API_KEY = prevKey;
@@ -391,6 +392,7 @@ describe("buildUiSnapshot", () => {
     const still = expireLiveRuns(snap, path);
     assert.equal(still.changed, false);
     assert.equal(still.snapshot, snap);
+    stopPresence(runDir);
     writeFileSync(
       join(runDir, "presence.json"),
       `${JSON.stringify({
@@ -411,6 +413,8 @@ describe("buildUiSnapshot", () => {
     assert.equal(expired.snapshot.runs[0]?.live, false);
     const again = expireLiveRuns(expired.snapshot, path);
     assert.equal(again.changed, false);
+    const reaped = JSON.parse(readFileSync(join(runDir, "presence.json"), "utf8")) as { stoppedAt?: string | null };
+    assert.equal(typeof reaped.stoppedAt, "string");
   });
 
   it("livePatchKey ignores object identity when nobody moved", () => {

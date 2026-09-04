@@ -26,13 +26,28 @@ function destVisitKey(
   return visitKey(action.opens, "page");
 }
 
-/** Local navigate click that opens an unseen room, or a door with no `opens` yet. */
+/**
+ * Local door that still grows the map: no `opens` yet, or a hop to a page
+ * this job has never landed (missing `pageFog`). A room this job stood on
+ * last run is not unseen — hunger pathfinds to never-landed rooms instead.
+ */
 export function fogClicks(ctx: BrainContext): ShownAction[] {
   const nav = usableClicks(navigateActions(ctx.view), ctx);
   const fog: ShownAction[] = [];
   for (const action of nav) {
+    if (!action.opens) {
+      fog.push(action);
+      continue;
+    }
     const dest = destVisitKey(action, ctx.view.page, ctx.pages);
-    if (!dest || visitsOf(ctx.pageVisits, dest) === 0) fog.push(action);
+    if (!dest) {
+      fog.push(action);
+      continue;
+    }
+    if (visitsOf(ctx.pageVisits, dest) > 0) continue;
+    const destPage = dest.split("/")[0] ?? dest;
+    if (ctx.pageFog?.[destPage]) continue;
+    fog.push(action);
   }
   return fog;
 }

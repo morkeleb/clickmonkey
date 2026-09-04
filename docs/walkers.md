@@ -19,7 +19,8 @@ Parallel runs merge into one `clickmonkey/map.json`. Rings on the dashboard
 are live units. map, unleash, and nasty each have their own last-land clock
 per page. explore and mcp do not — they still show as different live letters
 (**e** / **c**) when they stand on the same page. Spec and typed tests are
-run modes (**s** / **t**), not job clocks. How to read haze, pips, and
+run modes (**s** / **t** live letters) and share one coverage pip **s**
+(`fog.spec`) — not a hunt job. How to read haze, pips, and
 rings: [map.md](map.md).
 
 | Monkey | Command | Does |
@@ -30,10 +31,12 @@ rings: [map.md](map.md).
 | **explore** | `clickmonkey explore` | One charter. Unattended LLM. Not a soak. Needs `brain`. |
 | **mcp** | `clickmonkey mcp` | Host LLM walks (`explore_start` …), then freeze/replay a spec. Not `clickmonkey explore`. [mcp.md](mcp.md). |
 
+Self-logout is a harness miss, not a product finding. map / unleash / nasty / explore / mcp `goto` the leash `url` and run `intro` again (up to three tries) instead of hunting `open` from the login room.
+
 Spec (`clickmonkey spec` / MCP `spec_save` / `spec_run`) and typed tests
 (`clickmonkey emit` / `brain: test`) are run modes, not monkeys. They show
-live letters **s** / **t** and do not stamp a job clock. Spec is frozen
-fences, still a real walk. Replay is comparison vs a report. Ghost rooms stay on the map until
+live letters **s** / **t** and stamp the shared **s** coverage pip on land
+(not unleash/nasty hunger). Spec is frozen fences, still a real walk. Replay is comparison vs a report. Ghost rooms stay on the map until
 `clickmonkey pages` (checkbox; `--drop` for scripts). Recommend only with a 404 in `broken.json` plus no live inbound door.
 False-positive findings in a report are `clickmonkey prune` (rewrites that
 `findings.md` and records `dismissed.json`). That is not map GC.
@@ -53,9 +56,9 @@ before list before tab before dialog before empty).
 | Mode | When | Legal moves |
 |---|---|---|
 | **wizard** | Body fields + Next/Continue, and it is not a list pager | Fill empties, then Next/Continue. No sidebar hop, no form hunt, until Finish/Save or the stepper is gone. |
-| **form** | Body fields + submit/save/create | Burst-fill empties, then submit (or rarely dismiss). Do not fill one field and leave. List search/`*_filter_*` and Add/Create that **opens a dialog** are not this. |
+| **form** | Body fields + submit/save/create | Burst-fill empties (ordered date ranges; listed pickers take a listed option or a short search probe, never Faker/catalog; one table row on batch/submit, never header/select-all or a grid of cell checkboxes), then submit (or rarely dismiss). Do not fill one field and leave. A listed chip already tried this stay is not retried while empty. After Save succeeds or hits the retry cap, hunt the next form — do not refill. List search/`*_filter_*` / `*_list_status*` / period switchers and Add/Create that **opens a dialog** are not this. |
 | **list** | Filters/sort/search/rows/pager (score ≥ 2) | Sample each chrome kind once, then a row. Can share a surface with a form; the staler mode wins. Pagination is list chrome, not wizard Next. |
-| **tab** | Tab / tablist controls | Click a tab. |
+| **tab** | Tab / tablist controls | Form hunt if a mapped form is reachable (same as list/nav); otherwise click a tab. After tabs are exhausted, hunt then hop. |
 | **dialog** | Mapped dialog opener on the page (not already inside a dialog) | Click an opener this run has not stood in. **unleash** skips Archive/Delete confirms and hunts the next form after Edit. **nasty** still opens those confirms. Form/wizard take over once a form dialog is open. |
 | **empty** | Empty-state CTA (“Create your first …”), search not active | Click the empty-state action. |
 | **nav** | Nothing else applies | Stay clicks or hop. **map** also uses nav-shaped clicks to lift fog. |

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { hopsFromNavLog } from "./graph.js";
 import { loadConfig } from "../persist/config.js";
-import { isPresenceLive, listPresences, loadPresence } from "../persist/presence.js";
+import { isPresenceLive, listPresences, loadPresence, stopPresenceIfDead } from "../persist/presence.js";
 import { loadCombinedQuality } from "../persist/quality.js";
 import { jobFogOf } from "../schema/fog.js";
 import type { PageFog } from "../schema/page-model.js";
@@ -89,7 +89,8 @@ export function expireLiveRuns(
   let changed = false;
   const runs = snapshot.runs.map((run) => {
     if (!run.live) return run;
-    const p = loadPresence(join(root, run.id, "presence.json"));
+    const dir = join(root, run.id);
+    const p = stopPresenceIfDead(dir) ?? loadPresence(join(dir, "presence.json"));
     if (!p || !isPresenceLive(p)) {
       changed = true;
       return { ...run, live: false };
@@ -182,16 +183,18 @@ export function collectUiRuns(configPath: string): UiRun[] {
       findingCount: r.findingCount,
     });
   }
-  for (const p of listPresences(root)) {
+  for (const listed of listPresences(root)) {
+    const p = stopPresenceIfDead(join(root, listed.id)) ?? listed;
     const prev = byId.get(p.id);
-    if (!prev && !isPresenceLive(p)) continue;
+    const live = isPresenceLive(p);
+    if (!prev && !live) continue;
     byId.set(
       p.id,
       UiRun.parse({
         id: p.id,
         name: p.name,
         hue: p.hue,
-        live: isPresenceLive(p),
+        live,
         pageId: p.pageId,
         findingCount: prev?.findingCount ?? 0,
         ...(p.brain ? { brain: p.brain } : {}),

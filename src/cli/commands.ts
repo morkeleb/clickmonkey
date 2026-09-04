@@ -18,7 +18,7 @@ import { isFindingsReport } from "../reports/fences.js";
 import { findingFingerprint, renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
 import { dropReportFindings, parseReportFindings, suggestFalsePositives } from "../reports/prune.js";
 import { emptyConfig, requirePageModel, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
-import { WalkerJobName } from "../schema/fog.js";
+import { FogPipName } from "../schema/fog.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
 import { inspectAndSaveConfig } from "../surveyor/inspect.js";
@@ -728,10 +728,10 @@ export async function cmdFog(opts: {
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = loadConfigOrExit(configPath);
-  let job: WalkerJobName | undefined;
+  let job: FogPipName | undefined;
   if (opts.job !== undefined) {
-    const parsed = WalkerJobName.safeParse(opts.job);
-    if (!parsed.success) fail(EXIT_USAGE, `invalid --job ${opts.job} (map|unleash|nasty)`);
+    const parsed = FogPipName.safeParse(opts.job);
+    if (!parsed.success) fail(EXIT_USAGE, `invalid --job ${opts.job} (map|unleash|nasty|spec)`);
     job = parsed.data;
   }
   if (job && !opts.reset) fail(EXIT_USAGE, "--job is only valid with --reset");

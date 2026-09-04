@@ -14,6 +14,7 @@ import {
   TARGET_SIZE_CAP,
   targetSizeConfidence,
   targetSizeIssue,
+  isTabStripCloseWhere,
   type TargetRect,
   type TargetSizeHit,
   type TargetSizeSample,
@@ -75,6 +76,19 @@ describe("targetSizeIssue", () => {
   it("does not flag a 40×40 control", () => {
     assert.equal(targetSizeIssue(hit({ width: 40, height: 40 })), undefined);
     assert.equal(isUndersizedTarget(40, 40), false);
+  });
+
+  it("keeps Close {tab title} on the ledger, not as a high-confidence finding", () => {
+    assert.equal(isTabStripCloseWhere('button "Close Vendors"'), true);
+    assert.equal(isTabStripCloseWhere('button "Close"'), false);
+    const issue = targetSizeIssue(
+      hit({ width: 18, height: 18, where: 'button "Close Vendors"' }),
+    );
+    assert.ok(issue);
+    assert.equal(issue.confidence, "medium");
+    const dialog = targetSizeIssue(hit({ width: 18, height: 18, where: 'button "Close"' }));
+    assert.ok(dialog);
+    assert.equal(dialog.confidence, "high");
   });
 
   it("does not flag a 1×1 sr-only control (hidden native select / tiny Close)", () => {

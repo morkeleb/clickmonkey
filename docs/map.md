@@ -41,22 +41,27 @@ Dialogs stay clear. Hover the card for “visited Nh ago”.
 
 ## Heat pips — fog per monkey
 
-Three dots on the right of every **page** card. Each is one job clock.
-Green is fresh; red is hungry (missing clock = never, also red). A map
-landing does **not** turn unleash green. Clocks do not share.
+Four dots on the right of every **page** card. **m** / **u** / **n** are
+soak clocks; **s** is spec/typed-test coverage. Color follows `fogHunger`:
+**green** today, **yellow** at 2 days (light haze), then orange through
+**red** at 40 days (missing clock = never, also red). A map landing does
+**not** turn unleash green. A spec land does **not** feed hunt. Clocks do
+not share.
 
 | Letter | Monkey | Clock |
 |---|---|---|
 | **m** | map | last time `clickmonkey map` stood here |
 | **u** | unleash | last time `clickmonkey unleash` stood here |
 | **n** | nasty | last time `clickmonkey nasty` stood here |
+| **s** | spec | last time a spec or typed test (`session()`) stood here |
 
-**explore**, **mcp**, spec, and typed tests have no job clock, so no pip.
-Hover the row of dots for the three ages. Click the card — **Last land**
-lists the same three clocks with color.
+**explore** and **mcp** have no pip (live letters **e** / **c** only). Spec
+and typed tests share one **s** coverage clock — not a hunt job. Hover the
+row of dots for the four ages. Click the card — **Last land** lists the
+same clocks with color.
 
 That is how you see “map already walked this, unleash has not filled it
-yet” without opening JSON.
+yet, no spec covers it” without opening JSON.
 
 ## Live letters
 
@@ -84,8 +89,8 @@ the new time.
 The sheet is the rest of the explanation:
 
 - **Description** and a badge for who wrote it (`inspect` / `vision` / …)
-- **Last land** — overall age, then map / unleash / nasty with the same
-  green→red colors as the pips
+- **Last land** — overall age, then map / unleash / nasty / spec with the same
+  green→yellow→red colors as the pips
 - Screenshot, findings, testability, HTML/axe/layout
 
 ## Typical read
@@ -96,5 +101,8 @@ The sheet is the rest of the explanation:
    recently. Run unleash.
 3. Green **u**, red **n** — unleash already walked it; nasty still treats
    it as hungry. Site you own.
-4. A live **e**, **c**, **s**, or **t** — exploring, MCP, spec, or typed
-   tests on that tile. Not a soak clock.
+4. Green **m**, red **s** — mapped (and maybe soaked), no spec or typed
+   test has stood here. The suite has no contract on this room.
+5. A live **e**, **c**, **s**, or **t** — exploring, MCP, spec, or typed
+   tests on that tile. After the run moves on, **s** / **t** leave the
+   shared **s** pip green; **e** / **c** do not.

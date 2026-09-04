@@ -149,6 +149,11 @@ export function targetSizeConfidence(width: number, height: number): "high" | "m
   return width < TARGET_HIGH_PX && height < TARGET_HIGH_PX ? "high" : "medium";
 }
 
+/** Tab-strip × named `Close {title}` — not a dialog `Close`. */
+export function isTabStripCloseWhere(where: string): boolean {
+  return /\b(?:button|a) "Close [^"]+"/i.test(where);
+}
+
 export function targetSizeIssue(hit: TargetSizeHit): QualityIssue | undefined {
   if (!hit || typeof hit.kind !== "string" || typeof hit.where !== "string") return undefined;
   const kind = hit.kind.replace(/\s+/g, " ").trim();
@@ -162,7 +167,7 @@ export function targetSizeIssue(hit: TargetSizeHit): QualityIssue | undefined {
     source: "visual",
     rule: "targetSize",
     severity: "warning",
-    confidence: targetSizeConfidence(hit.width, hit.height),
+    confidence: isTabStripCloseWhere(where) ? "medium" : targetSizeConfidence(hit.width, hit.height),
     count: 1,
     where,
     message: `${kind} is ${w}×${h}px; WCAG 2.5.8 minimum is 24×24`,
@@ -343,7 +348,13 @@ const COLLECT_SRC = `(() => {
       el.getAttribute("alt") ||
       el.getAttribute("name") ||
       el.getAttribute("placeholder");
-    if (named && named.trim()) return tag + ' "' + clip(named.trim(), 40) + '"';
+    if (named && named.trim()) {
+      var label = named.trim();
+      if (/^close\b/i.test(label) && el.closest && el.closest("[role='tab'], [role='tablist']")) {
+        return tag + ' "Close tab"';
+      }
+      return tag + ' "' + clip(label, 40) + '"';
+    }
     var text = (el.innerText || "").replace(/\\s+/g, " ").trim();
     if (text) return tag + ' "' + clip(text, 40) + '"';
     var href = el.getAttribute("href");
@@ -365,6 +376,18 @@ const COLLECT_SRC = `(() => {
     if (box.width < TARGET_PAINTED_MIN_PX || box.height < TARGET_PAINTED_MIN_PX) continue;
     var where = describeWhere(el);
     var kind = kindName(el);
+    var closeName = (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim();
+    if (/^close\s+\S/i.test(closeName)) {
+      var host = el.closest && el.closest("[role='tab'], [role='tablist']");
+      if (!host || host === el) host = el.parentElement;
+      if (host && host !== el) {
+        var hr = host.getBoundingClientRect();
+        if (hr.width >= 24 && hr.height >= 24) {
+          // Nested × on a large enough tab chip — the tab is the pointer target.
+          continue;
+        }
+      }
+    }
     var exempt = Boolean(disabled(el) || ua || inlineTextLink(el));
     var key = kind + "\\0" + where + "\\0" + Math.round(box.width) + "x" + Math.round(box.height) + (exempt ? "\\0x" : "");
     if (seen[key]) continue;

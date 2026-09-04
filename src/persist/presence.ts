@@ -3,7 +3,8 @@ import { basename, dirname, join } from "node:path";
 import { Presence, UiExploreOutline, type UiExploreOutline as Outline } from "../schema/ui.js";
 import { identityFromRunId, pickDistinctHue } from "../ui/identity.js";
 
-export const PRESENCE_STALE_MS = 15_000;
+const liveOutDirs = new Set<string>();
+let exitHook = false;
 
 export function presencePath(outDir: string): string {
   return join(outDir, "presence.json");
@@ -48,6 +49,7 @@ export function startPresence(
     ...(opts.brain ? { brain: opts.brain } : {}),
   });
   writePresence(presencePath(outDir), presence);
+  trackLive(outDir);
   return presence;
 }
 
@@ -109,6 +111,7 @@ export function setPresenceOutline(outDir: string, outline: Outline): Presence |
 }
 
 export function stopPresence(outDir: string): Presence | undefined {
+  untrackLive(outDir);
   const path = presencePath(outDir);
   const prev = loadPresence(path);
   if (!prev) return undefined;
@@ -122,21 +125,46 @@ export function stopPresence(outDir: string): Presence | undefined {
   return next;
 }
 
+/** Write stoppedAt when the walker pid is gone so a reused pid cannot revive the ring. */
+export function stopPresenceIfDead(outDir: string): Presence | undefined {
+  const prev = loadPresence(presencePath(outDir));
+  if (!prev || prev.stoppedAt) return prev;
+  if (pidAlive(prev.pid)) return prev;
+  return stopPresence(outDir);
+}
+
 export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    // EPERM: process exists, this user cannot signal it. Not a dead walker.
+    return Boolean(err && typeof err === "object" && "code" in err && err.code === "EPERM");
   }
 }
 
-export function isPresenceLive(p: Presence, now = Date.now()): boolean {
+export function isPresenceLive(p: Presence): boolean {
   if (p.stoppedAt) return false;
-  if (!pidAlive(p.pid)) return false;
-  const age = now - Date.parse(p.updatedAt);
-  if (Number.isFinite(age) && age <= PRESENCE_STALE_MS) return true;
-  return true;
+  return pidAlive(p.pid);
+}
+
+function trackLive(outDir: string): void {
+  liveOutDirs.add(outDir);
+  if (exitHook) return;
+  exitHook = true;
+  process.on("exit", () => {
+    for (const dir of [...liveOutDirs]) {
+      try {
+        stopPresence(dir);
+      } catch {
+        /* best-effort on process exit */
+      }
+    }
+  });
+}
+
+function untrackLive(outDir: string): void {
+  liveOutDirs.delete(outDir);
 }
 
 /**

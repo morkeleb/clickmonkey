@@ -255,11 +255,16 @@ async function overlayCovers(loc: PwLocator, page: Page): Promise<boolean> {
  * Many painted lists are a popover of buttons, not `role=listbox`, so Escape
  * alone is not enough — click the still-expanded combobox, then outside.
  */
+async function leftoverPickerCover(page: Page, from?: PwLocator): Promise<boolean> {
+  if (await pickerStillOpen(page)) return true;
+  return Boolean(from && (await overlayCovers(from, page)));
+}
+
 export async function closeOpenOverlays(page: Page, from?: PwLocator): Promise<void> {
   const deadline = actionDeadline(page);
   const esc = sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS });
   if (esc > 0) await page.keyboard.press("Escape").catch(() => undefined);
-  if (!(await pickerStillOpen(page))) return;
+  if (!(await leftoverPickerCover(page, from))) return;
   const expanded = page.locator(
     '[role="combobox"][aria-expanded="true"], [aria-haspopup="listbox"][aria-expanded="true"]',
   );
@@ -269,7 +274,7 @@ export async function closeOpenOverlays(page: Page, from?: PwLocator): Promise<v
   }
   const esc2 = sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS });
   if (esc2 > 0) await page.keyboard.press("Escape").catch(() => undefined);
-  if (!(await pickerStillOpen(page))) return;
+  if (!(await leftoverPickerCover(page, from))) return;
   await clickOutsidePicker(page, from);
   const esc3 = sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS });
   if (esc3 > 0) await page.keyboard.press("Escape").catch(() => undefined);

@@ -7,6 +7,9 @@ import {
   decideMap,
   decideUnleash,
   formSubmitAction,
+  isAuthGateHref,
+  isAuthGatePage,
+  needsLeashReentry,
   isPrimaryFormCommit,
   looksLikeModeSwitch,
   freshClicks,
@@ -14,8 +17,17 @@ import {
   listModeScore,
   looksLikeSearchField,
   looksLikePageSearch,
+  looksLikeListFilterField,
+  looksLikeGridCellCheckbox,
+  looksLikeRangeStart,
+  looksLikeRangeEnd,
+  looksLikeRowSelectCheckbox,
+  looksLikeHeaderSelectCheckbox,
+  looksLikeDataRowSelectCheckbox,
   mappedPrimaryCommits,
   pickSelectOption,
+  pickDataRowSelectToCheck,
+  planFormBurstFills,
   plausibleFill,
   rememberClick,
   repeatingRowCount,
@@ -37,6 +49,7 @@ import { skipInspectForBurstLine } from "../src/brains/types.js";
 import type { Page } from "../src/schema/page-model.js";
 import { fogHunger, FOG_FRESH_MS, FOG_OLD_MS, npcHunger } from "../src/brains/npc.js";
 import { detectWalkerMode } from "../src/brains/walker-mode.js";
+import { parseLine } from "../src/schema/dsl.js";
 import type { View } from "../src/schema/view.js";
 
 function viewOf(partial: Partial<View>): View {
@@ -48,6 +61,14 @@ function viewOf(partial: Partial<View>): View {
     actions: [],
     ...partial,
   };
+}
+
+function burstFillValue(lines: readonly string[], id: string): string {
+  for (const line of lines) {
+    const step = parseLine(line);
+    if (step && "kind" in step && step.kind === "fill" && step.id === id) return step.value;
+  }
+  throw new Error(`no fill for ${id} in ${lines.join(" | ")}`);
 }
 
 describe("clickKey", () => {
@@ -277,8 +298,10 @@ describe("formSubmitAction", () => {
     assert.equal(looksLikeListedPicker({ id: "lineitems_0__matterid", value: "", type: "text" }), true);
     assert.equal(looksLikeListedPicker({ id: "vendorid", value: "", type: "text", required: true }), true);
     assert.equal(looksLikeListedPicker({ id: "matter", value: "", type: "text" }), false);
-    assert.equal(looksLikeListedPicker({ id: "attorney", value: "", type: "text" }), false);
+    assert.equal(looksLikeListedPicker({ id: "vendor", value: "", type: "text" }), true);
+    assert.equal(looksLikeListedPicker({ id: "attorney", value: "", type: "text" }), true);
     assert.equal(looksLikeListedPicker({ id: "attorney", value: "Select attorney", type: "text" }), true);
+    assert.equal(looksLikeListedPicker({ id: "vendortype_search", value: "", type: "text" }), true);
     assert.equal(
       looksLikeListedPicker({ id: "vendor", value: "", type: "text", constraints: { placeholder: "Search vendors" } }),
       true,
@@ -287,6 +310,8 @@ describe("formSubmitAction", () => {
     const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
     const text = (d.lines ?? [d.line]).join("\n");
     assert.match(text, /fill page\.vendorid /);
+    assert.match(burstFillValue(d.lines ?? [d.line], "vendorid"), /^[ae]$/);
+    assert.match(burstFillValue(d.lines ?? [d.line], "lineitems_0__matterid"), /^[ae]$/);
     assert.match(text, /fill page\.reference /);
     assert.match(text, /fill page\.lineitems_0__matterid /);
     assert.match(text, /fill page\.lineitems_0__officeid /);
@@ -309,6 +334,7 @@ describe("formSubmitAction", () => {
     const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
     const text = (d.lines ?? [d.line]).join("\n");
     assert.match(text, /fill page\.vendortype_search /);
+    assert.match(burstFillValue(d.lines ?? [d.line], "vendortype_search"), /^[ae]$/);
     assert.match(text, /fill page\.legalname /);
     assert.doesNotMatch(text, /talk_to_lois/);
     assert.match(text, /click page\.button_save/);
@@ -937,6 +963,8 @@ describe("pickSelectOption / plausibleFill", () => {
       ),
       "NO",
     );
+    assert.equal(plausibleFill({ id: "vendorid", value: "", type: "text" }, () => 0, false), "a");
+    assert.match(plausibleFill({ id: "due_from", value: "", type: "text" }, () => 0.3, false), /^\d{4}-\d{2}-\d{2}$/);
     assert.equal(plausibleFill({ id: "agree", value: "false", type: "checkbox" }, () => 0, false), "true");
     assert.equal(plausibleFill({ id: "agree", value: "false", type: "checkbox" }, () => 0.9, false), "false");
     assert.equal(plausibleFill({ id: "agree", value: "false", type: "checkbox" }, () => 0.9, true), "false");
@@ -1071,6 +1099,79 @@ describe("looksLikePageSearch", () => {
   });
 });
 
+describe("looksLikeListFilterField", () => {
+  it("is list status/period chrome, not a form body status", () => {
+    assert.equal(looksLikeListFilterField({ id: "afa_list_status" }), true);
+    assert.equal(looksLikeListFilterField({ id: "list_status" }), true);
+    assert.equal(looksLikeListFilterField({ id: "combobox_switch_period" }), true);
+    assert.equal(looksLikeListFilterField({ id: "switch_period" }), true);
+    assert.equal(looksLikeListFilterField({ id: "status" }), false);
+    assert.equal(looksLikeListFilterField({ id: "vendor_status" }), false);
+    assert.equal(looksLikeListFilterField({ id: "period" }), false);
+    assert.equal(looksLikeListFilterField({ id: "billing_period" }), false);
+  });
+
+  it("does not treat list filters as form body fields", () => {
+    const view = viewOf({
+      shown: [
+        { id: "afa_list_status", value: "", type: "select" },
+        { id: "combobox_switch_period", value: "", type: "combobox" },
+        { id: "status", value: "", type: "select" },
+        { id: "name", value: "", type: "text" },
+      ],
+      actions: [{ id: "button_save", label: "Save" }],
+    });
+    assert.deepEqual(formFieldsToFill(view).map((f) => f.id), ["status", "name"]);
+  });
+});
+
+describe("looksLikeGridCellCheckbox", () => {
+  it("skips a cluster of cell-keyed checkboxes and keeps a single settings toggle", () => {
+    const grid = [
+      { id: "checkbox_active_for_a102", value: "false", type: "checkbox" as const },
+      { id: "checkbox_active_for_a103", value: "false", type: "checkbox" as const },
+      { id: "checkbox_active_for_a104", value: "false", type: "checkbox" as const },
+      { id: "checkbox_active_for_a105", value: "false", type: "checkbox" as const },
+    ];
+    assert.equal(looksLikeGridCellCheckbox(grid[0]!, grid), true);
+    const view = viewOf({
+      shown: [...grid, { id: "checkbox_active", value: "false", type: "checkbox" }],
+      actions: [{ id: "button_save", label: "Save" }],
+    });
+    assert.deepEqual(formFieldsToFill(view).map((f) => f.id), ["checkbox_active"]);
+    const terms = viewOf({
+      shown: [{ id: "agree", value: "false", type: "checkbox", label: "I agree" }],
+      actions: [{ id: "submit" }],
+    });
+    assert.deepEqual(formFieldsToFill(terms).map((f) => f.id), ["agree"]);
+  });
+});
+
+describe("listed fill retry", () => {
+  it("skips a listed picker already tried this stay so empty chips do not loop", () => {
+    const view = viewOf({
+      shown: [
+        { id: "clientid", value: "MCP Test Client", type: "text" },
+        { id: "matterid", value: "", type: "text" },
+        { id: "sourcecitation", value: "hello", type: "text" },
+      ],
+      actions: [{ id: "ocg_upload_submit", label: "Submit" }],
+    });
+    assert.deepEqual(formFieldsToFill(view).map((f) => f.id), ["matterid"]);
+    assert.deepEqual(
+      formFieldsToFill(view, { fillTried: { matterid: true } }).map((f) => f.id),
+      [],
+    );
+    const d = decideUnleash(
+      { view, stepsUsed: 4, writePolicy: "allow", fillTried: { matterid: true } },
+      () => 0.5,
+    );
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.doesNotMatch(text, /fill page\.matterid/);
+    assert.match(text, /click page\.ocg_upload_submit/);
+  });
+});
+
 describe("listModeScore", () => {
   it("needs two kinds of chrome, not two comboboxes", () => {
     assert.equal(
@@ -1128,6 +1229,195 @@ describe("sort stay", () => {
     );
     assert.match(afterOne.line, /^open /);
     assert.equal(afterOne.mode, "nav");
+  });
+});
+
+describe("date range burst", () => {
+  it("matches generic from/to tokens on date fields, not a name", () => {
+    assert.equal(looksLikeRangeStart({ id: "due_from", type: "date" }), true);
+    assert.equal(looksLikeRangeEnd({ id: "due_to", type: "date" }), true);
+    assert.equal(looksLikeRangeStart({ id: "from_date", type: "date" }), true);
+    assert.equal(looksLikeRangeEnd({ id: "to_date", type: "date" }), true);
+    assert.equal(looksLikeRangeStart({ id: "start_date", type: "date" }), true);
+    assert.equal(looksLikeRangeEnd({ id: "end_date", type: "date" }), true);
+    assert.equal(looksLikeRangeStart({ id: "min_date", type: "date" }), true);
+    assert.equal(looksLikeRangeEnd({ id: "max_date", type: "date" }), true);
+    assert.equal(looksLikeRangeStart({ id: "name", type: "text" }), false);
+    assert.equal(looksLikeRangeEnd({ id: "amount", type: "number" }), false);
+    assert.equal(looksLikeRangeEnd({ id: "toledo", type: "text" }), false);
+    assert.equal(looksLikeRangeEnd({ id: "toledo", type: "date" }), false);
+  });
+
+  it("clamps an inverted due_to onto due_from when planning a burst", () => {
+    const planned = planFormBurstFills(
+      [
+        { id: "due_from", value: "", type: "date" },
+        { id: "due_to", value: "", type: "date" },
+      ],
+      (field) => (looksLikeRangeStart(field) ? "2026-06-23" : "2026-06-20"),
+    );
+    const from = planned.find((p) => p.field.id === "due_from")?.value;
+    const to = planned.find((p) => p.field.id === "due_to")?.value;
+    assert.equal(from, "2026-06-23");
+    assert.ok(from && to && from <= to, `from ${from} should be <= to ${to}`);
+    assert.equal(
+      planned.map((p) => p.field.id).join(),
+      "due_from,due_to",
+      "start field is filled before end",
+    );
+  });
+
+  it("fills due_from <= due_to in one allow burst for rng 0 and 0.5", () => {
+    const view = viewOf({
+      shown: [
+        { id: "due_from", value: "", type: "date" },
+        { id: "due_to", value: "", type: "date" },
+      ],
+      actions: [{ id: "button_submit", label: "Submit" }],
+    });
+    for (const rng of [() => 0, () => 0.5] as const) {
+      const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, rng);
+      const lines = d.lines ?? [d.line];
+      const from = burstFillValue(lines, "due_from");
+      const to = burstFillValue(lines, "due_to");
+      assert.match(from, /^\d{4}-\d{2}-\d{2}$/);
+      assert.match(to, /^\d{4}-\d{2}-\d{2}$/);
+      assert.ok(from <= to, `from ${from} should be <= to ${to}`);
+      assert.ok(lines.findIndex((l) => /due_from/.test(l)) < lines.findIndex((l) => /due_to/.test(l)));
+      assert.equal(lines.at(-1), "click page.button_submit");
+    }
+  });
+
+  it("clamps a masked MM/DD/YYYY due_to onto due_from", () => {
+    const planned = planFormBurstFills(
+      [
+        {
+          id: "due_from",
+          value: "",
+          type: "text",
+          constraints: { placeholder: "MM/DD/YYYY" },
+        },
+        {
+          id: "due_to",
+          value: "",
+          type: "text",
+          constraints: { placeholder: "MM/DD/YYYY" },
+        },
+      ],
+      (field) => (looksLikeRangeStart(field) ? "06/23/2026" : "06/20/2026"),
+    );
+    const from = planned.find((p) => p.field.id === "due_from")?.value;
+    const to = planned.find((p) => p.field.id === "due_to")?.value;
+    assert.equal(from, "06/23/2026");
+    assert.equal(to, "06/23/2026");
+  });
+});
+
+describe("row-select burst", () => {
+  it("skips header/select-all in formFieldsToFill and does not random-fill it", () => {
+    assert.equal(
+      looksLikeHeaderSelectCheckbox({ id: "checkbox_column_with_header_selection", type: "checkbox" }),
+      true,
+    );
+    assert.equal(looksLikeDataRowSelectCheckbox({ id: "checkbox_column_with_header_selection", type: "checkbox" }), false);
+    const view = viewOf({
+      shown: [
+        { id: "checkbox_column_with_header_selection", value: "false", type: "checkbox" },
+        { id: "name", value: "", type: "text" },
+      ],
+      actions: [{ id: "button_submit", label: "Submit" }],
+    });
+    assert.deepEqual(
+      formFieldsToFill(view).map((f) => f.id),
+      ["name"],
+    );
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.9);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.doesNotMatch(text, /checkbox_column_with_header_selection/);
+    assert.match(text, /fill page\.name /);
+    assert.match(text, /click page\.button_submit/);
+  });
+
+  it("checks one data-row checkbox true on a submit form and leaves others skipped", () => {
+    const view = viewOf({
+      shown: [
+        { id: "name", value: "", type: "text" },
+        { id: "checkbox_column_with_header_selection", value: "false", type: "checkbox" },
+        {
+          id: "checkbox_press_space_to_toggle_row_selection__unchecked_",
+          value: "false",
+          type: "checkbox",
+          label: "Press Space to toggle row selection (unchecked)",
+        },
+        { id: "checkbox_press_space_to_toggle_row_selection__row_1", value: "false", type: "checkbox" },
+      ],
+      actions: [{ id: "button_submit", label: "Submit" }],
+    });
+    assert.equal(
+      formFieldsToFill(view).some((f) => looksLikeRowSelectCheckbox(f)),
+      false,
+    );
+    const picked = pickDataRowSelectToCheck(view.shown);
+    assert.equal(picked?.id, "checkbox_press_space_to_toggle_row_selection__unchecked_");
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.9);
+    const lines = d.lines ?? [d.line];
+    const text = lines.join("\n");
+    const rowFills = lines.filter((l) => /toggle_row_selection/.test(l));
+    assert.equal(rowFills.length, 1);
+    assert.equal(burstFillValue(lines, "checkbox_press_space_to_toggle_row_selection__unchecked_"), "true");
+    assert.doesNotMatch(text, /header_selection/);
+    assert.doesNotMatch(text, /row_1/);
+    assert.equal(lines.at(-1), "click page.button_submit");
+  });
+
+  it("still fills a terms checkbox as a normal checkbox", () => {
+    const view = viewOf({
+      shown: [{ id: "agree", value: "false", type: "checkbox", label: "I agree" }],
+      actions: [{ id: "submit" }],
+    });
+    assert.deepEqual(
+      formFieldsToFill(view).map((f) => f.id),
+      ["agree"],
+    );
+    const on = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0);
+    const off = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.9);
+    assert.equal(burstFillValue(on.lines ?? [on.line], "agree"), "true");
+    assert.equal(burstFillValue(off.lines ?? [off.line], "agree"), "false");
+  });
+
+  it("skips row-select when the table is empty (no data-row checkbox shown)", () => {
+    const view = viewOf({
+      shown: [
+        { id: "due_from", value: "", type: "date" },
+        { id: "checkbox_column_with_header_selection", value: "false", type: "checkbox" },
+      ],
+      actions: [{ id: "button_submit", label: "Submit" }],
+    });
+    assert.equal(pickDataRowSelectToCheck(view.shown), undefined);
+    const d = decideUnleash({ view, stepsUsed: 0, writePolicy: "allow" }, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.doesNotMatch(text, /checkbox_/);
+    assert.match(text, /click page\.button_submit/);
+  });
+});
+
+describe("isAuthGatePage", () => {
+  it("matches login/SSO rooms and paths, not app pages", () => {
+    assert.equal(isAuthGatePage("login"), true);
+    assert.equal(isAuthGatePage("u_login"), true);
+    assert.equal(isAuthGatePage("sign_in"), true);
+    assert.equal(isAuthGatePage("logout"), true);
+    assert.equal(isAuthGatePage("settings"), false);
+    assert.equal(isAuthGatePage("auth_settings"), false);
+    assert.equal(isAuthGatePage("auth"), true);
+    assert.equal(isAuthGatePage("home", [{ id: "home", path: "/login" }]), true);
+    assert.equal(isAuthGatePage("home", [{ id: "home", path: "/auth/tokens" }]), false);
+    assert.equal(isAuthGatePage("home", [{ id: "home", path: "/" }]), false);
+    assert.equal(isAuthGateHref("https://app.example/u/logout"), true);
+    assert.equal(isAuthGateHref("https://app.example/auth/tokens"), false);
+    assert.equal(isAuthGateHref("https://app.example/auth/login"), true);
+    assert.equal(needsLeashReentry("clients", "https://app.example/login"), true);
+    assert.equal(needsLeashReentry("clients", "https://app.example/clients"), false);
   });
 });
 

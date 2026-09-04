@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -7,12 +7,22 @@ import {
   exploreOutlineOf,
   isPresenceLive,
   loadPresence,
+  presencePath,
   reclaimMcpPresence,
   setPresenceOutline,
   startPresence,
   stopPresence,
+  stopPresenceIfDead,
   touchPresence,
 } from "../src/persist/presence.js";
+import type { Presence } from "../src/schema/ui.js";
+
+function writeDeadPid(dir: string, started: Presence): void {
+  writeFileSync(
+    presencePath(dir),
+    `${JSON.stringify({ ...started, pid: 1_000_000_000, stoppedAt: null }, null, 2)}\n`,
+  );
+}
 
 describe("presence", () => {
   it("starts, touches pageId, then stops", () => {
@@ -38,6 +48,7 @@ describe("presence", () => {
       assert.equal(stopped?.outline?.charter, "walk invoices");
       assert.equal(isPresenceLive(stopped), false);
     } finally {
+      stopPresence(dir);
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -64,6 +75,9 @@ describe("presence", () => {
       assert.ok(dist(a.hue, b.hue) >= 90);
       assert.ok(dist(a.hue, c.hue) >= 90);
       assert.ok(dist(b.hue, c.hue) >= 90);
+      stopPresence(dirA);
+      stopPresence(dirB);
+      stopPresence(dirC);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -75,6 +89,40 @@ describe("presence", () => {
       const started = startPresence(dir, { pageId: "home", brain: "mcp" });
       assert.ok(started);
       assert.equal(isPresenceLive({ ...started, pid: 1_000_000_000 }), false);
+    } finally {
+      stopPresence(dir);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stays live while the walker pid is running, even if the file was not touched", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-presence-stale-"));
+    try {
+      const started = startPresence(dir, { pageId: "home", brain: "unleash" });
+      assert.ok(started);
+      assert.equal(isPresenceLive(started), true);
+      const quiet = {
+        ...started,
+        updatedAt: new Date(Date.now() - 120_000).toISOString(),
+      };
+      assert.equal(isPresenceLive(quiet), true);
+    } finally {
+      stopPresence(dir);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stopPresenceIfDead writes stoppedAt when the pid is gone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-presence-reap-"));
+    try {
+      const started = startPresence(dir, { pageId: "home", brain: "map" });
+      assert.ok(started);
+      stopPresence(dir);
+      writeDeadPid(dir, started);
+      const reaped = stopPresenceIfDead(dir);
+      assert.ok(reaped?.stoppedAt);
+      assert.equal(isPresenceLive(reaped), false);
+      assert.equal(stopPresenceIfDead(dir)?.stoppedAt, reaped?.stoppedAt);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -99,6 +147,9 @@ describe("presence", () => {
       assert.ok(stopped[0]?.stoppedAt);
       assert.equal(loadPresence(join(mcpMine, "presence.json"))?.stoppedAt, null);
       assert.equal(loadPresence(join(unleash, "presence.json"))?.stoppedAt, null);
+      stopPresence(mcpOld);
+      stopPresence(mcpMine);
+      stopPresence(unleash);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

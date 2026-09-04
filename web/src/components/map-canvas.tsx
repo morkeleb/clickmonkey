@@ -19,7 +19,14 @@ import type { UiSnapshot } from "@schema/ui";
 import { DOCS_MAP } from "@schema/site";
 import { MapNode } from "@/components/map-node";
 import { MapSection } from "@/components/map-section";
-import { defaultExpanded, layoutGraph, mergeExpanded, sameFlowNodes, type GraphFlowNode } from "@/lib/layout";
+import {
+  adoptFlowNodes,
+  clustersOf,
+  defaultExpanded,
+  layoutGraph,
+  mergeExpanded,
+  type GraphFlowNode,
+} from "@/lib/layout";
 import "@xyflow/react/dist/style.css";
 
 const nodeTypes: NodeTypes = { graph: MapNode, section: MapSection };
@@ -36,12 +43,16 @@ function MapCanvasInner({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<Viewport>(START_VIEW);
-  const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(snapshot.graph, snapshot.runs));
+  const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(snapshot.graph));
   const fitted = useRef(false);
+  const seenClusters = useRef<Set<string> | null>(null);
 
   useEffect(() => {
-    setExpanded((prev) => mergeExpanded(prev, snapshot.graph, snapshot.runs));
-  }, [snapshot.graph, snapshot.runs]);
+    const valid = new Set(clustersOf(snapshot.graph).keys());
+    const seen = seenClusters.current ?? valid;
+    setExpanded((prev) => mergeExpanded(prev, snapshot.graph, seen));
+    seenClusters.current = valid;
+  }, [snapshot.graph]);
 
   const laidOut = useMemo(
     () => layoutGraph(snapshot.graph, snapshot.runs, { expanded, selectedId, query }),
@@ -50,11 +61,7 @@ function MapCanvasInner({
   const [nodes, setNodes] = useState<GraphFlowNode[]>(laidOut.nodes);
   const [edges, setEdges] = useState<Edge[]>(laidOut.edges);
   useEffect(() => {
-    setNodes((prev) => {
-      const selected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
-      const next = laidOut.nodes.map((node) => (selected.has(node.id) ? { ...node, selected: true } : node));
-      return sameFlowNodes(prev, next) ? prev : next;
-    });
+    setNodes((prev) => adoptFlowNodes(prev, laidOut.nodes));
     setEdges((prev) => {
       if (
         prev.length === laidOut.edges.length &&
@@ -90,7 +97,9 @@ function MapCanvasInner({
   }, [fitView, query, laidOut.nodes.length]);
 
   const onNodesChange = useCallback((changes: NodeChange<GraphFlowNode>[]) => {
-    setNodes((nds) => applyNodeChanges(changes, nds));
+    const next = changes.filter((change) => change.type === "select");
+    if (next.length === 0) return;
+    setNodes((nds) => applyNodeChanges(next, nds));
   }, []);
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     setEdges((eds) => applyEdgeChanges(changes, eds));

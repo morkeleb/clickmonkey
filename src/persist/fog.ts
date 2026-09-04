@@ -1,7 +1,14 @@
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { jobOfBrain, mergePageFog, type WalkerJobName, type WalkerModeName } from "../schema/fog.js";
+import {
+  brainStampsSpec,
+  jobOfBrain,
+  mergePageFog,
+  type FogPipName,
+  type WalkerJobName,
+  type WalkerModeName,
+} from "../schema/fog.js";
 import {
   emptyDraft,
   PageFog,
@@ -95,6 +102,8 @@ export type FogStamp = {
   mode?: WalkerModeName;
   /** Surface id for a successful form-work stamp (`fog.forms[job][surface]`). */
   form?: string;
+  /** Spec / typed-test coverage clock (`fog.spec`). Not a hunt job. */
+  spec?: boolean;
 };
 
 function stampOf(atOrStamp?: string | FogStamp): Required<Pick<FogStamp, "at">> & FogStamp {
@@ -114,10 +123,12 @@ function applyStamp(prev: PageFog | undefined, stamp: Required<Pick<FogStamp, "a
     at: formOnly && prev?.at ? prev.at : stamp.at,
     jobs: { ...prev?.jobs },
     modes: { ...prev?.modes },
+    ...(prev?.spec ? { spec: prev.spec } : {}),
     ...(Object.keys(forms).length > 0 ? { forms } : {}),
   };
   if (stamp.job && !stamp.form) next.jobs[stamp.job] = stamp.at;
   if (stamp.mode) next.modes[stamp.mode] = stamp.at;
+  if (stamp.spec) next.spec = stamp.at;
   if (stamp.job && stamp.form) {
     next.forms = {
       ...next.forms,
@@ -139,7 +150,10 @@ export function recordFog(state: {
   const pageId = state.pageId.trim();
   if (!pageId || state.lastFogPageId === pageId) return;
   try {
-    stampFog(state.configPath, pageId, { job: jobOfBrain(state.brain) });
+    stampFog(state.configPath, pageId, {
+      job: jobOfBrain(state.brain),
+      ...(brainStampsSpec(state.brain) ? { spec: true } : {}),
+    });
     state.lastFogPageId = pageId;
   } catch {
     // fog write must not stall the walk
@@ -203,9 +217,9 @@ export function stampFog(
 
 /**
  * Wipe fog on sitemap pages. Full reset drops `fog` on every page.
- * A job name drops that clock only and leaves `at` / other jobs / modes.
+ * A pip name drops that clock only and leaves `at` / other jobs / modes / spec.
  */
-export function resetFog(configPath: string, job?: WalkerJobName): PageModelDraft {
+export function resetFog(configPath: string, job?: FogPipName): PageModelDraft {
   ensureWorkspace(configPath);
   const path = mapPath(configPath);
   return withFileLock(path, () => {
@@ -214,6 +228,10 @@ export function resetFog(configPath: string, job?: WalkerJobName): PageModelDraf
       if (!page.fog) continue;
       if (!job) {
         delete page.fog;
+        continue;
+      }
+      if (job === "spec") {
+        delete page.fog.spec;
         continue;
       }
       delete page.fog.jobs[job];
@@ -242,10 +260,12 @@ export function formatFogStatus(map: PageModelDraft, path: string, now = Date.no
   const noun = pages.length === 1 ? "page" : "pages";
   const header = `${path}  ${pages.length} ${noun}${pages.length === 0 ? "  (full fog)" : ""}\n`;
   if (pages.length === 0) return header;
-  const jobs: WalkerJobName[] = ["map", "unleash", "nasty"];
+  const pips: FogPipName[] = ["map", "unleash", "nasty", "spec"];
   const lines = pages.map((page) => {
     const fog = page.fog;
-    const jobPart = jobs.map((name) => `${name} ${ageLabel(fog?.jobs[name], now)}`).join("  ");
+    const jobPart = pips
+      .map((name) => `${name} ${ageLabel(name === "spec" ? fog?.spec : fog?.jobs[name], now)}`)
+      .join("  ");
     const modePart = Object.entries(fog?.modes ?? {})
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([mode, at]) => `${mode} ${ageLabel(at, now)}`)

@@ -20,6 +20,7 @@ import {
   looksLikeTypeahead,
   readTypeaheadOptions,
   readTypeaheadValue,
+  SEARCH_PROBES,
   skipTypeaheadNoRows,
   typeaheadFieldLabel,
   typeaheadMissMessage,
@@ -65,6 +66,11 @@ export function looksLikeListedPicker(field: FieldRef | undefined): boolean {
   if (isListedControl(field)) return true;
   const id = (field.id ?? "").toLowerCase();
   if (/id$/.test(id)) return true;
+  // Form body `*_search` chips, not place/address/geo.
+  if (/_search$/.test(id) && !/(place|address|geo|location)/.test(id)) return true;
+  if (/(^|_)attorney(_?\d+)?$/.test(id)) return true;
+  // Payment payee chips without a trailing `id` (`vendor`, `payee`). Not `matter` (often a name).
+  if (/^(vendor|payee)$/.test(id)) return true;
   if (LISTED_CHIP_PROMPT.test((field.value ?? "").trim())) return true;
   if (LISTED_CHIP_PROMPT.test((field.constraints?.placeholder ?? "").trim())) return true;
   return false;
@@ -133,6 +139,13 @@ export function listedFillResult(opts: {
     };
   }
   return { ok: true, value: committed, track: true };
+}
+
+/** Chip still showing the 1–2 char probe after a row click — keep the picked label. */
+export function listedLiveOrPicked(live: string, picked: string, placeholder?: string): string {
+  if (listedValueIsCommitted(live, placeholder)) return live.replace(/\s+/g, " ").trim();
+  if (picked && listedValueIsCommitted(picked, placeholder)) return picked.replace(/\s+/g, " ").trim();
+  return live;
 }
 
 async function peekHtmlType(loc: PwLocator, timeoutMs = PEEK_TIMEOUT_MS): Promise<string> {
@@ -308,7 +321,7 @@ const TYPEAHEAD: FieldControl = {
     if (!typeahead.handled) return TEXT.fill(loc, page, value, widgetKey, liveField);
     if (typeahead.failure) return { ok: false, message: typeahead.failure.message };
     const live = await readTypeaheadValue(loc, peek);
-    return finishListedFill(loc, live, {
+    return finishListedFill(loc, listedLiveOrPicked(live, typeahead.value, liveField.constraints?.placeholder), {
       wanted: value,
       listed,
       required: liveField.required,
@@ -419,7 +432,7 @@ export async function applyFieldFill(
     if (typeahead.handled && typeahead.failure) return { ok: false, message: typeahead.failure.message };
     if (typeahead.handled) {
       const live = await readTypeaheadValue(loc, peek);
-      return finishListedFill(loc, live, {
+      return finishListedFill(loc, listedLiveOrPicked(live, typeahead.value, liveField.constraints?.placeholder), {
         wanted: value,
         listed,
         required: liveField.required,
@@ -433,17 +446,31 @@ export async function applyFieldFill(
 
 export { isListedControl } from "./select-options.js";
 
+/** Short typeahead query so fillTypeahead harvests a row. Never Faker/catalog. */
+const LISTED_PROBE_COUNT = 2;
+
+function listedSearchProbe(rng: () => number): string {
+  return SEARCH_PROBES[Math.floor(rng() * LISTED_PROBE_COUNT)]!;
+}
+
 /** What unleash/nasty should type. `undefined` means type-in (Faker or catalog). */
 export function planControlFill(field: ShownField, rng: () => number, emptyOk: boolean): string | undefined {
   if (field.type === "checkbox") return rng() < 0.5 ? "true" : "false";
-  if (!isListedControl(field)) return undefined;
-  if (field.type === "select") {
-    const picked = pickSelectOption(field.options, rng);
-    if (picked === undefined) return emptyOk ? "" : undefined;
-    const hasEmpty = field.options?.some((o) => o.value === "") ?? false;
-    if (emptyOk && hasEmpty && rng() < 0.5) return "";
-    return picked;
+  if (isListedControl(field)) {
+    if (field.type === "select") {
+      const picked = pickSelectOption(field.options, rng);
+      if (picked === undefined) return emptyOk ? "" : undefined;
+      const hasEmpty = field.options?.some((o) => o.value === "") ?? false;
+      if (emptyOk && hasEmpty && rng() < 0.5) return "";
+      return picked;
+    }
+    if (emptyOk && rng() < 0.5) return "";
+    return pickSelectOption(field.options, rng);
   }
-  if (emptyOk && rng() < 0.5) return "";
-  return pickSelectOption(field.options, rng);
+  // FK / Select-chip with no harvested options — still a listed picker.
+  // Never plan blank: an empty chip loops the burst while still looking empty.
+  if (looksLikeListedPicker(field)) {
+    return listedSearchProbe(rng);
+  }
+  return undefined;
 }

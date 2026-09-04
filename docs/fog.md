@@ -38,6 +38,7 @@ second map. Missing `fog` = full hunger.
 |---|---|
 | `fog.at` | Last land by **any** job. Dashboard haze. Vision skip uses this snapshot at boot. |
 | `fog.jobs.map` / `unleash` / `nasty` | Last land for **that** job only |
+| `fog.spec` | Last spec or typed-test land. Coverage pip **s**, not a hunt job. Spec and `session()` share this clock. |
 | `fog.modes.*` | Last time that mode did its work on this page |
 | missing `fog` / missing clock | Full fog (40 days) |
 
@@ -52,6 +53,7 @@ To force a full retest (CI, after a big deploy):
 clickmonkey fog                     # print clocks on each sitemap page
 clickmonkey fog --reset             # drop `fog` on every page — rooms stay
 clickmonkey fog --reset --job nasty # drop only the nasty clock; `at` stays
+clickmonkey fog --reset --job spec  # drop only the spec/typed-test coverage pip
 ```
 
 `--job` leaves `at` and the other job/mode clocks, so vision skip and dashboard
@@ -72,14 +74,16 @@ still old, so the next decide on that tile is list.
 | **nasty** (`clickmonkey nasty`) | `jobs.nasty` on land | same as unleash |
 | **explore** | **none** | stamp when the DSL line did that mode’s work (`lineMatchesMode`) |
 | **mcp** | **none** | same as explore |
-| Spec / replay | none | none |
+| **spec** / typed test (`session()`) | `fog.spec` (shared coverage pip, not a hunt job) | — |
+| Replay | none | none |
 
 Land is stamped **once per page stay** (`recordFog`, skipped on replay and
 404). Mode is stamped **every exercise** (`recordMode`). Successful form
 work is stamped per job per surface (`fog.forms.unleash.add_customer`) —
 unleash and nasty do not share that clock. Brain names that stamp a job:
 `map`, `unleash`, `unleash-nasty`. `explore` and `mcp` do not (they are
-different live units on the map: **e** vs **c**).
+different live units on the map: **e** vs **c**). `spec` and `test` stamp
+`fog.spec` on land (skip replay and 404) and do not feed hunt hunger.
 
 Code: `src/schema/fog.ts`, `src/persist/fog.ts`.
 
@@ -98,13 +102,23 @@ Room / form score:
 `npcHunger(hitsThisRun, staleMs) = (1 / (1 + hits)) × fogHunger(staleMs)`
 
 **map** weights that by path length (`hunger × (1 + 1/(1+dist))`) and stays
-on the current hunt ~85% of the time. Last-**land** fog is the clock.
+on the current hunt ~85% of the time, unless a reachable room is hungrier
+(a never-landed page beats a leftover neighborhood target). Last-**land**
+fog is the clock. Local `fogClicks` only lift **unmapped** doors and hops
+to pages this job has **never** landed — a room from last run is not unseen.
 
 **unleash / nasty** hunt mapped forms with the **form-work** clock
-(`fog.forms[job][surface]`), not page land. They pick the hungriest reachable
-form (argmax). Equal hunger: ~10% random, else fewer hops, then map order.
-A successful Save (or the Save retry cap this run) spends that form so they
-walk to the next. Unleash filling a form does not feed nasty hunger.
+(`fog.forms[job][surface]`), mixed with a mild job-land spread so a
+never-visited page beats a form this job already stood on. A land is still
+not a fill — standing on a list to open its create dialog does not drop
+that form below other never-filled rooms. They pick the hungriest reachable
+form (argmax). Equal hunger:
+if three or more forms tie (typical after `fog --reset`), pick among them
+at random so parallel walkers do not all walk to the nearest form; two-way
+ties are ~10% random, else fewer hops, then map order. A successful Save (or the
+Save retry cap this run) spends that form so they walk to the next.
+Walkers reload clocks from the sitemap each step so parallel runs see
+each other's lands. Unleash filling a form does not feed nasty hunger.
 
 Mode pick (unleash / nasty / explore / mcp, on the tile they already stand on): **wizard
 locks** while the stepper is up. Other applicable modes compete by
@@ -119,9 +133,10 @@ clicks that door here (`fogClicks`) before pathfinding. Grow the map first.
 
 **Stale job** — mapped, but *this* monkey has not landed recently. **map**
 pathfinds to rooms by `jobs.map`. **unleash** / **nasty** pathfind to mapped
-forms (fields + submit) by last **form work** on that surface for that job.
-A far untested form beats a near form this job already filled. Landing on
-the list does not count as testing the create dialog.
+forms (fields + submit) by last **form work** on that surface for that job,
+with job land as a spread so last run's neighborhood does not win every
+tie. A far untested form beats a near form this job already filled.
+Landing on the list does not mark the create dialog filled.
 
 **Stale mode** — the walker is already on the tile. Least-recent
 applicable mode runs. That is how lists, tabs, dialogs, and empty states
@@ -136,15 +151,15 @@ Typical schedule:
 3. A **nasty** pass on nasty-stale forms (site you own). Pages unleash already walked still look hungry to nasty.
 4. One **explore** only when a ticket names the job. Charter, not soak. Mode stamps still help the next unleash.
 
-Dashboard haze uses `at` (last land, including explore/mcp), opacity when
-`fogHunger ≥ 0.4`. Dialogs stay clear. Three heat pips on each page:
-**m** map, **u** unleash, **n** nasty — green when that monkey stood here
-recently, red when it is hungry. **explore** and **mcp** have no job clock,
-so no heat pip. Live units on a page are a **colored letter**
-(instance hue): m / u / n / **e** explore / **c** mcp / **s** spec /
-**t** test. Spec and typed tests are run modes, not hunger jobs. Tooltip is
-`mcp · amber-otter` so two of the same kind still tell apart. How the
-dashboard draws that: [map.md](map.md).
+Dashboard haze uses `at` (last land, including explore/mcp/spec), opacity when
+`fogHunger ≥ 0.4`. Dialogs stay clear. Four heat pips on each page:
+**m** map, **u** unleash, **n** nasty, **s** spec — same `fogHunger` as
+hunt: green today, yellow at 2 days, then more red until 40 days / never.
+Spec and typed tests share **s** and do
+not hunt. **explore** and **mcp** have no pip. Live units on a page are a
+**colored letter** (instance hue): m / u / n / **e** explore / **c** mcp /
+**s** spec / **t** test. Tooltip is `mcp · amber-otter` so two of the same
+kind still tell apart. How the dashboard draws that: [map.md](map.md).
 
 ## Vision
 

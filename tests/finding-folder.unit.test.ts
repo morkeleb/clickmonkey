@@ -368,7 +368,7 @@ describe("finding folder", () => {
     assert.equal(second[0]?.created, false);
   });
 
-  it("keeps 18×18 close buttons that name different tabs", () => {
+  it("collapses 18×18 Close {tab title} buttons to one finding", () => {
     const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-target-"));
     const issue = (where: string): QualityIssue => ({
       source: "visual",
@@ -390,8 +390,8 @@ describe("finding folder", () => {
       tapePath: join(outDir, "replay.log"),
     });
     assert.equal(first[0]?.created, true);
-    assert.equal(second[0]?.created, true);
-    assert.notEqual(second[0]?.finding.id, first[0]?.finding.id);
+    assert.equal(second[0]?.created, false);
+    assert.equal(second[0]?.finding.id, first[0]?.finding.id);
   });
 
   it("keeps different overlap messages even on the same page", () => {

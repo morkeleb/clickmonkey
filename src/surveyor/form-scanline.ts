@@ -192,6 +192,16 @@ function clipName(name: string): string {
   return one.length <= 40 ? one : `${one.slice(0, 39)}…`;
 }
 
+/** Painted amount (`0.00`, `100.00%`) — a value, not a field title. */
+export function looksLikeAmountName(name: string): boolean {
+  return /^\d[\d,]*(?:\.\d+)?%?$/.test(name.replace(/\s+/g, " ").trim());
+}
+
+/** Right-locked number column: rights share an edge, lefts move with digit width. */
+function rightLocked(group: readonly FormFieldSample[]): boolean {
+  return edgeSpread(group.map((f) => f.controlRight)) <= SCAN_PX;
+}
+
 export function formScanlineIssues(fields: FormFieldSample[]): QualityIssue[] {
   const issues: QualityIssue[] = [];
   const seen = new Set<string>();
@@ -248,19 +258,23 @@ export function formScanlineIssues(fields: FormFieldSample[]): QualityIssue[] {
   }
   for (const [name, group] of byName) {
     if (group.length < 3) continue;
+    if (looksLikeAmountName(name)) continue;
     const tops = group.map((f) => f.controlTop);
     const topSpread = edgeSpread(tops);
     if (topSpread <= ROW_TOP_PX * 2) continue;
     const spread = edgeSpread(group.map((f) => f.controlLeft));
     const label = clipName(group[0]?.name || name);
-    push(
-      formScanlineIssue({
-        spread,
-        where: label,
-        message: `${label} fields do not line up down the column`,
-      }),
-    );
-    if (issues.length >= MAX_HITS) return issues;
+    const locked = rightLocked(group) && group.every((f) => hasSidePartner(f, fields));
+    if (!locked) {
+      push(
+        formScanlineIssue({
+          spread,
+          where: label,
+          message: `${label} fields do not line up down the column`,
+        }),
+      );
+      if (issues.length >= MAX_HITS) return issues;
+    }
     const labelSpread = edgeSpread(group.map((f) => f.labelLeft));
     if (spread <= SCAN_PX) {
       push(
@@ -609,14 +623,14 @@ const COLLECT_SRC = `(() => {
     var aria = (el.getAttribute("aria-label") || "").trim();
     if (aria) return clipText(aria, 40);
     var ph = (el.getAttribute("placeholder") || "").trim();
-    if (ph) return clipText(ph, 40);
+    if (ph && !/^\\d[\\d,]*(?:\\.\\d+)?%?$/.test(ph)) return clipText(ph, 40);
     var name = (el.getAttribute("name") || el.getAttribute("data-testid") || "").trim();
     if (name) return clipText(name, 40);
     var tagName = (el.tagName || "").toLowerCase();
     var roleName = (el.getAttribute("role") || "").toLowerCase();
     if (tagName === "button" || roleName === "button") {
       var own = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim();
-      if (own) return clipText(own, 40);
+      if (own && !/^\\d[\\d,]*(?:\\.\\d+)?%?$/.test(own)) return clipText(own, 40);
     }
     return "field";
   }
@@ -712,6 +726,46 @@ const COLLECT_SRC = `(() => {
     return clipText(tag + (raw ? "." + raw : ""), 40);
   }
 
+  function panelKeyFor(el) {
+    var cur = el;
+    var steps = 0;
+    while (cur && steps < 16) {
+      var p = cur.parentElement;
+      if (!p) break;
+      var ptag = (p.tagName || "").toLowerCase();
+      if (ptag === "form" || ptag === "main" || ptag === "body" || ptag === "html") break;
+      var cs;
+      try { cs = window.getComputedStyle(p); } catch (err) { cs = null; }
+      var d = cs && cs.display;
+      var dir = cs && cs.flexDirection;
+      var rowFlex = (d === "flex" || d === "inline-flex") && dir !== "column" && dir !== "column-reverse";
+      if (d === "grid" || d === "inline-grid" || rowFlex) {
+        var kids = p.children;
+        var panels = [];
+        var i;
+        for (i = 0; i < kids.length; i++) {
+          var kid = kids[i];
+          var kt = (kid.tagName || "").toLowerCase();
+          if (kt === "script" || kt === "style") continue;
+          var hosts = kid.querySelectorAll ? kid.querySelectorAll("input, select, textarea, [role='combobox']") : [];
+          var n = 0;
+          var j;
+          for (j = 0; j < hosts.length; j++) {
+            if (!skipControl(hosts[j]) && shown(hosts[j])) n += 1;
+          }
+          if (n > 0) panels.push(kid);
+        }
+        if (panels.length >= 2 && panels.indexOf(cur) >= 0) {
+          var title = headingText(cur);
+          return title || ("panel-" + panels.indexOf(cur));
+        }
+      }
+      cur = p;
+      steps += 1;
+    }
+    return "";
+  }
+
   function cardKeyFor(el) {
     var cur = el;
     var steps = 0;
@@ -723,7 +777,7 @@ const COLLECT_SRC = `(() => {
       cur = cur.parentElement;
       steps += 1;
     }
-    return "";
+    return panelKeyFor(el);
   }
 
   function wrapFor(el) {

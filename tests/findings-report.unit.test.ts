@@ -203,8 +203,8 @@ describe("findings report", () => {
     );
     const cases = collectFindingCases([join(root, "runs", "run-a"), join(root, "runs", "run-b")]);
     assert.equal(cases.length, 5);
-    // Growing chrome where stays one card; two named Close buttons stay two.
-    assert.equal(collapseFindingCases(cases).length, 4);
+    // Growing chrome where stays one card; Close {tab title} collapses to one chip.
+    assert.equal(collapseFindingCases(cases).length, 3);
   });
 
   it("renders an Explore outline from selected runs", () => {

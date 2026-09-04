@@ -52,7 +52,7 @@ export type GraphNodeData = {
   cardWidth?: number;
   cardHeight?: number;
   fogAt?: string;
-  jobFog?: { map?: string; unleash?: string; nasty?: string };
+  jobFog?: { map?: string; unleash?: string; nasty?: string; spec?: string };
 };
 
 export type GraphFlowNode = Node<GraphNodeData, "graph" | "section">;
@@ -80,6 +80,7 @@ function groupDialogs(graph: UiGraph, selectedPage?: string): Map<string, UiGrap
     list.push(node);
     dialogsByPage.set(node.pageId, list);
   }
+  for (const list of dialogsByPage.values()) list.sort(byId);
   return dialogsByPage;
 }
 
@@ -101,7 +102,10 @@ export function ringsFor(node: Pick<UiGraphNode, "id" | "kind">, runs: UiRun[]) 
 }
 
 export function clustersOf(graph: UiGraph): Map<string, UiGraphNode[]> {
-  const pages = graph.nodes.filter((n) => n.kind === "page" && !n.entry);
+  const pages = graph.nodes
+    .filter((n) => n.kind === "page" && !n.entry)
+    .slice()
+    .sort((a, b) => a.path.localeCompare(b.path) || a.id.localeCompare(b.id));
   const buckets = new Map<string, UiGraphNode[]>();
   for (const page of pages) {
     const key = sectionKey(page.path);
@@ -116,6 +120,14 @@ export function clustersOf(graph: UiGraph): Map<string, UiGraphNode[]> {
   return buckets;
 }
 
+function clusterEntries(clusters: Map<string, UiGraphNode[]>): Array<[string, UiGraphNode[]]> {
+  return [...clusters.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function byId(a: { id: string }, b: { id: string }): number {
+  return a.id.localeCompare(b.id);
+}
+
 function isBackEdge(edge: { source: string; target: string }, depth: Map<string, number>): boolean {
   const a = depth.get(edge.source);
   const b = depth.get(edge.target);
@@ -124,14 +136,18 @@ function isBackEdge(edge: { source: string; target: string }, depth: Map<string,
 
 function pageDepths(graph: UiGraph): Map<string, number> {
   const depth = new Map<string, number>();
-  const pages = graph.nodes.filter((n) => n.kind === "page");
+  const pages = graph.nodes.filter((n) => n.kind === "page").slice().sort(byId);
   const outgoing = new Map<string, string[]>();
-  for (const e of graph.edges) {
-    if (e.source.includes("::") || e.target.includes("::")) continue;
+  const pageEdges = graph.edges
+    .filter((e) => !e.source.includes("::") && !e.target.includes("::"))
+    .slice()
+    .sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+  for (const e of pageEdges) {
     const list = outgoing.get(e.source) ?? [];
     list.push(e.target);
     outgoing.set(e.source, list);
   }
+  for (const list of outgoing.values()) list.sort((a, b) => a.localeCompare(b));
   const starts = pages.filter((n) => n.entry);
   const queue: string[] = (starts.length > 0 ? starts : pages.slice(0, 1)).map((n) => n.id);
   queue.forEach((id, i) => depth.set(id, starts.length > 0 ? i : 0));
@@ -201,20 +217,23 @@ export function layoutGraph(
   };
 
   const dagreBox = new Map<string, { width: number; height: number }>();
-  for (const node of graph.nodes) {
-    if (node.kind !== "page") continue;
-    if (clustered.has(node.id)) continue;
+  const unclustered = graph.nodes
+    .filter((n) => n.kind === "page" && !clustered.has(n.id))
+    .slice()
+    .sort(byId);
+  for (const node of unclustered) {
     const box = pageBoxSize(PAGE_NODE, 0);
     dagreBox.set(node.id, box);
     g.setNode(node.id, box);
   }
-  for (const [key, pages] of clusters) {
+  for (const [key, pages] of clusterEntries(clusters)) {
     const inner = expanded.has(key) ? expandedSize(pages) : { ...SECTION_NODE };
     dagreBox.set(sectionId(key), inner);
     g.setNode(sectionId(key), inner);
   }
 
   const seenMacro = new Set<string>();
+  const macroEdges: Array<{ source: string; target: string }> = [];
   for (const edge of graph.edges) {
     if (edge.source.includes("::") || edge.target.includes("::")) continue;
     if (isBackEdge(edge, depth)) continue;
@@ -224,8 +243,10 @@ export function layoutGraph(
     const id = `${source}->${target}`;
     if (seenMacro.has(id)) continue;
     seenMacro.add(id);
-    g.setEdge(source, target);
+    macroEdges.push({ source, target });
   }
+  macroEdges.sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+  for (const edge of macroEdges) g.setEdge(edge.source, edge.target);
   dagre.layout(g);
 
   const nodes: GraphFlowNode[] = [];
@@ -241,9 +262,7 @@ export function layoutGraph(
     );
   };
 
-  for (const node of graph.nodes) {
-    if (node.kind !== "page") continue;
-    if (clustered.has(node.id)) continue;
+  for (const node of unclustered) {
     const placed = g.node(node.id);
     const box = dagreBox.get(node.id) ?? PAGE_NODE;
     const position = {
@@ -258,6 +277,8 @@ export function layoutGraph(
       type: "graph",
       position,
       hidden,
+      width: box.width,
+      height: box.height,
       data: {
         kind: "page",
         pageId: node.pageId,
@@ -282,7 +303,7 @@ export function layoutGraph(
     });
   }
 
-  for (const [key, pages] of clusters) {
+  for (const [key, pages] of clusterEntries(clusters)) {
     const sid = sectionId(key);
     const placed = g.node(sid);
     const size = expanded.has(key) ? expandedSize(pages) : { ...SECTION_NODE };
@@ -344,6 +365,8 @@ export function layoutGraph(
           y: childY,
         },
         hidden: childHidden,
+        width: box.width,
+        height: box.height,
         data: {
           kind: "page",
           pageId: page.pageId,
@@ -370,7 +393,9 @@ export function layoutGraph(
     }
   }
 
-  for (const [pageId, dialogs] of dialogsByPage) {
+  const dialogPages = [...dialogsByPage.keys()].sort((a, b) => a.localeCompare(b));
+  for (const pageId of dialogPages) {
+    const dialogs = dialogsByPage.get(pageId)!;
     const parent = pagePos.get(pageId);
     if (!parent) continue;
     const parentNode = nodes.find((n) => n.id === pageId);
@@ -394,6 +419,8 @@ export function layoutGraph(
           y: i * (DIALOG_NODE.height + DIALOG_GAP_Y),
         },
         hidden: parentHidden,
+        width: DIALOG_NODE.width,
+        height: DIALOG_NODE.height,
         data: {
           kind: "dialog",
           pageId: node.pageId,
@@ -414,8 +441,11 @@ export function layoutGraph(
   const visible = new Set(nodes.filter((n) => !n.hidden).map((n) => n.id));
   const edges: Edge[] = [];
   const seen = new Set<string>();
-  for (const edge of graph.edges) {
-    if (edge.source.includes("::") || edge.target.includes("::")) continue;
+  const pageEdges = graph.edges
+    .filter((e) => !e.source.includes("::") && !e.target.includes("::"))
+    .slice()
+    .sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+  for (const edge of pageEdges) {
     const back = isBackEdge(edge, depth);
     const srcKey = clustered.get(edge.source);
     const tgtKey = clustered.get(edge.target);
@@ -444,8 +474,27 @@ export function layoutGraph(
       },
     });
   }
+  edges.sort((a, b) => a.id.localeCompare(b.id));
 
-  return { nodes, edges };
+  return { nodes: sortFlowNodes(nodes), edges };
+}
+
+function sortFlowNodes(nodes: GraphFlowNode[]): GraphFlowNode[] {
+  const byNodeId = new Map(nodes.map((n) => [n.id, n]));
+  const depthOf = (node: GraphFlowNode): number => {
+    let d = 0;
+    let parentId = node.parentId;
+    while (parentId) {
+      d += 1;
+      parentId = byNodeId.get(parentId)?.parentId;
+    }
+    return d;
+  };
+  return nodes.slice().sort((a, b) => {
+    const dd = depthOf(a) - depthOf(b);
+    if (dd !== 0) return dd;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 export function absoluteBoxes(nodes: GraphFlowNode[]): LayoutBox[] {
@@ -480,20 +529,39 @@ export function defaultExpanded(graph: UiGraph, _runs?: UiRun[]): Set<string> {
   return new Set(clustersOf(graph).keys());
 }
 
-export function mergeExpanded(prev: Set<string>, graph: UiGraph, runs?: UiRun[]): Set<string> {
-  const next = defaultExpanded(graph, runs);
-  for (const key of prev) next.add(key);
-  if (prev.size === next.size) {
-    let same = true;
-    for (const key of prev) {
-      if (!next.has(key)) {
-        same = false;
-        break;
-      }
-    }
-    if (same) return prev;
+function sameSet(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const key of a) {
+    if (!b.has(key)) return false;
   }
-  return next;
+  return true;
+}
+
+/**
+ * Keep the user's collapse. `seen` is cluster keys from the last layout;
+ * keys in `seen` but missing from `prev` stay collapsed. Brand-new clusters open.
+ */
+export function mergeExpanded(prev: Set<string>, graph: UiGraph, seen?: Iterable<string>): Set<string> {
+  const valid = new Set(clustersOf(graph).keys());
+  const known = new Set(seen ?? prev);
+  const next = new Set<string>();
+  for (const key of valid) {
+    if (prev.has(key) || !known.has(key)) next.add(key);
+  }
+  return sameSet(prev, next) ? prev : next;
+}
+
+function flowStructureKey(node: GraphFlowNode): string {
+  return [
+    node.id,
+    node.type ?? "",
+    node.parentId ?? "",
+    node.hidden ? "1" : "0",
+    node.position.x,
+    node.position.y,
+    String(node.style?.width ?? node.width ?? ""),
+    String(node.style?.height ?? node.height ?? ""),
+  ].join("\t");
 }
 
 export function sameFlowNodes(a: GraphFlowNode[], b: GraphFlowNode[]): boolean {
@@ -501,9 +569,36 @@ export function sameFlowNodes(a: GraphFlowNode[], b: GraphFlowNode[]): boolean {
   for (let i = 0; i < a.length; i++) {
     const x = a[i]!;
     const y = b[i]!;
-    if (x.id !== y.id || x.type !== y.type || x.parentId !== y.parentId || x.hidden !== y.hidden) return false;
-    if (x.position.x !== y.position.x || x.position.y !== y.position.y) return false;
+    if (flowStructureKey(x) !== flowStructureKey(y)) return false;
     if (JSON.stringify(x.data) !== JSON.stringify(y.data)) return false;
   }
   return true;
+}
+
+/** Patch live rings/fog onto existing flow nodes so React Flow does not remount cards. */
+export function adoptFlowNodes(prev: GraphFlowNode[], next: GraphFlowNode[]): GraphFlowNode[] {
+  if (sameFlowNodes(prev, next)) return prev;
+  const prevById = new Map(prev.map((n) => [n.id, n]));
+  const selected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
+  return next.map((node) => {
+    const old = prevById.get(node.id);
+    const isSelected = selected.has(node.id);
+    if (!old) return isSelected ? { ...node, selected: true } : node;
+    const dataSame = JSON.stringify(old.data) === JSON.stringify(node.data);
+    if (flowStructureKey(old) === flowStructureKey(node) && dataSame && Boolean(old.selected) === isSelected) {
+      return old;
+    }
+    const sameBox =
+      (old.width ?? old.style?.width) === (node.width ?? node.style?.width) &&
+      (old.height ?? old.style?.height) === (node.height ?? node.style?.height);
+    return {
+      ...old,
+      ...node,
+      selected: isSelected,
+      data: node.data,
+      width: node.width ?? old.width,
+      height: node.height ?? old.height,
+      measured: sameBox ? old.measured : undefined,
+    };
+  });
 }

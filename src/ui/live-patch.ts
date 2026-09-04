@@ -18,7 +18,7 @@ export function livePatchKey(snapshot: Pick<UiSnapshot, "runs" | "graph">): stri
   const fog = snapshot.graph.nodes
     .map((n) => {
       const j = n.jobFog;
-      return [n.pageId, n.fogAt ?? "", j?.map ?? "", j?.unleash ?? "", j?.nasty ?? ""].join("\t");
+      return [n.pageId, n.fogAt ?? "", j?.map ?? "", j?.unleash ?? "", j?.nasty ?? "", j?.spec ?? ""].join("\t");
     })
     .join("\n");
   return `${runs}\n--\n${fog}`;

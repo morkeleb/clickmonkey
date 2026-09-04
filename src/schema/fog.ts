@@ -8,6 +8,10 @@ export const FOG_OLD_MS = 40 * 24 * 60 * 60 * 1000;
 export const WalkerJobName = z.enum(["map", "unleash", "nasty"]);
 export type WalkerJobName = z.infer<typeof WalkerJobName>;
 
+/** Heat pips: soak jobs plus spec/typed-test coverage. Spec is not a hunt job. */
+export const FogPipName = z.enum(["map", "unleash", "nasty", "spec"]);
+export type FogPipName = z.infer<typeof FogPipName>;
+
 export const WalkerModeName = z.enum(["wizard", "form", "list", "tab", "dialog", "empty", "nav"]);
 export type WalkerModeName = z.infer<typeof WalkerModeName>;
 
@@ -18,7 +22,12 @@ export function jobOfBrain(brain?: string): WalkerJobName | undefined {
   return undefined;
 }
 
-/** Five walkers: map/unleash/nasty/explore/mcp. spec and test are run modes with live letters and no job clock. */
+/** Spec markdown and typed `session()` share `fog.spec`. Not a hunt job. */
+export function brainStampsSpec(brain?: string): boolean {
+  return brain === "spec" || brain === "test";
+}
+
+/** Five walkers: map/unleash/nasty/explore/mcp. spec and test are run modes; they share a coverage pip. */
 export const MonkeyName = z.enum(["map", "unleash", "nasty", "explore", "mcp", "spec", "test"]);
 export type MonkeyName = z.infer<typeof MonkeyName>;
 
@@ -26,6 +35,17 @@ export function monkeyOfBrain(brain?: string): MonkeyName | undefined {
   if (brain === "unleash-nasty") return "nasty";
   const parsed = MonkeyName.safeParse(brain);
   return parsed.success ? parsed.data : undefined;
+}
+
+/** Overlay `from` onto `into`; later ISO wins per key. */
+export function mergeLaterClocks(
+  into: Record<string, string>,
+  from: Readonly<Record<string, string>>,
+): void {
+  for (const [key, at] of Object.entries(from)) {
+    const next = laterClock(into[key], at);
+    if (next) into[key] = next;
+  }
 }
 
 export function laterClock(a?: string, b?: string): string | undefined {
@@ -65,7 +85,14 @@ export function mergePageFog(keep?: PageFog, other?: PageFog): PageFog | undefin
       forms[job] = slot;
     }
   }
-  return { at, jobs, modes, ...(Object.keys(forms).length > 0 ? { forms } : {}) };
+  const spec = laterClock(keep.spec, other.spec);
+  return {
+    at,
+    jobs,
+    modes,
+    ...(spec ? { spec } : {}),
+    ...(Object.keys(forms).length > 0 ? { forms } : {}),
+  };
 }
 
 export function pageFogTimes(pages: readonly Pick<Page, "id" | "fog">[]): Record<string, string> {
@@ -88,14 +115,15 @@ export function jobFogTimes(
   return out;
 }
 
-/** Per-page job clocks for the sitemap heat pips. Missing job = full fog. */
-export function jobFogOf(fog: PageFog | undefined): Partial<Record<WalkerJobName, string>> | undefined {
+/** Per-page pip clocks for the sitemap. Missing pip = never / full fog. Spec is `fog.spec`, not `jobs`. */
+export function jobFogOf(fog: PageFog | undefined): Partial<Record<FogPipName, string>> | undefined {
   if (!fog) return undefined;
-  const out: Partial<Record<WalkerJobName, string>> = {};
+  const out: Partial<Record<FogPipName, string>> = {};
   for (const job of WalkerJobName.options) {
     const at = fog.jobs[job];
     if (at) out[job] = at;
   }
+  if (fog.spec) out.spec = fog.spec;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 

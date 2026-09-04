@@ -159,17 +159,22 @@ export function visualIssueMessage(issue: Pick<QualityIssue, "rule" | "message" 
   return `${issue.rule}: ${issue.message}${loc}`;
 }
 
+/** Tab-strip × whose accessible name is `Close {title}` — one control, not one per title. */
+export function closeTabWhere(where: string): string {
+  return where.replace(/\b(button|a) "Close [^"]+"/gi, '$1 "Close tab"');
+}
+
 /**
  * Rule + scanner message + first where token.
  * Joined ` · ` examples after the first token do not mint a new finding.
- * Different widgets (`Close Fee entries` vs `Close Clients`) stay distinct.
+ * `Close {tab title}` collapses to one Close-tab chip.
  */
 export function visualFindingKey(f: Pick<Finding, "widgetRef" | "message">): string {
   const raw = (f.message ?? "").replace(/\s+/g, " ").trim();
   const idx = raw.indexOf(" — ");
   const core = (idx < 0 ? raw : raw.slice(0, idx)).trim();
   const where = idx < 0 ? "" : raw.slice(idx + 3).trim();
-  const firstWhere = where.split(" · ")[0]!.trim();
+  const firstWhere = closeTabWhere(where.split(" · ")[0]!.trim());
   return `${f.widgetRef ?? ""}\t${core}\t${firstWhere}`;
 }
 

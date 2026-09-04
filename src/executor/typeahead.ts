@@ -338,7 +338,10 @@ export function listedPicksToTry(
     seen.add(k);
     ordered.push(o);
   };
-  push(pickOpenTypeahead(options, wanted)?.pick);
+  // A leftover `a`/`e` probe must not prefer a letter-index row over a record.
+  if (!isListedSearchProbe(wanted)) {
+    push(pickOpenTypeahead(options, wanted)?.pick);
+  }
   for (const o of rankListedOptions(options)) push(o);
   return ordered.slice(0, MAX_LISTED_CLICKS);
 }
@@ -611,6 +614,19 @@ function listedCommittedPick(
   return pick;
 }
 
+/**
+ * A painted row was clicked. The input often still holds the 1–2 char probe
+ * while the hidden id is set — treat that as a pick so Save can enable.
+ */
+export function listedRowClickResult(
+  live: string,
+  pick: LiveSelectOption,
+  shown: readonly LiveSelectOption[] = [pick],
+  wanted?: string,
+): LiveSelectOption {
+  return listedCommittedPick(live, shown, pick, wanted) ?? pick;
+}
+
 async function liveInput(loc: PwLocator, timeoutMs = PEEK_TIMEOUT_MS): Promise<string> {
   return (await loc.inputValue({ timeout: timeoutMs }).catch(() => "")).trim();
 }
@@ -669,8 +685,9 @@ async function commitListed(
   live: string,
   timeoutMs: number,
 ): Promise<string> {
+  // Tab commits the row. Escape often clears both the list and the pick.
   const ms = Math.max(0, timeoutMs);
-  if (ms > 0) await loc.press("Escape", { timeout: ms }).catch(() => undefined);
+  if (ms > 0) await loc.press("Tab", { timeout: ms }).catch(() => undefined);
   return live || pick.label || pick.value;
 }
 
@@ -697,8 +714,8 @@ async function chooseListedOption(
     const commitMs = () => sliceTimeoutMs(deadline, { cap: LISTED_CLICK_MS });
     if (await clickOptionAt(root, at, ms)) {
       const live = await readTypeaheadValue(loc, peek);
-      const hit = listedCommittedPick(live, shown, pick, wanted);
-      if (hit) return commitListed(loc, hit, live, commitMs());
+      const hit = listedRowClickResult(live, pick, shown, wanted);
+      return commitListed(loc, hit, live, commitMs());
     }
     const afterPaint = await readTypeaheadValue(loc, peek);
     const paintedHit = listedCommittedPick(afterPaint, shown, pick, wanted);
@@ -808,6 +825,7 @@ export async function fillTypeahead(
       wanted,
       options,
       force: opts?.force,
+      combobox: kind === "combobox",
       openedEmpty,
     })
   ) {
@@ -913,17 +931,19 @@ export function shouldProbeTypeahead(wanted: string, openOptions: readonly LiveS
 /**
  * Listed pickers (Search vendors) often paint only after a short query.
  * Faker multi-word is not that query — use SEARCH_PROBES instead.
- * A non-listed chip that opened empty is still not probed.
+ * A live combobox is probed even without an `*id` / Select chip on the map.
+ * A non-listed text field that opened empty is still not probed.
  */
 export function shouldProbeListed(opts: {
   wanted: string;
   options: readonly LiveSelectOption[];
   force?: boolean;
+  combobox?: boolean;
   openedEmpty?: boolean;
 }): boolean {
   if (opts.options.length > 0) return false;
   if (skipTypeaheadCatalogMiss(opts.wanted, opts.options)) return false;
-  if (opts.force) return true;
+  if (opts.force || opts.combobox) return true;
   if (opts.openedEmpty) return false;
   return shouldProbeTypeahead(opts.wanted, opts.options);
 }

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { UiGraph } from "@schema/ui";
-import { absoluteBoxes, defaultExpanded, layoutGraph, mergeExpanded, sameFlowNodes } from "./layout.ts";
+import type { UiRun } from "@schema/ui";
+import { absoluteBoxes, adoptFlowNodes, defaultExpanded, layoutGraph, mergeExpanded, sameFlowNodes } from "./layout.ts";
 import { RANK_SEP, boxesOverlap } from "./layout-metrics.ts";
 
 function page(id: string, path: string, opts?: { entry?: boolean; dialogs?: string[] }) {
@@ -176,6 +177,37 @@ describe("layoutGraph dialog rail", () => {
     assert.equal(grown, first);
   });
 
+  it("mergeExpanded does not re-open a collapsed section", () => {
+    const g = graph(
+      [page("a", "/accounts-payable/a"), page("b", "/accounts-payable/b")],
+      [],
+    );
+    const collapsed = mergeExpanded(new Set(), g, defaultExpanded(g));
+    assert.equal(collapsed.size, 0);
+    const still = mergeExpanded(collapsed, g, defaultExpanded(g));
+    assert.equal(still, collapsed);
+  });
+
+  it("mergeExpanded opens a cluster that was not on the previous map", () => {
+    const before = graph(
+      [page("a", "/accounts-payable/a"), page("b", "/accounts-payable/b")],
+      [],
+    );
+    const after = graph(
+      [
+        page("a", "/accounts-payable/a"),
+        page("b", "/accounts-payable/b"),
+        page("c", "/invoices/c"),
+        page("d", "/invoices/d"),
+      ],
+      [],
+    );
+    const prev = new Set<string>();
+    const next = mergeExpanded(prev, after, defaultExpanded(before));
+    assert.equal(next.has("accounts-payable"), false);
+    assert.equal(next.has("invoices"), true);
+  });
+
   it("sameFlowNodes is true for cloned layout with the same cards", () => {
     const g = graph([page("home", "/", { entry: true })], []);
     const a = layoutGraph(g, []);
@@ -183,5 +215,55 @@ describe("layoutGraph dialog rail", () => {
     assert.equal(sameFlowNodes(a.nodes, b.nodes), true);
     const moved = [{ ...a.nodes[0]!, position: { x: 1, y: 1 } }];
     assert.equal(sameFlowNodes(a.nodes, moved), false);
+  });
+
+  it("layoutGraph positions do not depend on node insertion order", () => {
+    const hops = [
+      { from: "home", to: "fees" },
+      { from: "home", to: "calendar" },
+    ] as const;
+    const forward = graph(
+      [
+        page("home", "/", { entry: true }),
+        page("fees", "/fees-and-cost"),
+        page("calendar", "/calendar"),
+      ],
+      [...hops],
+    );
+    const reverse = graph(
+      [
+        page("calendar", "/calendar"),
+        page("fees", "/fees-and-cost"),
+        page("home", "/", { entry: true }),
+      ],
+      [...hops].reverse(),
+    );
+    const a = layoutGraph(forward, []);
+    const b = layoutGraph(reverse, []);
+    const pos = (nodes: typeof a.nodes) =>
+      Object.fromEntries(nodes.filter((n) => n.data.kind === "page").map((n) => [n.id, n.position]));
+    assert.deepEqual(pos(a.nodes), pos(b.nodes));
+  });
+
+  it("adoptFlowNodes keeps card positions when only live rings change", () => {
+    const g = graph([page("home", "/", { entry: true })], []);
+    const idle = layoutGraph(g, []);
+    const liveRun: UiRun = {
+      id: "r1",
+      name: "amber-asp",
+      hue: 12,
+      live: true,
+      pageId: "home",
+      findingCount: 0,
+    };
+    const live = layoutGraph(g, [liveRun]);
+    assert.equal(sameFlowNodes(idle.nodes, live.nodes), false);
+    const adopted = adoptFlowNodes(idle.nodes, live.nodes);
+    assert.equal(adopted.length, idle.nodes.length);
+    assert.deepEqual(adopted[0]!.position, idle.nodes[0]!.position);
+    assert.equal(adopted[0]!.data.rings.length, 1);
+    assert.equal(adopted[0]!.data.rings[0]?.name, "amber-asp");
+    const again = adoptFlowNodes(adopted, live.nodes);
+    assert.equal(again, adopted);
   });
 });

@@ -94,6 +94,35 @@ describe("issuesFromWidgets overlap", () => {
     const overlaps = issues.filter((i) => i.rule === "overlap");
     assert.ok(overlaps.length >= 1);
     assert.ok(overlaps.every((i) => i.message === CHROME_OVERLAP_MESSAGE));
+    assert.ok(overlaps.every((i) => i.confidence === "medium"));
+  });
+
+  it("does not flag a header search box overlapping adjacent toolbar chips", () => {
+    const issues = issuesFromWidgets([
+      widget({
+        name: "Search or Talk to LOIS",
+        kind: "input",
+        rect: box(200, 8, 320, 36),
+        inChrome: true,
+      }),
+      widget({
+        name: "Active tabs: 37",
+        kind: "button",
+        rect: box(480, 8, 120, 36),
+        inChrome: true,
+      }),
+      widget({
+        name: "Ask LOIS",
+        kind: "button",
+        rect: box(500, 8, 80, 36),
+        inChrome: true,
+      }),
+    ]);
+    assert.equal(
+      issues.some((i) => i.rule === "overlap"),
+      false,
+      `header search overlapping chips is chrome layout, got ${JSON.stringify(issues)}`,
+    );
   });
 
   it("keeps page-local overlap names when either control is not chrome", () => {
@@ -337,6 +366,31 @@ describe("issuesFromWidgets zIndex", () => {
       }),
     ]);
     assert.equal(field[0]?.severity, "error");
+  });
+
+  it("does not overlap-report chrome under an open menu", () => {
+    const issues = issuesFromWidgets([
+      widget({
+        name: "Vouchers",
+        kind: "link",
+        inChrome: true,
+        rect: box(0, 200, 80, 32),
+        hit: { covered: true, by: "User Settings", coverOverlay: "menu", coverOverlayId: 0 },
+      }),
+      widget({
+        name: "User Settings",
+        kind: "button",
+        inChrome: true,
+        rect: box(0, 200, 160, 80),
+        overlay: "menu",
+        overlayId: 0,
+      }),
+    ]);
+    assert.equal(
+      issues.some((i) => i.rule === "overlap"),
+      false,
+      JSON.stringify(issues),
+    );
   });
 
   it("skips an open dialog/menu/listbox covering the page behind it", () => {

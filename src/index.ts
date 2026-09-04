@@ -220,6 +220,7 @@ export {
   reclaimMcpPresence,
   touchPresence,
   stopPresence,
+  stopPresenceIfDead,
   isPresenceLive,
   listPresences,
 } from "./persist/presence.js";
@@ -256,8 +257,20 @@ export {
   looksLikeNavWidget,
   looksLikeSearchField,
   looksLikePageSearch,
+  looksLikeListFilterField,
+  looksLikeGridCellCheckbox,
   looksLikeRowSelectCheckbox,
+  looksLikeHeaderSelectCheckbox,
+  looksLikeDataRowSelectCheckbox,
+  looksLikeRangeStart,
+  looksLikeRangeEnd,
+  planFormBurstFills,
+  pickDataRowSelectToCheck,
   isEmptyStateAction,
+  isAuthGatePage,
+  isAuthGateHref,
+  needsLeashReentry,
+  listLooksPopulated,
   isTabAction,
   isDialogOpener,
   isDestructiveDialogOpener,
@@ -313,6 +326,7 @@ export {
 } from "./brains/walker-mode.js";
 export {
   jobOfBrain,
+  brainStampsSpec,
   monkeyOfBrain,
   pageFogTimes,
   jobFogTimes,
@@ -321,8 +335,9 @@ export {
   modeFogKey,
   formWorkTimes,
   mergePageFog,
+  mergeLaterClocks,
 } from "./schema/fog.js";
-export type { WalkerJobName, WalkerModeName, MonkeyName } from "./schema/fog.js";
+export type { WalkerJobName, FogPipName, WalkerModeName, MonkeyName } from "./schema/fog.js";
 export {
   floodNpc,
   formatNpcStep,
@@ -337,6 +352,7 @@ export {
   planNpc,
   pickHungryGoal,
   HUNGRY_TIE_RANDOM,
+  HUNGRY_TIE_SPREAD,
 } from "./brains/npc.js";
 export type { NpcEdge, NpcGoal, NpcNode, NpcPlan, NpcReach } from "./brains/npc.js";
 export {

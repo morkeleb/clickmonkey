@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import type { ShownField } from "../schema/view.js";
 import type { BrainContext, BrainDecision } from "./types.js";
 import { fakerFill } from "./faker-fill.js";
-import { looksLikeDateMask } from "../executor/date-mask.js";
+import { looksLikeDateFieldName, looksLikeDateMask } from "../executor/date-mask.js";
+import { looksLikeListedPicker } from "../executor/field-control.js";
 import { isListedControl, pickSelectOption } from "../executor/select-options.js";
 import { decideUnleashWork } from "./unleash.js";
 
@@ -189,11 +190,15 @@ function numericCatalogPool(fieldType: string | undefined): string[] {
 
 /** Native `<select>` / harvested typeahead lists reject catalog junk; type-in fields still get it. */
 export function pickNastyFill(field: ShownField, rng: () => number = Math.random): string {
-  if (isListedControl(field)) {
-    return pickSelectOption(field.options, rng) ?? "";
+  if (isListedControl(field) || looksLikeListedPicker(field)) {
+    return pickSelectOption(field.options, rng) ?? "a";
   }
   const html = (field.constraints?.htmlType ?? field.type ?? "").toLowerCase();
-  if (NATIVE_TEMPORAL.has(html) || looksLikeDateMask(field.constraints?.placeholder)) {
+  if (
+    NATIVE_TEMPORAL.has(html) ||
+    looksLikeDateMask(field.constraints?.placeholder) ||
+    looksLikeDateFieldName(field.id, field.label)
+  ) {
     return fakerFill(field, rng);
   }
   if (html === "number") {

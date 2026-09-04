@@ -12,9 +12,10 @@ import {
   usefulExploreNote,
 } from "../brains/explore.js";
 import { detectWalkerMode, lineMatchesMode } from "../brains/walker-mode.js";
+import { needsLeashReentry } from "../brains/unleash.js";
 import { recordMode } from "../persist/fog.js";
 import { bootRun } from "../executor/boot.js";
-import { logBrainDecide } from "../executor/nav-log.js";
+import { formatLiveLine, logBrainDecide } from "../executor/nav-log.js";
 import { createExecutor, type RunState, type StepResult } from "../executor/run.js";
 import { withRun, type RunHandle } from "../executor/session.js";
 import { formatPageState, snapshotPageState } from "../executor/page-state.js";
@@ -28,6 +29,7 @@ import type { Log } from "../schema/log.js";
 import { formatExplorePlanItemLine, type UiExplorePlan } from "../schema/ui.js";
 import type { View } from "../schema/view.js";
 import { formatExploreVisit, type ExploreVisit } from "../schema/visit.js";
+import { liveHref, recoverLeashIfNeeded, type LeashReentryBudget } from "./leash.js";
 import { pickSeedPageId, resetToSeed } from "./seed.js";
 
 const RUNTIME_KINDS = new Set(["pageError", "httpError", "notFound"]);
@@ -195,7 +197,47 @@ export type ExploreWalkCtx = {
   skills?: string;
   polish?: () => Promise<void>;
   onAfterStep?: ExploreAfterStep;
+  leash?: LeashReentryBudget;
 };
+
+function echoLeash(line: string): void {
+  process.stderr.write(`${formatLiveLine(line)}\n`);
+}
+
+/** Re-enter via leash if this step landed on login. `blocked` means still gated. */
+async function recoverExploreLeash(ctx: ExploreWalkCtx): Promise<{ blocked: boolean; error?: string }> {
+  const pageId = ctx.view?.page ?? ctx.state.pageId;
+  ctx.leash ??= { tries: 0 };
+  const rec = await recoverLeashIfNeeded({
+    pageId,
+    href: liveHref(ctx.state),
+    pages: ctx.state.model.pages,
+    exec: ctx.exec,
+    state: ctx.state,
+    budget: ctx.leash,
+    echo: echoLeash,
+  });
+  if (rec.attempted || rec.recovered) {
+    try {
+      ctx.view = withPriorLast(await snapshotView(ctx.state), ctx.view?.last);
+    } catch {
+      // tests without a live page keep the prior view
+    }
+    const seed = pickSeedPageId(ctx.state, ctx.state.pageId);
+    if (seed) ctx.seedPageId = seed;
+  }
+  if (rec.gaveUp) {
+    return { blocked: true, error: "logged out; leash re-entry failed" };
+  }
+  if (
+    rec.attempted &&
+    !rec.recovered &&
+    needsLeashReentry(ctx.view?.page ?? pageId, liveHref(ctx.state), ctx.state.model.pages)
+  ) {
+    return { blocked: true, error: "logged out; retrying leash re-entry" };
+  }
+  return { blocked: false };
+}
 
 function flushOutline(ctx: Pick<ExploreWalkCtx, "outDir" | "charter" | "notes" | "goods" | "plan">, now?: string): void {
   const item = ctx.plan?.items.find((i) => i.status === "now");
@@ -222,6 +264,17 @@ export async function applyExploreStep(
   const good = usefulExploreNote(opts?.good);
   if (note) ctx.notes.push(note);
   if (good) ctx.goods.push(good);
+  if (!ctx.view) {
+    return {
+      ok: false,
+      error: "explore session has no snapshot",
+      visit: formatExploreVisit({
+        view: { page: ctx.state.pageId, surface: "page", stack: [ctx.state.pageId], shown: [], actions: [] },
+      }),
+    };
+  }
+
+  const gated = await recoverExploreLeash(ctx);
   const view = ctx.view;
   if (!view) {
     return {
@@ -230,6 +283,14 @@ export async function applyExploreStep(
       visit: formatExploreVisit({
         view: { page: ctx.state.pageId, surface: "page", stack: [ctx.state.pageId], shown: [], actions: [] },
       }),
+    };
+  }
+  if (gated.blocked) {
+    return {
+      ok: false,
+      error: gated.error ?? "logged out; leash re-entry failed",
+      ban: false,
+      visit: exploreVisitOf(ctx.state, view, ctx.plan),
     };
   }
 
@@ -320,6 +381,7 @@ export async function applyExploreStep(
     flushOutline(ctx, next?.title || "plan complete");
   }
 
+  await recoverExploreLeash(ctx);
   const nextView = ctx.view ?? result.view;
   ctx.view = nextView;
   return {

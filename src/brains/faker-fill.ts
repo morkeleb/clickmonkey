@@ -1,5 +1,5 @@
 import { Faker, en } from "@faker-js/faker";
-import { dateFillValue, looksLikeDateMask } from "../executor/date-mask.js";
+import { dateFillValue, looksLikeDateFieldName, looksLikeDateMask } from "../executor/date-mask.js";
 import type { ShownField, ShownFieldConstraints } from "../schema/view.js";
 
 export type FillCtx = {
@@ -182,12 +182,27 @@ function tokenize(...parts: string[]): Set<string> {
     const compact = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (compact.length >= 2) tokens.add(compact);
     addTrailingFieldWords(compact, tokens);
+    addKnownCompounds(compact, tokens);
   }
   for (const t of [...tokens]) {
     const extra = SYNONYMS[t];
     if (extra) for (const e of extra) tokens.add(e);
   }
   return tokens;
+}
+
+/** Concatenated ids (`clientcode`, `taxidentificationnumber`) that tokenize as one word. */
+function addKnownCompounds(compact: string, tokens: Set<string>): void {
+  if (compact.includes("taxidentification") || /(^|tax)(ein|id)$/.test(compact) || compact === "ein") {
+    tokens.add("ein");
+    tokens.add("tin");
+  }
+  if (/(client|matter|vendor|short|sku)code$/.test(compact) || compact === "shortcode") {
+    tokens.add("recordcode");
+  }
+  if (/(^|_)places(_|$)/.test(compact) || compact === "places" || compact.endsWith("placessearch") || compact === "placeid") {
+    tokens.add("places");
+  }
 }
 
 function autocompleteKeys(raw: string | undefined): string[] {
@@ -477,7 +492,10 @@ const RULES: FillRule[] = [
   {
     id: "street",
     score: (c) =>
-      auto(c, "street-address", "address-line1") || hasAny(c, "street", "addressline1") || (has(c, "address") && !hasAny(c, "email", "ip", "type"))
+      auto(c, "street-address", "address-line1") ||
+      hasAny(c, "street", "addressline1", "places") ||
+      (has(c, "address") && !hasAny(c, "email", "ip", "type")) ||
+      (hasAny(c, "place", "places", "geo", "location") && hasAny(c, "search", "q", "query"))
         ? 86
         : 0,
     generate: (f) => f.location.streetAddress(),
@@ -541,9 +559,21 @@ const RULES: FillRule[] = [
   {
     id: "ssn",
     score: (c) => (hasAny(c, "ssn", "ein", "tin") ? 90 : 0),
-    generate: (f) => {
+    generate: (f, c) => {
       const n = f.string.numeric(9);
+      // EIN / tax id is 2-7; SSN is 3-2-4. `ein` synonyms include `ssn`.
+      if (hasAny(c, "ein", "tin")) return `${n.slice(0, 2)}-${n.slice(2)}`;
       return `${n.slice(0, 3)}-${n.slice(3, 5)}-${n.slice(5)}`;
+    },
+  },
+  {
+    id: "recordCode",
+    score: (c) => (has(c, "recordcode") ? 88 : 0),
+    generate: (f, c) => {
+      const max = c.constraints.maxLength ?? 10;
+      const min = Math.min(c.constraints.minLength ?? 6, max);
+      const len = Math.max(min, Math.min(max, 8));
+      return f.string.alphanumeric({ length: len, casing: "upper" });
     },
   },
   {
@@ -599,6 +629,8 @@ const RULES: FillRule[] = [
       fieldType(c, "date") ||
       looksLikeDateMask(c.constraints.placeholder) ||
       (has(c, "date") && !has(c, "time")) ||
+      looksLikeDateFieldName(c.id) ||
+      (has(c, "due") && hasAny(c, "from", "to", "on")) ||
       compactLooksLikeDateField(c.compact)
         ? 70
         : 0,

@@ -146,6 +146,34 @@ describe("nasty payloads", () => {
     assert.equal(pool.includes(value), false);
   });
 
+  it("fills a date-like text id with a real date, not catalog XSS", () => {
+    const field = { id: "due_from", value: "", type: "text" as const };
+    const value = pickNastyFill(field, () => 0.3);
+    assert.match(value, /^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{2}\/\d{4}$/);
+    const catalog = loadPayloads();
+    const pool = [
+      ...(catalog.xss ?? []),
+      ...(catalog.sqli ?? []),
+      ...(catalog.format ?? []),
+      ...(catalog.overlong ?? []),
+    ];
+    assert.equal(pool.includes(value), false);
+  });
+
+  it("fills an unharvested FK picker with a short probe, not catalog XSS", () => {
+    const field = { id: "vendorid", value: "", type: "text" as const };
+    const value = pickNastyFill(field, () => 0.3);
+    assert.equal(value, "a");
+    const catalog = loadPayloads();
+    const pool = [
+      ...(catalog.xss ?? []),
+      ...(catalog.sqli ?? []),
+      ...(catalog.format ?? []),
+      ...(catalog.overlong ?? []),
+    ];
+    assert.equal(pool.includes(value), false);
+  });
+
   it("fills a masked date with a real date, not catalog XSS", () => {
     const field = {
       id: "invoicedate",

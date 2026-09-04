@@ -36,7 +36,7 @@ import { PageModel } from "../src/schema/page-model.js";
 import type { ChatMessage } from "../src/brains/chat.js";
 import { saveConfig } from "../src/persist/config.js";
 import { loadMapPages } from "../src/persist/fog.js";
-import { loadPresence, startPresence } from "../src/persist/presence.js";
+import { loadPresence, startPresence, stopPresence } from "../src/persist/presence.js";
 import { Config, emptyConfig } from "../src/schema/config.js";
 import type { View } from "../src/schema/view.js";
 import type { RunState } from "../src/executor/run.js";
@@ -1315,6 +1315,43 @@ describe("applyExploreStep", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it("re-enters via the leash when the session is on login", async () => {
+    const ctx = walkCtx(viewOf({ page: "login", actions: [{ id: "submit" }] }));
+    ctx.state.config = {
+      ...ctx.state.config,
+      url: "http://127.0.0.1/login",
+      intro: ["click login.submit"],
+    };
+    ctx.state.pageId = "login";
+    let href = "http://127.0.0.1/login";
+    let intro = 0;
+    ctx.state.page = {
+      url: () => href,
+      goto: async (next: string) => {
+        href = String(next);
+      },
+    } as typeof ctx.state.page;
+    ctx.state.afterStep = async (s) => {
+      s.pageId = href.includes("login") ? "login" : "home";
+    };
+    ctx.exec = {
+      ...ctx.exec,
+      runIntro: async () => {
+        intro += 1;
+        href = "http://127.0.0.1/";
+        ctx.state.pageId = "home";
+      },
+      runLine: async () => ({
+        ok: true,
+        view: viewOf({ page: "home", last: { step: "click page.submit", ok: true } }),
+        bounced: true,
+      }),
+    };
+    const result = await applyExploreStep(ctx, "click page.submit");
+    assert.equal(intro, 1);
+    assert.equal(result.ok, true);
+  });
 });
 
 describe("withPriorLast", () => {
@@ -1516,6 +1553,7 @@ describe("ExploreSession outline", () => {
       assert.equal(stopped?.outline?.now, "Runtime errors");
     } finally {
       await session.abort();
+      stopPresence(outDir);
       rmSync(tmp, { recursive: true, force: true });
     }
   });

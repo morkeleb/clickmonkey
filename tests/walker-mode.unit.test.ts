@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decideUnleash, isTabAction } from "../src/brains/unleash.js";
+import { decideUnleash, isEmptyStateAction, isTabAction, legalUnleashActions, listLooksPopulated } from "../src/brains/unleash.js";
 import type { BrainContext } from "../src/brains/types.js";
 import {
   detectWalkerMode,
@@ -131,6 +131,25 @@ describe("walker modes", () => {
     const d = decideUnleash(ctx, () => 0.5);
     const text = (d.lines ?? [d.line]).join("\n");
     assert.doesNotMatch(text, /toggle_row_selection/);
+  });
+
+  it("checks one data-row checkbox on a batch submit form", () => {
+    const view = viewOf({
+      shown: [
+        {
+          id: "checkbox_press_space_to_toggle_row_selection__unchecked_",
+          value: "false",
+          type: "checkbox",
+          label: "Press Space to toggle row selection (unchecked)",
+        },
+      ],
+      actions: [{ id: "button_submit", label: "Submit" }],
+    });
+    const ctx = { view, stepsUsed: 0, writePolicy: "allow" as const };
+    assert.equal(detectWalkerMode(ctx).name, "form");
+    const text = burstText(ctx, () => 0.9);
+    assert.match(text, /fill page\.checkbox_press_space_to_toggle_row_selection__unchecked_ true/);
+    assert.match(text, /click page\.button_submit/);
   });
 
   it("detects nav on a page with a search field and an Add customer opener", () => {
@@ -698,6 +717,130 @@ describe("walker modes", () => {
     assert.doesNotMatch(text, /tab_dashboard/);
   });
 
+  it("leaves a form after Save failed and nothing remains to fill", () => {
+    const view = viewOf({
+      page: "documents_ocg_id1",
+      pages: ["documents_ocg_id1", "clients_new"],
+      shown: [{ id: "sourcecitation", value: "already", type: "text" }],
+      actions: [{ id: "ocg_upload_submit", label: "Submit" }],
+      last: { step: "click page.ocg_upload_submit", ok: false, finding: "expectFailed" },
+    });
+    const clients: Page = {
+      id: "clients_new",
+      path: "/clients/new",
+      params: [],
+      ready: { by: "testId", value: "clients_new" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [
+            {
+              id: "name",
+              required: true,
+              type: "text",
+              by: "name",
+              value: "name",
+              status: "ok",
+            },
+          ],
+          actions: [{ id: "button_save", by: "testId", value: "save", status: "ok" }],
+        },
+      ],
+    };
+    const ocg: Page = {
+      id: "documents_ocg_id1",
+      path: "/documents/ocg/1",
+      params: [],
+      ready: { by: "testId", value: "ocg" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [{ id: "ocg_upload_submit", by: "testId", value: "submit", status: "ok" }],
+        },
+      ],
+    };
+    const d = decideUnleash(
+      {
+        view,
+        stepsUsed: 8,
+        writePolicy: "allow",
+        pages: [ocg, clients],
+        last: { ok: false, finding: "expectFailed" },
+        recentClicks: ["ocg_upload_submit"],
+      },
+      () => 0.9,
+    );
+    assert.notEqual(d.note, "form stay");
+    assert.doesNotMatch(d.line, /^screenshot/);
+  });
+
+  it("does not refill a form this run already spent", () => {
+    const invoices: Page = {
+      id: "invoices",
+      path: "/invoices",
+      params: [],
+      ready: { by: "testId", value: "invoices" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [
+            {
+              id: "amount",
+              required: false,
+              type: "text",
+              by: "name",
+              value: "amount",
+              status: "ok",
+            },
+          ],
+          actions: [
+            { id: "submit", by: "testId", value: "submit", status: "ok" },
+          ],
+        },
+      ],
+    };
+    const home: Page = {
+      id: "home",
+      path: "/",
+      params: [],
+      ready: { by: "testId", value: "home" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "link_invoices", by: "testId", value: "invoices", status: "ok", opens: "invoices" },
+            { id: "submit", by: "testId", value: "submit", status: "ok" },
+          ],
+        },
+      ],
+    };
+    const view = viewOf({
+      shown: [{ id: "matterid", value: "", type: "text" }],
+      actions: [
+        { id: "submit", label: "Save" },
+        { id: "link_invoices", opens: "invoices" },
+      ],
+      pages: ["home", "invoices"],
+    });
+    const ctx: BrainContext = {
+      view,
+      stepsUsed: 8,
+      writePolicy: "allow",
+      pages: [home, invoices],
+      formSpent: { "home/page": true },
+    };
+    const d = decideUnleash(ctx, () => 0.5);
+    const text = (d.lines ?? [d.line]).join("\n");
+    assert.doesNotMatch(text, /fill page\.matterid/);
+    assert.match(text, /open invoices|click page\.link_invoices/);
+  });
+
   it("does not lock form on empty list filters with Apply", () => {
     const view = viewOf({
       shown: [{ id: "status", value: "", type: "text" }],
@@ -776,12 +919,187 @@ describe("walker modes", () => {
     assert.equal(isTabAction({ id: "link_open_in_new_tab", label: "Open in new tab" }), false);
     assert.equal(isTabAction({ id: "button_close_tab", label: "Close tab" }), false);
     assert.equal(isTabAction({ id: "button_new_tab", label: "New tab" }), false);
+    assert.equal(isTabAction({ id: "button_active_tabs__15", label: "Active tabs" }), false);
+    assert.equal(isTabAction({ id: "active_tabs" }), false);
 
     const empty = viewOf({
       actions: [{ id: "button_create_your_first_fee_entry", label: "Create your first fee entry" }],
     });
     assert.equal(detectWalkerMode({ view: empty, stepsUsed: 0 }).name, "empty");
     assert.match(decideUnleash({ view: empty, stepsUsed: 0 }, () => 0).line, /create_your_first/);
+
+    const populated = viewOf({
+      shown: [
+        {
+          id: "checkbox_press_space_to_toggle_row_selection__unchecked_",
+          value: "false",
+          type: "checkbox",
+          label: "Press Space to toggle row selection (unchecked)",
+        },
+      ],
+      actions: [
+        { id: "button_create_your_first_vendor", label: "Create your first vendor" },
+        { id: "button_row_acme", label: "Acme" },
+      ],
+    });
+    assert.equal(listLooksPopulated(populated), true);
+    assert.equal(legalUnleashActions(populated).some(isEmptyStateAction), false);
+    assert.notEqual(detectWalkerMode({ view: populated, stepsUsed: 0 }).name, "empty");
+    assert.doesNotMatch(decideUnleash({ view: populated, stepsUsed: 0 }, () => 0).line, /create_your_first/);
+
+    const siblingCreate = viewOf({
+      actions: [
+        { id: "button_create_your_first_vendor", label: "Create your first vendor" },
+        { id: "button_new_vendor", label: "New vendor" },
+      ],
+    });
+    assert.equal(listLooksPopulated(siblingCreate), true);
+    assert.doesNotMatch(decideUnleash({ view: siblingCreate, stepsUsed: 0 }, () => 0).line, /create_your_first/);
+  });
+
+  it("hunts a mapped form instead of only clicking tabs", () => {
+    const home: Page = {
+      id: "home",
+      path: "/",
+      params: [],
+      ready: { by: "testId", value: "home" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "tab_dashboard", by: "role", value: "tab", name: "Dashboard", status: "ok" },
+            { id: "tab_active", by: "role", value: "tab", name: "Active", status: "ok" },
+          ],
+        },
+      ],
+    };
+    const invoices: Page = {
+      id: "invoices",
+      path: "/invoices",
+      params: [],
+      ready: { by: "testId", value: "invoices" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "amount", required: false, type: "text", by: "name", value: "amount", status: "ok" }],
+          actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
+        },
+      ],
+    };
+    const view = viewOf({
+      pages: ["home", "invoices"],
+      actions: [
+        { id: "tab_dashboard", role: "tab", label: "Dashboard" },
+        { id: "tab_active", role: "tab", label: "Active" },
+      ],
+    });
+    const ctx: BrainContext = { view, stepsUsed: 0, job: "unleash", pages: [home, invoices] };
+    assert.equal(detectWalkerMode(ctx).name, "tab");
+    const d = decideUnleash(ctx, () => 0.5);
+    assert.equal(d.note, "form hunt");
+    assert.match(d.line ?? "", /invoices/);
+    assert.doesNotMatch(d.line ?? "", /tab_/);
+  });
+
+  it("clicks a tab when form hunt has nowhere to go", () => {
+    const view = viewOf({
+      actions: [
+        { id: "tab_overview", role: "tab", label: "Overview" },
+        { id: "tab_billing", role: "tab", label: "Billing" },
+      ],
+    });
+    const d = decideUnleash({ view, stepsUsed: 0, job: "unleash" }, () => 0.5);
+    assert.equal(d.mode, "tab");
+    assert.equal(d.note, "tab");
+    assert.match(d.line, /tab_/);
+  });
+
+  it("does not loop open the same list page when a mapped form is elsewhere", () => {
+    const records: Page = {
+      id: "records",
+      path: "/records",
+      params: [],
+      ready: { by: "testId", value: "records" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [],
+          actions: [
+            { id: "combobox_period", by: "role", value: "combobox", name: "Period", status: "ok" },
+            { id: "button_previous", by: "testId", value: "previous", status: "ok" },
+            { id: "button_next", by: "testId", value: "next", status: "ok" },
+            { id: "tab_dashboard", by: "role", value: "tab", name: "Dashboard", status: "ok" },
+            { id: "button_active_tabs", by: "role", value: "button", name: "Active tabs", status: "ok" },
+          ],
+        },
+      ],
+    };
+    const invoices: Page = {
+      id: "invoices",
+      path: "/invoices",
+      params: [],
+      ready: { by: "testId", value: "invoices" },
+      surfaces: [
+        {
+          id: "page",
+          kind: "page",
+          fields: [{ id: "amount", required: false, type: "text", by: "name", value: "amount", status: "ok" }],
+          actions: [{ id: "submit", by: "testId", value: "submit", status: "ok" }],
+        },
+      ],
+    };
+    const view = viewOf({
+      page: "records",
+      pages: ["home", "records", "invoices"],
+      actions: [
+        { id: "combobox_period", role: "combobox", label: "Period" },
+        { id: "button_previous", label: "Previous" },
+        { id: "button_next", label: "Next" },
+        { id: "tab_dashboard", role: "tab", label: "Dashboard" },
+        { id: "button_active_tabs", label: "Active tabs" },
+      ],
+    });
+    const pages = [records, invoices];
+    const justNow = new Date().toISOString();
+    const tabHungrier: BrainContext = {
+      view,
+      stepsUsed: 4,
+      job: "unleash",
+      pages,
+      modeFog: { "records/list": justNow },
+    };
+    assert.equal(detectWalkerMode(tabHungrier).name, "tab");
+    const listCtx: BrainContext = { view, stepsUsed: 0, job: "unleash", pages };
+    assert.equal(detectWalkerMode(listCtx).name, "list");
+
+    for (const ctx of [tabHungrier, listCtx]) {
+      const recent: string[] = [];
+      const lines: string[] = [];
+      const notes: string[] = [];
+      for (let i = 0; i < 6; i++) {
+        const d = decideUnleash({ ...ctx, stepsUsed: ctx.stepsUsed + i, recentClicks: recent }, () => 0.5);
+        lines.push(d.line);
+        notes.push(d.note ?? "");
+        const id = d.line.match(/^click page\.(.+)$/)?.[1];
+        if (id) recent.push(id);
+      }
+      assert.ok(
+        notes.includes("form hunt"),
+        `never hunted (${ctx === tabHungrier ? "tab" : "list"}): ${lines.join(" | ")}`,
+      );
+      assert.ok(
+        lines.every((l) => l !== "open records"),
+        `looped open records: ${lines.join(" | ")}`,
+      );
+      assert.ok(
+        lines.some((l) => /invoices/.test(l)),
+        `never walked toward invoices: ${lines.join(" | ")}`,
+      );
+    }
   });
 
   it("opens a mapped dialog and stands down once inside it", () => {

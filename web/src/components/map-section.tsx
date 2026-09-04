@@ -8,19 +8,22 @@ type SectionNode = Node<GraphNodeData, "section">;
 export function MapSection({ data, selected }: NodeProps<SectionNode>) {
   const Chevron = data.collapsed ? ChevronRight : ChevronDown;
   return (
-    <div className="relative h-full w-full overflow-visible">
+    <div className="relative h-full w-full">
       <Handle type="target" position={Position.Left} className="!size-1.5 !border-zinc-600 !bg-zinc-500" />
-      {data.rings.map((ring, i) => (
-        <span
-          key={`${ring.name}-${i}`}
-          className="pointer-events-none absolute animate-pulse rounded-xl"
-          style={{
-            inset: -(3 + i * 4),
-            boxShadow: `0 0 0 2px ${runHue(ring.hue)}`,
-          }}
-          aria-hidden
-        />
-      ))}
+      {data.rings.length > 0 ? (
+        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+          {data.rings.map((ring, i) => (
+            <span
+              key={`${ring.name}-${i}`}
+              className="absolute animate-pulse rounded-xl"
+              style={{
+                inset: -(3 + i * 4),
+                boxShadow: `0 0 0 2px ${runHue(ring.hue)}`,
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       <div
         className={cn(
           "flex h-full w-full flex-col rounded-xl border bg-zinc-900/80",

@@ -169,8 +169,10 @@ function optionText(opt: LiveSelectOption): string {
 export function rankListedOptions(options: readonly LiveSelectOption[]): LiveSelectOption[] {
   const named = options.filter((o) => (o.label || o.value).trim() !== "");
   if (named.length === 0) return [];
-  const usable = named.filter((o) => !SKIP_STATUS.test(optionText(o)));
-  const pool = usable.length > 0 ? usable : named;
+  const long = named.filter((o) => (o.label || o.value).replace(/\s+/g, " ").trim().length >= 2);
+  const base = long.length > 0 ? long : named;
+  const usable = base.filter((o) => !SKIP_STATUS.test(optionText(o)));
+  const pool = usable.length > 0 ? usable : base;
   const preferred = pool.filter((o) => PREFER_STATUS.test(optionText(o)));
   if (preferred.length === 0) return pool;
   const rest = pool.filter((o) => !preferred.includes(o));

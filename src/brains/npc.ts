@@ -174,8 +174,13 @@ const DEFAULT_RETHINK = 0.15;
 
 /** Among equal-hunger forms, randomize this often; otherwise fewer hops, then map order. */
 export const HUNGRY_TIE_RANDOM = 0.1;
+/**
+ * After a fog reset every mapped form is hunger 1. Picking the closest then
+ * sends every parallel walker to the same nearby form. Spread instead.
+ */
+export const HUNGRY_TIE_SPREAD = 3;
 
-/** Hungriest goal. Ties: ~10% random, else fewer hops, then key order. Distance is not in the score. */
+/** Hungriest goal. Many-way ties spread at random; 2-way ties prefer fewer hops. */
 export function pickHungryGoal(
   goals: readonly NpcGoal[],
   distOf: (key: string) => number,
@@ -187,6 +192,9 @@ export function pickHungryGoal(
     if (g.hunger > max) max = g.hunger;
   }
   const tied = goals.filter((g) => g.hunger === max);
+  if (tied.length >= HUNGRY_TIE_SPREAD) {
+    return tied[Math.floor(rng() * tied.length)]!;
+  }
   if (tied.length > 1 && rng() >= 1 - HUNGRY_TIE_RANDOM) {
     return tied[Math.floor(rng() * tied.length)]!;
   }
@@ -221,10 +229,18 @@ export function planNpc(opts: {
   const rethink = opts.rethink ?? DEFAULT_RETHINK;
   const committed = opts.committed ? reachable.find((g) => g.key === opts.committed) : undefined;
   if (opts.pick === "hungry") {
-    if (committed && rethink === 0) goal = committed;
-    else goal = pickHungryGoal(reachable, distOf, opts.rng);
+    if (committed && opts.rng() > rethink) {
+      const hungrier = reachable.some((g) => g.hunger > committed.hunger);
+      if (!hungrier) goal = committed;
+    }
+    goal ??= pickHungryGoal(reachable, distOf, opts.rng);
   } else {
-    if (committed && opts.rng() > rethink) goal = committed;
+    // Stick to the hunt only when nothing reachable is hungrier (never-landed
+    // rooms must beat a leftover target from last run's neighborhood).
+    if (committed && opts.rng() > rethink) {
+      const hungrier = reachable.some((g) => g.hunger > committed.hunger);
+      if (!hungrier) goal = committed;
+    }
     goal ??= pickWeighted(reachable, scoreOf, opts.rng);
   }
   if (!goal) return undefined;

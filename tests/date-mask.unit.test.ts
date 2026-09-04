@@ -4,6 +4,7 @@ import {
   dateControlRejectedNonDate,
   dateFillValue,
   formatIsoDate,
+  looksLikeDateFieldName,
   looksLikeDateInput,
   looksLikeDateMask,
   parseDateMask,
@@ -21,6 +22,16 @@ describe("date-mask", () => {
     assert.equal(parseDateMask("Enter a date"), undefined);
     assert.equal(looksLikeDateMask("MM/DD/YYYY"), true);
     assert.equal(looksLikeDateMask(""), false);
+    assert.equal(looksLikeDateFieldName("due_from"), true);
+    assert.equal(looksLikeDateFieldName("due_to"), true);
+    assert.equal(looksLikeDateFieldName("due"), true);
+    assert.equal(looksLikeDateFieldName("invoicedate"), true);
+    assert.equal(looksLikeDateFieldName("posted_date"), true);
+    assert.equal(looksLikeDateFieldName("amount_due"), false);
+    assert.equal(looksLikeDateFieldName("due_diligence"), false);
+    assert.equal(looksLikeDateFieldName("update"), false);
+    assert.equal(looksLikeDateFieldName("candidate"), false);
+    assert.equal(looksLikeDateFieldName("name"), false);
   });
 
   it("formats ISO into the mask", () => {

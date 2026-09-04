@@ -7,6 +7,7 @@ import {
   fieldChromeClass,
   formScanlineIssue,
   formScanlineIssues,
+  looksLikeAmountName,
   isFieldGrid,
   onSameRow,
   rowClusters,
@@ -209,6 +210,38 @@ describe("formScanline helpers", () => {
     ]);
     assert.ok(
       issues.some((i) => /Attorney labels do not line up down the column/.test(i.message)),
+      JSON.stringify(issues),
+    );
+  });
+
+  it("does not treat right-locked amount boxes as a broken column", () => {
+    const issues = formScanlineIssues([
+      field({ name: "Attorney", controlTop: 200, controlLeft: 24, controlRight: 300 }),
+      field({ name: "Percentage (100%)", controlTop: 200, controlLeft: 400, controlRight: 500 }),
+      field({ name: "Attorney", controlTop: 260, controlLeft: 24, controlRight: 300 }),
+      field({ name: "Percentage (100%)", controlTop: 260, controlLeft: 440, controlRight: 500 }),
+      field({ name: "Attorney", controlTop: 320, controlLeft: 24, controlRight: 300 }),
+      field({ name: "Percentage (100%)", controlTop: 320, controlLeft: 400, controlRight: 500 }),
+    ]);
+    assert.equal(
+      issues.some((i) => /Percentage/.test(i.message) && /column/.test(i.message)),
+      false,
+      JSON.stringify(issues),
+    );
+  });
+
+  it("does not group painted 0.00 / 100.00 values as a field title column", () => {
+    assert.equal(looksLikeAmountName("0.00"), true);
+    assert.equal(looksLikeAmountName("100.00"), true);
+    assert.equal(looksLikeAmountName("Attorney"), false);
+    const issues = formScanlineIssues([
+      field({ name: "0.00", controlTop: 200, controlLeft: 400, controlRight: 500 }),
+      field({ name: "0.00", controlTop: 260, controlLeft: 440, controlRight: 480 }),
+      field({ name: "0.00", controlTop: 320, controlLeft: 400, controlRight: 500 }),
+    ]);
+    assert.equal(
+      issues.some((i) => /0\.00 fields do not line up down the column/.test(i.message)),
+      false,
       JSON.stringify(issues),
     );
   });

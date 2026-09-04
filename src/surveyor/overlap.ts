@@ -483,6 +483,13 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}\0${b}` : `${b}\0${a}`;
 }
 
+/** Header search/combobox routinely shares pixels with adjacent toolbar chips. */
+function isChromeSearchOverlap(a: WidgetSample, b: WidgetSample): boolean {
+  if (!(a.inChrome && b.inChrome)) return false;
+  const search = (w: WidgetSample) => w.kind === "input" || w.kind === "textarea" || w.kind === "select";
+  return search(a) || search(b);
+}
+
 function overlapIssue(a: WidgetSample, b: WidgetSample, width: number, height: number): QualityIssue {
   const nameA = widgetLabel(a);
   const nameB = widgetLabel(b);
@@ -491,7 +498,8 @@ function overlapIssue(a: WidgetSample, b: WidgetSample, width: number, height: n
     source: "visual",
     rule: "overlap",
     severity: "warning",
-    confidence: overlapConfidence(width, height),
+    // Header/nav crowding (Sign Out vs sidebar) is ledger-only — not a finding.
+    confidence: chrome ? "medium" : overlapConfidence(width, height),
     count: 1,
     where: `${nameA}, ${nameB}`,
     message: chrome ? CHROME_OVERLAP_MESSAGE : `${nameA} and ${nameB} occupy the same pixels`,
@@ -528,7 +536,10 @@ export function issuesFromWidgets(widgets: WidgetSample[]): QualityIssue[] {
         if (Boolean(a.inChrome && b.inChrome) !== chromeFirst) continue;
         if (isParentChild(a, b, i, j)) continue;
         if (isStackedSelectPair(a, b)) continue;
+        if (isChromeSearchOverlap(a, b)) continue;
         if (stackId(a.overlayId) !== stackId(b.overlayId)) continue;
+        // Open menu/listbox/popover painted over another control — z-index owns this.
+        if (expectedOverlay(a.hit?.coverOverlay) || expectedOverlay(b.hit?.coverOverlay)) continue;
         if (rectContains(a.rect, b.rect) || rectContains(b.rect, a.rect)) continue;
         const inter = intersectRects(a.rect, b.rect);
         if (!inter) continue;

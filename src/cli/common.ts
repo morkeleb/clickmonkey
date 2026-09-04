@@ -27,7 +27,7 @@ Commands:
   nasty       Same hunt with junk payloads on the nasty fog clock (site you own)
   explore     Charter-driven LLM walk of legal map ids (needs brain)
   mcp         Host-LLM walk + spec freeze/replay (stdio)
-  fog         Print fog clocks on the sitemap, or --reset to force a full retest [--job map|unleash|nasty]
+  fog         Print fog clocks on the sitemap, or --reset to force a full retest [--job map|unleash|nasty|spec]
   pages       Drop gone rooms from the sitemap (checkbox; --drop id,id for scripts). Not findings.
   report      Markdown findings report from selected runs (folder under clickmonkey/reports/)
   prune       After report: drop false-positive findings (rewrites findings.md + dismissed.json). Not the sitemap.

@@ -2,20 +2,29 @@ import type { Page, Surface } from "../schema/page-model.js";
 import type { BrainContext, BrainDecision } from "./types.js";
 import {
   formSubmitAction,
+  isAuthGatePage,
   isPrimaryFormCommit,
   looksLikeMidForm,
   looksLikeSearchField,
   looksLikeUnfinishedForm,
 } from "./unleash.js";
-import { formatNpcStep, npcHunger, npcKey, planNpc, staleMsForPage } from "./npc.js";
+import { FOG_OLD_MS, fogHunger, formatNpcStep, npcHunger, npcKey, planNpc, staleMsForPage } from "./npc.js";
 
 export { floodNpc as floodHunt, npcHunger as huntHunger, npcKey as huntNodeKey, npcScore as huntScore, pageSurfaceId } from "./npc.js";
 export type { NpcEdge as HuntEdge, NpcNode as HuntNode, NpcReach as HuntReach } from "./npc.js";
 
 /** Chance to stay on local chrome instead of walking toward a map form. */
 export const FORM_HUNT_STAY_RATE = 0.2;
-/** Chance to drop the current hunt target and pick again. Unused when pick is `hungry`. */
+/**
+ * Mix job-land into form hunger so a never-visited page beats a form this
+ * job already stood on (and parallel walkers spread after one lands).
+ * Form-work is still the primary clock — a land is not a fill.
+ */
+export const FORM_LAND_SPREAD = 0.5;
+/** Chance to drop the current hunt target when nothing is hungrier. */
 export const FORM_HUNT_RETHINK = 0.15;
+/** Standing on the list is not a fill — keep that page's unfilled form on top of a many-way tie. */
+const HERE_FORM = 1.05;
 /** Local clicks after a submit that landed on a new page (inspect the record). */
 export const LOOT_EXPLORE_STEPS = 5;
 
@@ -82,10 +91,23 @@ export function mapFormGoals(pages: readonly Page[]): FormGoal[] {
   return goals;
 }
 
+/** Form-work hunger, eased by whether this job has already stood on the page. */
+export function formHuntHunger(
+  ctx: Pick<BrainContext, "formHits" | "formWork" | "pageFog" | "view">,
+  g: FormGoal,
+): number {
+  const work = npcHunger(ctx.formHits?.[formGoalKey(g)] ?? 0, staleMsForPage(ctx.formWork, formGoalKey(g)));
+  const onHost = ctx.view?.page === g.pageId;
+  const land = fogHunger(onHost ? FOG_OLD_MS : staleMsForPage(ctx.pageFog, g.pageId));
+  const mix = work * (FORM_LAND_SPREAD + (1 - FORM_LAND_SPREAD) * land);
+  return onHost ? mix * HERE_FORM : mix;
+}
+
 /** Next step toward an under-tested map form. Undefined when already on one. */
 export function decideFormHunt(ctx: BrainContext, rng: () => number): BrainDecision | undefined {
   const pages = ctx.pages;
   if (!pages || pages.length === 0) return undefined;
+  if (isAuthGatePage(ctx.view.page, pages)) return undefined;
   if (ctx.lockForm && isOnFormLock(ctx)) return undefined;
   const mapped = mapFormGoals(pages);
   const forms = ctx.lockForm
@@ -106,14 +128,11 @@ export function decideFormHunt(ctx: BrainContext, rng: () => number): BrainDecis
     ctx,
     goals: locked.map((g) => ({
       key: formGoalKey(g),
-      hunger: npcHunger(
-        ctx.formHits?.[formGoalKey(g)] ?? 0,
-        staleMsForPage(ctx.formWork, formGoalKey(g)),
-      ),
+      hunger: formHuntHunger(ctx, g),
     })),
     rng,
-    committed: ctx.lockForm ? formGoalKey(locked[0]!) : undefined,
-    rethink: ctx.lockForm ? 0 : 1,
+    committed: ctx.lockForm ? formGoalKey(locked[0]!) : ctx.huntTarget,
+    rethink: ctx.lockForm ? 0 : FORM_HUNT_RETHINK,
     pick: "hungry",
   });
   if (!plan) return undefined;

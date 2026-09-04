@@ -103,9 +103,53 @@ describe("fogClicks", () => {
     }).map((a) => a.id);
     assert.deepEqual(ids, ["open_create"]);
   });
+
+  it("does not treat a last-run land as unseen local fog", () => {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const view = viewOf({
+      pages: ["home", "about"],
+      actions: [
+        { id: "collections", nav: true },
+        { id: "link_about", opens: "about" },
+        { id: "open_create", opens: "create" },
+      ],
+    });
+    const ids = fogClicks({
+      view,
+      stepsUsed: 1,
+      pages: [home, about],
+      pageVisits: { "home/page": 1 },
+      pageFog: { home: hourAgo, about: hourAgo },
+    }).map((a) => a.id);
+    assert.deepEqual(ids, ["collections"]);
+  });
 });
 
 describe("decideMapScout", () => {
+  it("pathfinds to a never-landed room instead of re-clicking last run's door", () => {
+    const extra = pageOf({
+      id: "extra",
+      surfaces: [{ id: "page", kind: "page", actions: [] }],
+    });
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const d = decideMap(
+      {
+        view: viewOf({
+          page: "home",
+          pages: ["home", "about", "extra"],
+          actions: [{ id: "link_about", opens: "about" }],
+        }),
+        stepsUsed: 1,
+        pages: [home, about, extra],
+        pageVisits: { "home/page": 1 },
+        pageFog: { home: hourAgo, about: hourAgo },
+      },
+      () => 0.1,
+    );
+    assert.equal(d.line, "open extra");
+    assert.equal(d.note, "map scout");
+  });
+
   it("clicks an unseen dialog opener before sidebar chrome", () => {
     const view = viewOf({
       pages: ["home", "about"],
@@ -148,6 +192,31 @@ describe("decideMapScout", () => {
     );
     assert.equal(d?.line, "open about");
     assert.equal(d?.huntTarget, "about/page");
+  });
+
+  it("drops a leftover hunt when a never-landed room is hungrier", () => {
+    const extra = pageOf({
+      id: "extra",
+      surfaces: [{ id: "page", kind: "page", actions: [] }],
+    });
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const d = decideMapScout(
+      {
+        view: viewOf({
+          page: "home",
+          pages: ["home", "about", "extra"],
+          actions: [{ id: "submit" }],
+        }),
+        stepsUsed: 2,
+        pages: [home, about, extra],
+        pageVisits: { "home/page": 2 },
+        pageFog: { home: hourAgo, about: hourAgo },
+        huntTarget: "about/page",
+      },
+      () => 0.5,
+    );
+    assert.equal(d?.line, "open extra");
+    assert.equal(d?.huntTarget, "extra/page");
   });
 
   it("opens an unvisited hoppable page when nothing local is fog", () => {

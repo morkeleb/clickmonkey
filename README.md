@@ -175,7 +175,7 @@ The `seo` block is optional. Leave it off for an app-only site. Use `private` pr
 
 - **url** — where the run starts.
 - **fence** — pathname prefix plus blacklist substrings. Crossing it bounces the walker back to seed; it is not a website finding.
-- **intro** — DSL lines run after `goto`, before inspect/playbook/replay. Not a function.
+- **intro** — DSL lines run after `goto`, before inspect/playbook/replay. Not a function. If a walker logs itself out, it `goto`s the leash `url` and runs intro again — it does not hunt from the login page.
 - **$VAR / ${VAR}** — fill values resolved from the environment. The log keeps the token.
 - **writePolicy** — `validationOnly` (default) refuses a submit when required fields are filled, so the monkey does not create/update data. `allow` fills empty fields then clicks submit in one burst (it does not click away mid-form). Use `allow` only on a disposable test instance.
 - **skip** — extra widget id/label substrings the walker will not click. Sign out, log out, and close panel are skipped by default.
@@ -232,7 +232,7 @@ clickmonkey unleash [--config] [--url] [--out] [--steps] [--nasty]
 clickmonkey nasty [--config] [--url] [--out] [--steps]
 clickmonkey explore [--config] [--url] [--out] [--steps] [--minutes] [--charter] [--skills]
 clickmonkey mcp [--config]
-clickmonkey fog [--config] [--reset] [--job map|unleash|nasty]
+clickmonkey fog [--config] [--reset] [--job map|unleash|nasty|spec]
 clickmonkey pages [--config] [--drop id,id]
 clickmonkey report [--config] [--runs id,id] [--all] [--out]
 clickmonkey prune [reportId] [--config] [--ids id,id]

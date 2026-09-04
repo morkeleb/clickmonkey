@@ -31,6 +31,7 @@ function jobFogFromPatch(patch: FogPatch): UiSnapshot["graph"]["nodes"][number][
     ...(patch.map ? { map: patch.map } : {}),
     ...(patch.unleash ? { unleash: patch.unleash } : {}),
     ...(patch.nasty ? { nasty: patch.nasty } : {}),
+    ...(patch.spec ? { spec: patch.spec } : {}),
   };
   return Object.keys(jobs).length > 0 ? jobs : undefined;
 }

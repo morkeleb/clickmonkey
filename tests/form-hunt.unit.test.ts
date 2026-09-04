@@ -186,6 +186,37 @@ describe("floodHunt", () => {
 });
 
 describe("decideFormHunt", () => {
+  it("does not hunt forms from a login gate", () => {
+    const d = decideFormHunt(
+      {
+        view: viewOf({
+          page: "login",
+          pages: ["login", "customers", "invoices"],
+          actions: [{ id: "link_customers", opens: "customers" }],
+        }),
+        stepsUsed: 2,
+        pages: [home, customers, invoices],
+      },
+      () => 0,
+    );
+    assert.equal(d, undefined);
+    assert.equal(
+      decideFormHunt(
+        {
+          view: viewOf({
+            page: "logout",
+            pages: ["logout", "customers"],
+            actions: [{ id: "link_customers", opens: "customers" }],
+          }),
+          stepsUsed: 2,
+          pages: [home, customers, invoices],
+        },
+        () => 0,
+      ),
+      undefined,
+    );
+  });
+
   it("hops toward an untested dialog form", () => {
     const d = decideFormHunt(
       {
@@ -261,7 +292,28 @@ describe("decideFormHunt", () => {
     assert.equal(d?.line, "open customers");
   });
 
-  it("does not treat a page land as form work", () => {
+  it("does not treat a page land as a fill — unfilled still beats filled", () => {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const d = decideFormHunt(
+      {
+        view: viewOf({
+          actions: [
+            { id: "link_customers", opens: "customers" },
+            { id: "link_invoices", opens: "invoices" },
+          ],
+        }),
+        stepsUsed: 0,
+        pages: [home, customers, invoices],
+        pageFog: { invoices: hourAgo, customers: hourAgo },
+        formWork: { "customers/add_customer": hourAgo },
+      },
+      () => 0.5,
+    );
+    assert.equal(d?.huntTarget, "invoices/page");
+    assert.equal(d?.line, "open invoices");
+  });
+
+  it("prefers a never-landed form over one this job stood on last run", () => {
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const d = decideFormHunt(
       {
@@ -277,8 +329,8 @@ describe("decideFormHunt", () => {
       },
       () => 0.5,
     );
-    assert.equal(d?.huntTarget, "invoices/page");
-    assert.equal(d?.line, "open invoices");
+    assert.equal(d?.huntTarget, "customers/add_customer");
+    assert.equal(d?.line, "open customers");
   });
 
 
@@ -337,10 +389,31 @@ describe("decideFormHunt", () => {
         pages: [home, customers, invoices],
         huntTarget: "customers/add_customer",
       },
-      () => 0.5,
+      () => 0.1,
     );
     assert.equal(d?.huntTarget, "invoices/page");
     assert.equal(d?.line, "open invoices");
+  });
+
+  it("still opens the host dialog after this job just landed on the list", () => {
+    const justNow = new Date().toISOString();
+    const d = decideFormHunt(
+      {
+        view: viewOf({
+          page: "customers",
+          pages: ["home", "customers", "invoices"],
+          shown: [{ id: "q", value: "", type: "text" }],
+          actions: [{ id: "button_add_customer", opens: "add_customer" }],
+        }),
+        stepsUsed: 1,
+        pages: [home, customers, invoices],
+        pageFog: { customers: justNow },
+        huntTarget: "customers/add_customer",
+      },
+      () => 0.5,
+    );
+    assert.equal(d?.huntTarget, "customers/add_customer");
+    assert.equal(d?.line, "click page.button_add_customer");
   });
 
   it("hunts another form after this surface is spent, even if still standing on it", () => {
@@ -384,6 +457,18 @@ describe("pickHungryGoal", () => {
       )?.key,
       "far/page",
     );
+  });
+
+  it("spreads when many forms share full hunger instead of all walking nearest", () => {
+    const goals = [
+      { key: "near/page", hunger: 1 },
+      { key: "mid/page", hunger: 1 },
+      { key: "far/page", hunger: 1 },
+    ];
+    const dist = (key: string) => (key.startsWith("near") ? 1 : key.startsWith("mid") ? 2 : 5);
+    assert.equal(pickHungryGoal(goals, dist, () => 0)?.key, "near/page");
+    assert.equal(pickHungryGoal(goals, dist, () => 0.4)?.key, "mid/page");
+    assert.equal(pickHungryGoal(goals, dist, () => 0.9)?.key, "far/page");
   });
 });
 

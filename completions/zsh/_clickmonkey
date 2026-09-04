@@ -47,7 +47,7 @@ _clickmonkey() {
     '--check[Validate spec ids against the map (no browser)]' \
     '--fail-on-findings[Exit 1 when a spec run finds a bug]' \
     '--reset[Wipe lands.json fog clocks (fog)]' \
-    '--job[Reset one job clock]:job:(map unleash nasty)' \
+    '--job[Reset one pip clock]:job:(map unleash nasty spec)' \
     '--drop[Drop sitemap page ids without a prompt (pages)]:ids:' \
     '--ids[Finding ids to drop without a prompt (prune)]:ids:' \
     '1:command:->cmds' \

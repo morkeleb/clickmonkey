@@ -29,6 +29,7 @@ export const UiGraphNode = z
         map: z.string().min(1).optional(),
         unleash: z.string().min(1).optional(),
         nasty: z.string().min(1).optional(),
+        spec: z.string().min(1).optional(),
       })
       .strict()
       .optional(),
@@ -305,6 +306,7 @@ export const UiEvent = z
             map: z.string().min(1).optional(),
             unleash: z.string().min(1).optional(),
             nasty: z.string().min(1).optional(),
+            spec: z.string().min(1).optional(),
           })
           .strict(),
       )

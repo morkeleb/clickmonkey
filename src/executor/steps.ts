@@ -364,6 +364,7 @@ async function checkSilentFailedSubmit(
       submitVisible: await submit.isVisible().catch(() => false),
       requests: watch.requests,
       validity,
+      trackedFills: state.lastFills,
     })
   ) {
     return undefined;

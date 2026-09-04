@@ -351,6 +351,23 @@ export async function tryFallbackFormSubmit(page: Page, saveLoc: PwLocator): Pro
       .catch(() => false);
     if (ok) return true;
   }
+  const typedEnter = await saveLoc
+    .evaluate((el) => {
+      const node = el as { closest(sel: string): { querySelector(sel: string): { focus?: () => void } | null } | null };
+      const form = node.closest("form");
+      if (!form) return false;
+      const input = form.querySelector(
+        'input:not([type="hidden"]):not([type="submit"]):not([disabled]), textarea:not([disabled])',
+      ) as { focus?: () => void } | null;
+      if (!input?.focus) return false;
+      input.focus();
+      return true;
+    })
+    .catch(() => false);
+  if (typedEnter) {
+    await page.keyboard.press("Enter").catch(() => undefined);
+    return true;
+  }
   return false;
 }
 
