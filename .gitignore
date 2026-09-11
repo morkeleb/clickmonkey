@@ -21,6 +21,7 @@ clickmonkey/runs/*/verbose/
 clickmonkey/replays/
 clickmonkey/dev-origin
 clickmonkey/lands.json
+clickmonkey/storage-state.json
 auth.json
 playwright-report/
 *.json.lock

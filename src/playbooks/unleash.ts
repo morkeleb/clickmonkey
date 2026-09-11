@@ -82,6 +82,7 @@ export async function runUnleash(opts: {
   /** Map page id (`clients_new`) — hunt there, fill, submit, stop when the page changes. */
   form?: string;
   echo?: { write(chunk: string): unknown };
+  storageState?: string;
 }): Promise<UnleashResult> {
   const steps = opts.steps ?? UNLEASH_DEFAULT_STEPS;
   const mode = opts.mode ?? "mutate";
@@ -115,7 +116,7 @@ export async function runUnleash(opts: {
   }
 
   try {
-    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout, storageState: opts.storageState }, async (handle) => {
     const state = await bootRun(handle, config, opts.outDir, {
       configPath: opts.configPath,
       verbose: opts.verbose,

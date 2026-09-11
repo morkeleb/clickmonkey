@@ -18,6 +18,7 @@ Usage:
 
 Commands:
   init        Create clickmonkey.json + clickmonkey/ (leash, empty map)
+  login       Open a headed browser, you log in once, save the session (storage-state.json)
   inspect     Survey the current page and grow the map
   view        Print the compact view of the current surface
   step        Run one DSL line and append it to the log
@@ -40,6 +41,8 @@ Commands:
 
 Options:
   --verbose   Write per-step HTML + view dumps under <run>/verbose/
+  --headed    Show the browser (required for login; off by default)
+  --storage-state <path>  Reuse a saved login session (see: clickmonkey login)
 
 Run clickmonkey <command> --help for command options.
 `;
@@ -71,6 +74,14 @@ export function printUsage(extra?: string): void {
 
 export function resolveConfigPath(value?: string): string {
   return resolve(process.cwd(), value ?? "clickmonkey.json");
+}
+
+/** Resolve a --storage-state path and fail with a usage error if it does not exist. */
+export function resolveStorageState(value?: string): string | undefined {
+  if (!value) return undefined;
+  const path = resolve(process.cwd(), value);
+  if (!existsSync(path)) fail(EXIT_USAGE, `storage state not found: ${path} (run: clickmonkey login)`);
+  return path;
 }
 
 export function resolveOutDir(value?: string, configPath?: string): string {

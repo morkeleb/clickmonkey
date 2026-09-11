@@ -280,7 +280,7 @@ export async function handleExploreInit(
 
 export async function handleExploreStart(
   host: McpHost,
-  args: { charter?: string; skills?: string; headed?: boolean; config?: string; map?: string },
+  args: { charter?: string; skills?: string; headed?: boolean; config?: string; map?: string; storageState?: string },
 ): Promise<McpToolResult> {
   const configPath = configPathOf(host, args.config);
   if (!existsSync(configPath)) {
@@ -314,6 +314,7 @@ export async function handleExploreStart(
       charter: args.charter,
       skills: args.skills,
       brainName: "mcp",
+      storageState: args.storageState,
     });
     host.reported = false;
     host.pendingReport = undefined;
@@ -857,6 +858,11 @@ export function registerMcpTools(server: McpServer, host: McpHost): void {
           .min(1)
           .optional()
           .describe("Sitemap JSON to load instead of clickmonkey/map.json (absolute or next to the leash)."),
+        storageState: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Path to a saved Playwright storage state (from clickmonkey login) to reuse a login session."),
       }),
     },
     async (args) => handleExploreStart(host, args),
