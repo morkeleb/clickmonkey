@@ -26,7 +26,7 @@ export function countFindingsInMarkdown(markdown: string): number {
   if (start < 0) return 0;
   const after = markdown.slice(start + 1);
   const rel = after.search(
-    /^## (?:Testability|Accessibility|Visual|Quality|By page|Extra|Appendix)\s*$/m,
+    /^## (?:Fixed|Testability|Accessibility|Visual|Quality|By page|Extra|Appendix)\s*$/m,
   );
   const slice = rel < 0 ? markdown.slice(start) : markdown.slice(start, start + 1 + rel);
   const parts = slice.split(/^(## (?:Critical|Major|Minor|Suggestion))\s*$/m);

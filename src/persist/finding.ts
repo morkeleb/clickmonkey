@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   appendFileSync,
   copyFileSync,
@@ -11,8 +12,16 @@ import {
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { cannedReport } from "../reports/canned.js";
 import { redactEnvInText } from "../executor/secrets.js";
-import { Finding, findingId, severityForKind, type FindingKind, type FindingSeverity } from "../schema/finding.js";
+import {
+  Finding,
+  findingId,
+  pageErrorDetail,
+  severityForKind,
+  type FindingKind,
+  type FindingSeverity,
+} from "../schema/finding.js";
 import type { QualityIssue } from "../schema/quality.js";
+import { ledgerPath } from "../surveyor/path-template.js";
 
 const BRAIN_MISS_KINDS = new Set<FindingKind>(["unknownId", "unresolvedId"]);
 
@@ -64,7 +73,89 @@ function pathOfFindingUrl(url: string | undefined): string | undefined {
   }
 }
 
+const HTTP_WRITE = /^(POST|PUT|PATCH|DELETE)$/i;
+
+function ledgerPathOfUrl(url: string | undefined): string {
+  const raw = pathOfFindingUrl(url);
+  if (!raw) return "";
+  return ledgerPath(raw);
+}
+
+function httpMethodOf(message: string): string {
+  const m = /^HTTP\s+\d{3}\s+([A-Z]+)/i.exec(message);
+  return m?.[1]?.toUpperCase() ?? "";
+}
+
+/**
+ * Canonical identity for the same product bug (no run id, step, or fill value).
+ * Parametric URLs are slotted (`/vouchers/:id1`).
+ */
+export function findingFingerprintOf(
+  f: Pick<Finding, "kind" | "message" | "url" | "pageId" | "widgetRef" | "httpStatus">,
+  extra?: { url?: string; pageId?: string },
+): string {
+  const url = extra?.url ?? f.url;
+  const pageId = extra?.pageId ?? f.pageId ?? "";
+  const path = ledgerPathOfUrl(url);
+  if (f.kind === "notFound") return `notFound\t${path}`;
+  if (f.kind === "httpError") {
+    const method = httpMethodOf(f.message);
+    const status = f.httpStatus;
+    const refused =
+      (status === 400 || status === 409 || status === 422) && HTTP_WRITE.test(method);
+    return `${refused ? "serverRefusedSubmit" : "httpError"}\t${status ?? ""}\t${path}`;
+  }
+  if (f.kind === "visualIssue") return visualFindingKey(f);
+  if (f.kind === "pageError") {
+    return `pageError\t${pageErrorDetail(f.message)}\t${pageId}\t${f.widgetRef ?? ""}`;
+  }
+  const msg = (f.message ?? "").replace(/\s+/g, " ").trim();
+  const harness = /^(locator\.|Timeout \d+ms exceeded)/i.test(msg);
+  if (harness) return `${f.kind}\t${msg.split("(")[0]!.trim()}\t${pageId}`;
+  return `${f.kind}\t${msg}\t${path || pageId}\t${f.widgetRef ?? ""}`;
+}
+
+export type FindingIdentityFields = Pick<
+  Finding,
+  "kind" | "message" | "url" | "pageId" | "widgetRef" | "httpStatus"
+> & { idempotencyKey?: string };
+
+export type FindingIdentity = { fingerprint: string; idempotencyKey: string };
+
+/** `ik_` + 16 hex of the canonical fingerprint. */
+export function idempotencyKeyOfFingerprint(fingerprint: string): string {
+  const digest = createHash("sha256").update(fingerprint).digest("hex").slice(0, 16);
+  return `ik_${digest}`;
+}
+
+export function isFindingIdempotencyKey(value: string): boolean {
+  return /^ik_[0-9a-f]{16}$/.test(value);
+}
+
+/** `ik_` + 16 hex of the fingerprint. Same bug → same key across runs. */
+export function findingIdempotencyKey(
+  f: FindingIdentityFields,
+  extra?: { url?: string; pageId?: string },
+): string {
+  return idempotencyKeyOfFingerprint(findingFingerprintOf(f, extra));
+}
+
+export function findingIdentityOf(
+  f: FindingIdentityFields,
+  extra?: { url?: string; pageId?: string },
+): FindingIdentity {
+  const fingerprint = findingFingerprintOf(f, extra);
+  return {
+    fingerprint,
+    idempotencyKey: f.idempotencyKey ?? idempotencyKeyOfFingerprint(fingerprint),
+  };
+}
+
 function samePersistedFinding(a: Finding, b: Finding): boolean {
+  const ka = a.idempotencyKey ?? findingIdempotencyKey(a);
+  const kb = b.idempotencyKey ?? findingIdempotencyKey(b);
+  if (ka === kb) return true;
+  if (a.idempotencyKey && b.idempotencyKey) return false;
   if (a.kind !== b.kind) return false;
   if (a.kind === "notFound") {
     const pa = pathOfFindingUrl(a.url);
@@ -112,6 +203,7 @@ export function persistFinding(
 ): PersistFindingResult {
   if (!shouldPersistFinding(finding.kind)) return { finding, created: false };
 
+  finding.idempotencyKey ??= findingIdempotencyKey(finding);
   const existing = findDuplicateFinding(outDir, finding);
   if (existing) {
     const src = opts?.screenshotPath ?? finding.screenshotPath;

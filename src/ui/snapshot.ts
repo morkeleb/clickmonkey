@@ -7,7 +7,14 @@ import { loadCombinedQuality } from "../persist/quality.js";
 import { jobFogOf } from "../schema/fog.js";
 import type { PageFog } from "../schema/page-model.js";
 import { listReports } from "../persist/reports.js";
+import { findingIdentityOf } from "../persist/finding.js";
+import { loadFixed } from "../persist/fixed.js";
 import { collectFindingCases, listRuns } from "../persist/runs.js";
+import {
+  classifyFindingClusters,
+  lifecycleByKey,
+  type ClassifiedCluster,
+} from "../reports/finding-status.js";
 import { loadCombinedTestability } from "../persist/testability.js";
 import { runsDir } from "../persist/workspace.js";
 import type { Config } from "../schema/config.js";
@@ -38,8 +45,23 @@ function leashFromConfig(config: Config): UiLeash {
   });
 }
 
+function classifyWorkspaceFindings(
+  configPath: string,
+  listed: ReturnType<typeof listRuns>,
+  findings: ReturnType<typeof collectFindingCases>,
+) {
+  const runIds = listed.map((r) => r.id);
+  return classifyFindingClusters({
+    selected: findings,
+    all: findings,
+    selectedRunIds: runIds,
+    confirmed: loadFixed(configPath),
+  });
+}
+
 function mapFindingsOf(
   findings: ReturnType<typeof collectFindingCases>,
+  life?: Map<string, ClassifiedCluster>,
 ): ReturnType<typeof UiMapFinding.parse>[] {
   return findings.map((c) => {
     const href = c.url ?? c.finding.url;
@@ -52,6 +74,8 @@ function mapFindingsOf(
         path = undefined;
       }
     }
+    const ident = findingIdentityOf(c.finding, { url: c.url, pageId: c.pageId });
+    const row = life?.get(ident.idempotencyKey);
     return UiMapFinding.parse({
       id: c.id,
       runId: c.runId,
@@ -62,6 +86,10 @@ function mapFindingsOf(
       ...(c.pageId ? { pageId: c.pageId } : {}),
       ...(path ? { path } : {}),
       ...(c.screenshotPath ? { screenshotUrl: runFileUrl(c.runId, `findings/${c.id}/screenshot.png`) } : {}),
+      idempotencyKey: ident.idempotencyKey,
+      ...(row?.status ? { status: row.status } : {}),
+      ...(row?.lastRunId ? { lastRunId: row.lastRunId } : {}),
+      ...(row?.retestRunId ? { retestRunId: row.retestRunId } : {}),
     });
   });
 }
@@ -144,8 +172,13 @@ export function refreshUiSnapshot(
     return { ...snapshot, testability: loadCombinedTestability(runDirs, configPath) };
   }
   const findings = collectFindingCases(runDirs, { tapes: false });
+  const classified = classifyWorkspaceFindings(configPath, listed, findings);
+  const life = lifecycleByKey(classified);
   const hops = hopsOf(listed);
-  const graph = buildUiGraph(snapshot.map, { findings, hops });
+  const graph = buildUiGraph(snapshot.map, {
+    findings: classified.open.flatMap((row) => row.cases),
+    hops,
+  });
   const shots = new Map(
     snapshot.graph.nodes.flatMap((n) => (n.screenshotUrl ? [[n.pageId, n.screenshotUrl] as const] : [])),
   );
@@ -157,7 +190,7 @@ export function refreshUiSnapshot(
   return {
     ...snapshot,
     graph: withFog(graph, snapshot.map.pages),
-    findings: mapFindingsOf(findings),
+    findings: mapFindingsOf(findings, life),
     runs: collectUiRuns(configPath),
     reports: listReports(configPath).map((r) => ({
       id: r.id,
@@ -212,13 +245,18 @@ export function buildUiSnapshot(configPath: string): UiSnapshot {
   const testability = loadCombinedTestability(runDirs, configPath);
   const quality = loadCombinedQuality(runDirs, configPath);
   const findings = collectFindingCases(runDirs, { tapes: false });
+  const classified = classifyWorkspaceFindings(configPath, listed, findings);
+  const life = lifecycleByKey(classified);
   const hops = hopsOf(listed);
   const shots = latestPageScreenshotUrls(listShotRunDirs(configPath), {
     pages: config.map.pages,
     appOrigin: originOfHref(config.url),
   });
-  const mapFindings = mapFindingsOf(findings);
-  const graph = withFog(buildUiGraph(config.map, { findings, hops }), config.map.pages);
+  const mapFindings = mapFindingsOf(findings, life);
+  const graph = withFog(
+    buildUiGraph(config.map, { findings: classified.open.flatMap((row) => row.cases), hops }),
+    config.map.pages,
+  );
   if (shots.size > 0) {
     graph.nodes = graph.nodes.map((node) => {
       if (node.kind !== "page") return node;

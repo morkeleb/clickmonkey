@@ -3,7 +3,7 @@ import { chat, type ChatClient } from "../brains/chat.js";
 import type { Config } from "../schema/config.js";
 
 const LOC_LINE =
-  /`([A-Za-z]+)` · (\w+)(?: · (\d+)× in (\d+) runs?)? · `(fnd_[^`]+)`(.*)$/m;
+  /`([A-Za-z]+)` · (\w+)(?: · (\d+)× in (\d+) runs?)? · (?:`(ik_[0-9a-f]+)` · )?`(fnd_[^`]+)`(.*)$/m;
 const COPY_LINE = /^- (\S+) `(fnd_[^`]+)`/;
 
 export type ReportFinding = {
@@ -16,10 +16,13 @@ export type ReportFinding = {
   title: string;
   heading: string;
   markdown: string;
+  idempotencyKey?: string;
 };
 
 function backticks(s: string): string[] {
-  return [...s.matchAll(/`([^`]+)`/g)].map((m) => m[1]!).filter((t) => !t.startsWith("fnd_"));
+  return [...s.matchAll(/`([^`]+)`/g)]
+    .map((m) => m[1]!)
+    .filter((t) => !t.startsWith("fnd_") && !t.startsWith("ik_"));
 }
 
 function cardKey(runIds: string[], id: string): string {
@@ -30,7 +33,7 @@ function findingsBounds(markdown: string): { start: number; end: number } | unde
   const start = markdown.search(/^## Findings\s*$/m);
   if (start < 0) return undefined;
   const after = markdown.slice(start + 1);
-  const rel = after.search(/^## (?:Testability|Accessibility|Visual|Quality|By page|Extra|Appendix)\s*$/m);
+  const rel = after.search(/^## (?:Fixed|Testability|Accessibility|Visual|Quality|By page|Extra|Appendix)\s*$/m);
   const end = rel < 0 ? markdown.length : start + 1 + rel;
   return { start, end };
 }
@@ -42,9 +45,10 @@ function parseBlock(heading: string, raw: string): ReportFinding | undefined {
   if (!title) return undefined;
   const loc = LOC_LINE.exec(text);
   if (!loc) return undefined;
-  const id = loc[5]!;
+  const idempotencyKey = loc[5] || undefined;
+  const id = loc[6]!;
   const runCount = loc[4] ? Number(loc[4]) : 1;
-  const restIds = backticks(loc[6] ?? "");
+  const restIds = backticks(loc[7] ?? "");
   const runIds = restIds.slice(0, Number.isFinite(runCount) && runCount > 0 ? runCount : 1);
   const ids = new Set<string>([id]);
   const runs = [...runIds];
@@ -65,6 +69,7 @@ function parseBlock(heading: string, raw: string): ReportFinding | undefined {
     title,
     heading,
     markdown: text.endsWith("\n") ? text : `${text}\n`,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   };
 }
 
@@ -88,7 +93,7 @@ export function parseReportFindings(markdown: string): ReportFinding[] {
   return out;
 }
 
-/** Resolve `--ids` tokens to card keys. Bare `fnd_*` is ok when it matches one card. */
+/** Resolve `--ids` tokens to card keys. Bare `fnd_*` is ok when it matches one card. `ik_*` drops every card of that bug. */
 export function resolveDropKeys(findings: ReportFinding[], tokens: Iterable<string>): string[] {
   const keys: string[] = [];
   const seen = new Set<string>();
@@ -103,6 +108,12 @@ export function resolveDropKeys(findings: ReportFinding[], tokens: Iterable<stri
     const byKey = findings.find((f) => f.key === token);
     if (byKey) {
       push(byKey.key);
+      continue;
+    }
+    if (token.startsWith("ik_")) {
+      for (const f of findings) {
+        if (f.idempotencyKey === token) push(f.key);
+      }
       continue;
     }
     const hits = findings.filter(
@@ -208,9 +219,11 @@ export async function suggestFalsePositives(
   const out = new Map<string, string>();
   const brain = config.brain;
   if (!brain?.baseUrl || !brain.model || findings.length === 0) return out;
-  const known = new Set(findings.flatMap((f) => [f.key, f.id, ...f.ids]));
+  const known = new Set(
+    findings.flatMap((f) => [f.key, f.id, ...f.ids, ...(f.idempotencyKey ? [f.idempotencyKey] : [])]),
+  );
   const digest = findings.map((f) => ({
-    id: f.key,
+    id: f.idempotencyKey ?? f.key,
     kind: f.kind,
     severity: f.severity,
     title: f.title,
@@ -229,7 +242,7 @@ export async function suggestFalsePositives(
           "You review a ClickMonkey findings report for false positives after a human walk.",
           "Drop walker/harness noise: expected overlays, fence bounces, junk the walker typed that is not a product defect, duplicate restatements, locator timeouts.",
           "Keep real product bugs: uncaught JS, HTTP 404/5xx, missing validation, sheared product text, broken writes.",
-          'JSON only: { "drop": [{ "id": "fnd_…", "reason": "one line" }] }.',
+          'JSON only: { "drop": [{ "id": "ik_… or fnd_…", "reason": "one line" }] }.',
           "Use only provided ids. Empty drop is allowed.",
         ].join("\n"),
       },
@@ -251,7 +264,13 @@ export async function suggestFalsePositives(
     if (!known.has(item.id)) continue;
     const reason = item.reason.replace(/\s+/g, " ").trim();
     if (!reason) continue;
-    const card = findings.find((f) => f.key === item.id || f.id === item.id || f.ids.includes(item.id));
+    const card = findings.find(
+      (f) =>
+        f.key === item.id ||
+        f.id === item.id ||
+        f.ids.includes(item.id) ||
+        f.idempotencyKey === item.id,
+    );
     if (card) out.set(card.key, reason);
     else out.set(item.id, reason);
   }

@@ -550,6 +550,7 @@ describe("buildRunDetail", () => {
     );
     assert.equal(detail.findings.length, 1);
     assert.equal(detail.findings[0]?.pageId, "home");
+    assert.match(detail.findings[0]?.idempotencyKey ?? "", /^ik_[0-9a-f]{16}$/);
     const json = JSON.stringify(detail);
     assert.equal(json.includes(runDir), false);
     assert.equal(json.includes("tapePath"), false);

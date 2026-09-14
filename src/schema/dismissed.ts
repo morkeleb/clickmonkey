@@ -5,7 +5,10 @@ export const DismissedItem = z
     dismissedAt: z.string().min(1),
     id: z.string().min(1),
     runId: z.string().min(1).optional(),
+    /** Canonical fingerprint of the bug. Kept so older ledgers still match. */
     fingerprint: z.string().min(1).optional(),
+    /** `ik_` of the bug. One prune dismisses later runs of the same finding. */
+    idempotencyKey: z.string().min(1).optional(),
     kind: z.string().min(1).optional(),
     title: z.string().min(1).optional(),
     reason: z.string().min(1).optional(),

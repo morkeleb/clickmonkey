@@ -2,8 +2,14 @@ import { dirname, relative } from "node:path";
 import { z } from "zod";
 import { chat, type ChatClient } from "../brains/chat.js";
 import { isDismissed, loadDismissed } from "../persist/dismissed.js";
-import { visualFindingKey } from "../persist/finding.js";
-import { collectFindingCases, type FindingCase } from "../persist/runs.js";
+import { findingIdentityOf } from "../persist/finding.js";
+import { loadFixed } from "../persist/fixed.js";
+import { collectFindingCases, listRuns, type FindingCase } from "../persist/runs.js";
+import {
+  classifyFindingClusters,
+  lifecycleByKey,
+  type ClassifiedCluster,
+} from "./finding-status.js";
 import { loadPresence, presencePath } from "../persist/presence.js";
 import { loadCombinedQuality } from "../persist/quality.js";
 import { plannedReportPath, writeReportFolder } from "../persist/reports.js";
@@ -68,20 +74,12 @@ export function caseKey(c: Pick<FindingCase, "runId" | "id">): string {
 }
 
 /** Collapse the same product bug seen in several runs (or twice in one run). */
+export function findingIdentity(c: FindingCase) {
+  return findingIdentityOf(c.finding, { url: c.url, pageId: c.pageId });
+}
+
 export function findingFingerprint(c: FindingCase): string {
-  const rule = c.check.rule;
-  const path = pathOfHref(c.finding.url ?? c.url ?? "") ?? "";
-  if (rule === "notFound") return `notFound\t${path}`;
-  if (rule === "httpError" || rule === "serverRefusedSubmit") {
-    return `${rule}\t${c.finding.httpStatus ?? ""}\t${path}`;
-  }
-  if (c.finding.kind === "visualIssue") {
-    return visualFindingKey(c.finding);
-  }
-  const msg = c.finding.message.replace(/\s+/g, " ").trim();
-  const harness = /^(locator\.|Timeout \d+ms exceeded)/i.test(msg);
-  if (harness) return `${rule}\t${msg.split("(")[0]!.trim()}`;
-  return `${rule}\t${msg}\t${path}`;
+  return findingIdentity(c).fingerprint;
 }
 
 export type FindingCluster = { primary: FindingCase; copies: FindingCase[] };
@@ -90,7 +88,7 @@ export function collapseFindingCases(cases: FindingCase[]): FindingCluster[] {
   const byKey = new Map<string, FindingCluster>();
   const order: FindingCluster[] = [];
   for (const c of cases) {
-    const key = findingFingerprint(c);
+    const key = findingIdentity(c).idempotencyKey;
     const hit = byKey.get(key);
     if (hit) {
       hit.copies.push(c);
@@ -201,6 +199,7 @@ function renderCase(
   extra?: { title?: string; expected?: string; actual?: string; why?: string },
   copies: FindingCase[] = [],
   catalog?: ClassCatalog,
+  life?: ClassifiedCluster,
 ): string {
   const computed = findingReportTitle(c.finding.kind, c.finding.message, c.finding.httpStatus);
   const extraTitle = extra?.title?.trim();
@@ -213,14 +212,16 @@ function renderCase(
   const seen =
     all.length > 1 ? `${all.length}× in ${runIds.length} run${runIds.length === 1 ? "" : "s"}` : "";
   const pathBit = path && url ? `[${path}](${url})` : url ? url : undefined;
-  const head = [pathBit, c.severity, seen || undefined].filter(Boolean).join(" · ");
+  const lifeBit = life?.status === "new" || life?.status === "still" ? life.status : undefined;
+  const head = [pathBit, c.severity, lifeBit, seen || undefined].filter(Boolean).join(" · ");
   const canned = expectedActual(c);
   const expected = extra?.expected?.trim() || canned.expected;
   const actual = extra?.actual?.trim() || canned.actual;
   const check = c.check;
   const why = (extra?.why?.trim() || c.why || check.why).trim();
+  const ik = findingIdentity(c).idempotencyKey;
   const loc: string[] = [
-    `\`${c.finding.kind}\` · ${c.severity}${seen ? ` · ${seen}` : ""} · \`${c.id}\``,
+    `\`${c.finding.kind}\` · ${c.severity}${seen ? ` · ${seen}` : ""} · \`${ik}\` · \`${c.id}\``,
   ];
   if (runIds.length === 1) loc.push(`\`${runIds[0]}\``);
   else loc.push(runIds.map((id) => `\`${id}\``).join(" "));
@@ -810,6 +811,7 @@ function countLine(
   runCount: number,
   catalog: Catalog,
   qualityFull?: boolean,
+  fixedCount = 0,
 ): string {
   const counts = SEV_ORDER.map((s) => {
     const n = clusters.filter((g) => (g.primary.severity ?? severityForKind(g.primary.finding.kind)) === s).length;
@@ -817,16 +819,21 @@ function countLine(
   }).filter(Boolean);
   const n = clusters.length;
   const findings = `${n} finding${n === 1 ? "" : "s"} from ${runCount} run${runCount === 1 ? "" : "s"} (${counts.join(", ") || "none"}).`;
-  if (qualityFull || catalog.leftoverTotal <= LEFTOVER_PAGE_CAP) return findings;
-  return `${findings} Showing the top ${LEFTOVER_PAGE_CAP} of ${catalog.leftoverTotal} pages with issues.`;
+  const fixed =
+    fixedCount > 0
+      ? ` ${fixedCount} confirmed fixed by replaying the same tape.`
+      : "";
+  if (qualityFull || catalog.leftoverTotal <= LEFTOVER_PAGE_CAP) return `${findings}${fixed}`;
+  return `${findings}${fixed} Showing the top ${LEFTOVER_PAGE_CAP} of ${catalog.leftoverTotal} pages with issues.`;
 }
 
 function fallbackSummary(
   clusters: FindingCluster[],
   catalog: Catalog,
   meta: ReportMeta,
+  fixedCount = 0,
 ): string[] {
-  const lines = [countLine(clusters, meta.runIds.length, catalog, meta.qualityFull)];
+  const lines = [countLine(clusters, meta.runIds.length, catalog, meta.qualityFull, fixedCount)];
   if (catalog.pageCount > 0) {
     lines[0] = `${lines[0]} Workspace ledger across ${catalog.pageCount} page${catalog.pageCount === 1 ? "" : "s"}.`;
   }
@@ -910,17 +917,47 @@ function renderExploreOutlines(outlines: ReportMeta["outlines"]): string[] {
   return lines;
 }
 
+function renderFixed(items: ClassifiedCluster[]): string[] {
+  if (items.length === 0) return [];
+  const n = items.length;
+  const lines = [
+    "## Fixed",
+    "",
+    `_${n} finding${n === 1 ? "" : "s"} did not reproduce when the same tape was replayed (same fills). A later unleash/nasty land is not a retest._`,
+    "",
+  ];
+  for (const item of items) {
+    const c = item.cases[0]!;
+    const title = findingReportTitle(c.finding.kind, c.finding.message, c.finding.httpStatus);
+    const bits = [
+      `\`${c.finding.kind}\``,
+      c.severity,
+      `\`${item.key}\``,
+      `last \`${item.lastRunId}\``,
+      item.retestRunId ? `replay \`${item.retestRunId}\`` : undefined,
+      c.pageId ? `\`${c.pageId}\`` : undefined,
+    ].filter(Boolean);
+    lines.push(`### ${title}`, "", bits.join(" · "), "");
+  }
+  return lines;
+}
+
 export function renderFindingsReport(
   cases: FindingCase[],
   meta: ReportMeta,
   reportPath: string,
   llm?: Map<string, { title?: string; expected?: string; actual?: string; why?: string }>,
   summary?: string,
+  classified?: { open: ClassifiedCluster[]; fixed: ClassifiedCluster[] },
 ): string {
   const clusters = collapseFindingCases(cases);
   const leftoverCap = meta.qualityFull ? Number.POSITIVE_INFINITY : LEFTOVER_PAGE_CAP;
   const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap, cases);
-  const indexed = withChapterIndex(fallbackSummary(clusters, catalog, meta), catalog);
+  const life = classified ? lifecycleByKey(classified) : undefined;
+  const indexed = withChapterIndex(
+    fallbackSummary(clusters, catalog, meta, classified?.fixed.length ?? 0),
+    catalog,
+  );
   const summaryLines = summary?.trim()
     ? [summary.trim(), "", ...dropLeadCountLine(indexed)]
     : indexed;
@@ -946,12 +983,17 @@ export function renderFindingsReport(
     if (items.length === 0) continue;
     lines.push(`## ${sev[0]!.toUpperCase()}${sev.slice(1)}`, "");
     for (const g of items) {
-      lines.push(renderCase(g.primary, reportPath, llm?.get(caseKey(g.primary)), g.copies, catalog), "");
+      const ik = findingIdentity(g.primary).idempotencyKey;
+      lines.push(
+        renderCase(g.primary, reportPath, llm?.get(caseKey(g.primary)), g.copies, catalog, life?.get(ik)),
+        "",
+      );
     }
   }
   if (clusters.length === 0) {
     lines.push("_No findings in the selected runs._", "");
   }
+  lines.push(...renderFixed(classified?.fixed ?? []));
   for (const chapter of CHAPTER_ORDER) {
     lines.push(...renderChapter(chapter, catalog));
   }
@@ -974,6 +1016,7 @@ export type WrittenRunsReport = {
   meta: ReportMeta;
   extras?: Map<string, { title?: string; expected?: string; actual?: string; why?: string }>;
   summary?: string;
+  classified?: { open: ClassifiedCluster[]; fixed: ClassifiedCluster[] };
 };
 
 const HOST_TEXT_MAX = 8000;
@@ -997,11 +1040,34 @@ export async function writeRunsReport(opts: {
   outlines?: Array<{ runId: string; outline: UiExploreOutline }>;
 }): Promise<WrittenRunsReport> {
   const dismissed = loadDismissed(opts.configPath);
-  const cases = collectFindingCases(opts.runDirs).filter(
-    (c) =>
-      !isDismissed(dismissed, { id: c.id, runId: c.runId, fingerprint: findingFingerprint(c) }),
-  );
+  const keep = (c: FindingCase) => {
+    const ident = findingIdentity(c);
+    return !isDismissed(dismissed, {
+      id: c.id,
+      runId: c.runId,
+      fingerprint: ident.fingerprint,
+      idempotencyKey: ident.idempotencyKey,
+    });
+  };
+  const cases = collectFindingCases(opts.runDirs).filter(keep);
   const runIds = opts.runDirs.map((d) => d.split(/[/\\]/).pop() ?? d);
+  const listed = listRuns(opts.configPath);
+  const dirById = new Map(listed.map((r) => [r.id, r.dir]));
+  for (const dir of opts.runDirs) {
+    const id = dir.split(/[/\\]/).pop() ?? dir;
+    if (!dirById.has(id)) dirById.set(id, dir);
+  }
+  const workspaceRuns = [...dirById.entries()].map(([id, dir]) => ({ id, dir }));
+  const classified = classifyFindingClusters({
+    selected: cases,
+    all: collectFindingCases(
+      workspaceRuns.map((r) => r.dir),
+      { tapes: false },
+    ).filter(keep),
+    selectedRunIds: runIds,
+    confirmed: loadFixed(opts.configPath),
+  });
+  const openCases = classified.open.flatMap((row) => row.cases);
   const generatedAt = new Date().toISOString();
   const reportId = newRunId();
   const mdPath = plannedReportPath(opts.configPath, reportId);
@@ -1024,17 +1090,22 @@ export async function writeRunsReport(opts: {
   if (opts.config.brain) {
     try {
       const leftoverCap = opts.qualityFull ? Number.POSITIVE_INFINITY : LEFTOVER_PAGE_CAP;
-      const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap, cases);
-      const digest = fallbackSummary(collapseFindingCases(cases), catalog, meta).join("\n");
-      const enriched = await enrichWithBrain(cases, opts.config, chat, digest);
+      const catalog = buildCatalog(meta.testability, meta.quality, leftoverCap, openCases);
+      const digest = fallbackSummary(
+        collapseFindingCases(openCases),
+        catalog,
+        meta,
+        classified.fixed.length,
+      ).join("\n");
+      const enriched = await enrichWithBrain(openCases, opts.config, chat, digest);
       if (!summary) summary = enriched.summary || undefined;
       extras = enriched.extras;
     } catch (err) {
       opts.onBrainError?.(err instanceof Error ? err.message : String(err));
     }
   }
-  const markdown = renderFindingsReport(cases, meta, mdPath, extras, summary);
-  const findingCount = collapseFindingCases(cases).length;
+  const markdown = renderFindingsReport(openCases, meta, mdPath, extras, summary, classified);
+  const findingCount = classified.open.length;
   const written = writeReportFolder(opts.configPath, {
     url: opts.config.url,
     generatedAt,
@@ -1048,9 +1119,10 @@ export async function writeRunsReport(opts: {
     dir: written.dir,
     mdPath: written.mdPath,
     findingCount,
-    caseCount: cases.length,
-    cases,
+    caseCount: openCases.length,
+    cases: openCases,
     meta,
+    classified,
     ...(extras ? { extras } : {}),
     ...(summary ? { summary } : {}),
   };

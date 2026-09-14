@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DismissedLedger, type DismissedItem } from "../schema/dismissed.js";
+import { idempotencyKeyOfFingerprint } from "./finding.js";
 import { withFileLock } from "./lock.js";
 import { ensureWorkspace, workspaceDir } from "./workspace.js";
 
@@ -18,11 +19,34 @@ export function loadDismissed(configPath: string): DismissedLedger {
   }
 }
 
+function identityIk(opts: { idempotencyKey?: string; fingerprint?: string }): string | undefined {
+  if (opts.idempotencyKey) return opts.idempotencyKey;
+  if (opts.fingerprint) return idempotencyKeyOfFingerprint(opts.fingerprint);
+  return undefined;
+}
+
+function identityKeys(item: {
+  id: string;
+  runId?: string;
+  fingerprint?: string;
+  idempotencyKey?: string;
+}): string[] {
+  const keys: string[] = [];
+  const ik = identityIk(item);
+  if (ik) keys.push(`ik:${ik}`);
+  if (item.fingerprint) keys.push(`fp:${item.fingerprint}`);
+  keys.push(`id:${item.id}\0${item.runId ?? ""}`);
+  return keys;
+}
+
 export function isDismissed(
   ledger: DismissedLedger,
-  opts: { id: string; runId?: string; fingerprint?: string },
+  opts: { id: string; runId?: string; fingerprint?: string; idempotencyKey?: string },
 ): boolean {
+  const wantIk = identityIk(opts);
   for (const item of ledger.items) {
+    const itemIk = identityIk(item);
+    if (wantIk && itemIk && wantIk === itemIk) return true;
     if (opts.fingerprint && item.fingerprint === opts.fingerprint) return true;
     if (opts.runId && item.runId === opts.runId && item.id === opts.id) return true;
   }
@@ -34,11 +58,11 @@ export function appendDismissed(configPath: string, added: DismissedItem[]): Dis
   const path = dismissedPath(configPath);
   return withFileLock(path, () => {
     const ledger = loadDismissed(configPath);
-    const seen = new Set(ledger.items.map((i) => `${i.id}\0${i.fingerprint ?? ""}`));
+    const seen = new Set(ledger.items.flatMap(identityKeys));
     for (const item of added) {
-      const key = `${item.id}\0${item.fingerprint ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const keys = identityKeys(item);
+      if (keys.some((k) => seen.has(k))) continue;
+      for (const k of keys) seen.add(k);
       ledger.items.push(item);
     }
     const tmp = `${path}.tmp`;

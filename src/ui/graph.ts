@@ -1,4 +1,5 @@
 import type { PageModelDraft } from "../schema/page-model.js";
+import { findingIdentityOf, type FindingIdentityFields } from "../persist/finding.js";
 import type { FindingCase } from "../persist/runs.js";
 import type { UiGraph, UiGraphEdge, UiGraphNode } from "../schema/ui.js";
 import { ledgerPath } from "../surveyor/path-template.js";
@@ -35,13 +36,36 @@ export function findingOnPage(
 export function badgeCounts(opts: {
   pageId: string;
   path: string;
-  findings?: Array<{ pageId?: string; url?: string; finding?: { url?: string }; severity: string }>;
+  findings?: Array<{
+    pageId?: string;
+    url?: string;
+    finding?: { url?: string; idempotencyKey?: string };
+    severity: string;
+    status?: string;
+    idempotencyKey?: string;
+    runId?: string;
+    id?: string;
+  }>;
 }): { red: number; yellow: number } {
   let red = 0;
   let yellow = 0;
   const page = { id: opts.pageId, path: opts.path };
+  const seen = new Set<string>();
   for (const c of opts.findings ?? []) {
+    if (c.status === "fixed") continue;
     if (!findingOnPage(c, page)) continue;
+    const f = c.finding;
+    const key =
+      c.idempotencyKey ??
+      (f && "kind" in f && "message" in f
+        ? findingIdentityOf(f as FindingIdentityFields, { url: c.url, pageId: c.pageId }).idempotencyKey
+        : c.runId && c.id
+          ? `${c.runId}/${c.id}`
+          : undefined);
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
     if (c.severity === "critical" || c.severity === "major") red += 1;
     else yellow += 1;
   }

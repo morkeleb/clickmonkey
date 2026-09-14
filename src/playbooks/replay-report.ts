@@ -1,9 +1,11 @@
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { extractClickmonkeyFences } from "../reports/fences.js";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { extractClickmonkeyFences, type ClickmonkeyFence } from "../reports/fences.js";
 import type { Config } from "../schema/config.js";
 import type { Finding, FindingKind } from "../schema/finding.js";
 import type { Log } from "../schema/log.js";
+import { appendFixed, removeFixed } from "../persist/fixed.js";
+import type { FixedItem } from "../schema/fixed.js";
 import { writeLog } from "../persist/log.js";
 import { replayLog, ReplayLiveValidateError } from "./replay.js";
 
@@ -29,6 +31,7 @@ export interface ReplayCaseResult {
   beforePath?: string;
   afterPath?: string;
   caseDir: string;
+  idempotencyKey?: string;
 }
 
 export interface ReplayReportResult {
@@ -188,6 +191,7 @@ export async function replayReport(opts: {
         ok: status === "fixed",
         status,
         caseDir,
+        ...(fence.idempotencyKey ? { idempotencyKey: fence.idempotencyKey } : {}),
         ...(result.findings[0] ? { finding: result.findings[0] } : {}),
         ...(beforePath ? { beforePath } : {}),
         ...(after ? { afterPath: after } : {}),
@@ -200,6 +204,7 @@ export async function replayReport(opts: {
         status: "error",
         error: err instanceof ReplayLiveValidateError ? err.message : message,
         caseDir,
+        ...(fence.idempotencyKey ? { idempotencyKey: fence.idempotencyKey } : {}),
         ...(beforePath ? { beforePath } : {}),
       });
     }
@@ -212,5 +217,46 @@ export async function replayReport(opts: {
     cases,
   };
   writeFileSync(comparisonPath, renderComparison(result), "utf8");
+  recordReplayFixes(opts.configPath, opts.outDir, opts.reportPath, fences, cases);
   return result;
+}
+
+function newestRunId(runIds: string[] | undefined): string | undefined {
+  return [...(runIds ?? [])].sort().at(-1);
+}
+
+/** Same-tape replay is the only confirmation. Unleash/nasty lands are not a retest. */
+function recordReplayFixes(
+  configPath: string,
+  outDir: string,
+  reportPath: string,
+  fences: ClickmonkeyFence[],
+  cases: ReplayCaseResult[],
+): void {
+  const replayId = basename(outDir);
+  const reportId = basename(dirname(reportPath));
+  const now = new Date().toISOString();
+  const confirmed: FixedItem[] = [];
+  const still: string[] = [];
+  for (const [i, c] of cases.entries()) {
+    const fence = fences[i];
+    const ik = c.idempotencyKey ?? fence?.idempotencyKey;
+    if (!ik) continue;
+    if (c.status === "fixed") {
+      const lastRunId = newestRunId(fence?.runIds);
+      confirmed.push({
+        fixedAt: now,
+        idempotencyKey: ik,
+        replayId,
+        ...(fence?.findingId ? { id: fence.findingId } : {}),
+        ...(lastRunId ? { lastRunId } : {}),
+        ...(reportId && reportId !== "." ? { reportId } : {}),
+        ...(fence?.title ? { title: fence.title } : {}),
+      });
+    } else if (c.status === "still") {
+      still.push(ik);
+    }
+  }
+  if (still.length > 0) removeFixed(configPath, still);
+  if (confirmed.length > 0) appendFixed(configPath, confirmed);
 }

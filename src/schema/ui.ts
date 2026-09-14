@@ -76,6 +76,7 @@ export const UiRunFinding = z
     pageId: z.string().min(1).optional(),
     widgetRef: z.string().min(1).optional(),
     screenshotUrl: z.string().min(1).optional(),
+    idempotencyKey: z.string().min(1).optional(),
   })
   .strict();
 export type UiRunFinding = z.infer<typeof UiRunFinding>;
@@ -93,6 +94,11 @@ export const UiMapFinding = z
     /** `ledgerPath` of the finding URL so the sheet matches graph badges. */
     path: z.string().min(1).optional(),
     screenshotUrl: z.string().min(1).optional(),
+    idempotencyKey: z.string().min(1).optional(),
+    /** `fixed` = replay of the same tape did not reproduce. */
+    status: z.enum(["new", "still", "fixed"]).optional(),
+    lastRunId: z.string().min(1).optional(),
+    retestRunId: z.string().min(1).optional(),
   })
   .strict();
 export type UiMapFinding = z.infer<typeof UiMapFinding>;

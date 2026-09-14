@@ -76,13 +76,16 @@ describe("findings report", () => {
     assert.match(md, /\*\*Actual:\*\*/);
     assert.match(md, /\*\*Why it matters:\*\*/);
     assert.doesNotMatch(md, /^- \*\*id:\*\*/m);
-    assert.match(md, /`expectFailed` · major · `fnd_3_expectFailed` · `20260817T000000Z-abcd`/);
+    assert.match(
+      md,
+      /`expectFailed` · major · `ik_[0-9a-f]{16}` · `fnd_3_expectFailed` · `20260817T000000Z-abcd`/,
+    );
     assert.match(md, /^## Findings/m);
     const findingsAt = md.indexOf("## Findings");
     const qualityAt = md.indexOf("## Quality");
     assert.ok(qualityAt === -1 || findingsAt < qualityAt, "findings before quality");
     const tapeAt = md.indexOf("```clickmonkey");
-    const locAt = md.indexOf("`expectFailed` · major · `fnd_3_expectFailed`");
+    const locAt = md.search(/`expectFailed` · major · `ik_[0-9a-f]{16}` · `fnd_3_expectFailed`/);
     assert.ok(tapeAt > 0 && locAt > tapeAt, "loc line after the tape");
     const fences = extractClickmonkeyFences(md);
     assert.equal(fences.length, 1);
@@ -1657,7 +1660,7 @@ describe("findings report", () => {
       "/tmp/findings.md",
     );
     assert.match(md, /see Overlap/);
-    const locAt = md.indexOf("`visualIssue` · minor · `fnd_2_visualIssue`");
+    const locAt = md.search(/`visualIssue` · minor · `ik_[0-9a-f]{16}` · `fnd_2_visualIssue`/);
     const seeAt = md.indexOf("see Overlap");
     assert.ok(seeAt > 0 && locAt > seeAt, "see-link before loc line");
   });

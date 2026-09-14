@@ -64,6 +64,22 @@ screenshot ui overlap
     assert.equal(fences[0]?.log.steps[0]?.kind, "open");
   });
 
+  it("reads ik_ and run ids from the loc line after the tape", () => {
+    const md = `### expected invalid
+
+\`\`\`clickmonkey
+open home
+expect create.name invalid
+\`\`\`
+
+\`expectFailed\` · major · \`ik_0123456789abcdef\` · \`fnd_3_expectFailed\` · \`20260817T000000Z-abcd\` · \`home\`
+`;
+    const fences = extractClickmonkeyFences(md);
+    assert.equal(fences[0]?.idempotencyKey, "ik_0123456789abcdef");
+    assert.equal(fences[0]?.findingId, "fnd_3_expectFailed");
+    assert.deepEqual(fences[0]?.runIds, ["20260817T000000Z-abcd"]);
+  });
+
   it("wrapClickmonkeyFence round-trips a log", () => {
     const log = parseLog("# bug: x\nopen home\n");
     const md = wrapClickmonkeyFence(log);

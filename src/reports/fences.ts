@@ -7,6 +7,10 @@ export interface ClickmonkeyFence {
   log: Log;
   /** Screenshot href from the report section above this fence. */
   image?: string;
+  /** Loc line after the tape (`ik_` of the bug). */
+  idempotencyKey?: string;
+  findingId?: string;
+  runIds?: string[];
 }
 
 const FENCE = /```clickmonkey[ \t]*\r?\n([\s\S]*?)```/gi;
@@ -27,7 +31,27 @@ export function extractClickmonkeyFences(markdown: string): ClickmonkeyFence[] {
     const section = before.slice(Math.max(0, sectionStart));
     const images = [...section.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)];
     const image = images[images.length - 1]?.[1]?.trim();
-    out.push({ title, raw, log: parseLog(raw), ...(image ? { image } : {}) });
+    const after = markdown.slice(match.index + match[0].length);
+    const nextHead = after.search(/^#{1,6}\s+/m);
+    const locWindow = nextHead < 0 ? after : after.slice(0, nextHead);
+    const loc =
+      /(?: · (\d+)× in (\d+) runs?)? · `(ik_[0-9a-f]+)` · `(fnd_[^`]+)`(.*)$/m.exec(locWindow);
+    const runCount = loc?.[2] ? Number(loc[2]) : 1;
+    const rest = loc?.[5]
+      ? [...loc[5].matchAll(/`([^`]+)`/g)]
+          .map((m) => m[1]!)
+          .filter((t) => !t.startsWith("ik_") && !t.startsWith("fnd_"))
+      : [];
+    const runIds = rest.slice(0, Number.isFinite(runCount) && runCount > 0 ? runCount : 1);
+    out.push({
+      title,
+      raw,
+      log: parseLog(raw),
+      ...(image ? { image } : {}),
+      ...(loc?.[3] ? { idempotencyKey: loc[3] } : {}),
+      ...(loc?.[4] ? { findingId: loc[4] } : {}),
+      ...(runIds.length > 0 ? { runIds } : {}),
+    });
   }
   return out;
 }

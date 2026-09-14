@@ -55,11 +55,11 @@ hidden native <select> under a custom combobox). Prune is the human pass.
 
 TTY (no --ids): pick a report if you omit reportId, then checkbox findings.
 With brain configured, likely noise is pre-checked (uncheck anything real).
-Scripts: clickmonkey prune <reportId> --ids fnd_3_expectFailed,fnd_10_visualIssue
+Scripts: clickmonkey prune <reportId> --ids ik_ab12cd34ef56,fnd_10_visualIssue
 
 Writes:
   clickmonkey/reports/<id>/findings.md  rewritten without the dropped cards
-  clickmonkey/dismissed.json            fingerprints so later \`report\` skips them
+  clickmonkey/dismissed.json            ik_ keys so later \`report\` skips the same bug
 
 Does not edit map.json. Finding folders under clickmonkey/runs/ stay (the tape
 is the tape). Replay still has the original walk.

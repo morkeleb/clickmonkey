@@ -263,6 +263,18 @@ function findingOnNode(finding: UiMapFinding, node: UiGraphNode): boolean {
   return false;
 }
 
+function groupMapFindings(findings: UiMapFinding[]): UiMapFinding[] {
+  const byKey = new Map<string, UiMapFinding>();
+  for (const finding of findings) {
+    const key = finding.idempotencyKey ?? `${finding.runId}/${finding.id}`;
+    const prev = byKey.get(key);
+    if (!prev || finding.runId > prev.runId) byKey.set(key, finding);
+  }
+  const rank = (status: UiMapFinding["status"]) =>
+    status === "fixed" ? 2 : status === "still" ? 1 : 0;
+  return [...byKey.values()].sort((a, b) => rank(a.status) - rank(b.status) || b.runId.localeCompare(a.runId));
+}
+
 export function NodeSheet({
   snapshot,
   nodeId,
@@ -287,6 +299,7 @@ export function NodeSheet({
   const pageFindings = node
     ? (snapshot.findings ?? []).filter((f) => findingOnNode(f, node))
     : [];
+  const pageFindingGroups = groupMapFindings(pageFindings);
   const blurb = page?.description ?? node?.blurb;
   const describedBy = page?.describedBy ?? node?.describedBy;
   return (
@@ -370,13 +383,13 @@ export function NodeSheet({
                 </InfoStat>
               </div>
               <section>
-                <h3 className="mb-2 text-sm font-medium">Findings {pageFindings.length}</h3>
-                {pageFindings.length === 0 ? (
+                <h3 className="mb-2 text-sm font-medium">Findings {pageFindingGroups.length}</h3>
+                {pageFindingGroups.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No finding folders on this page.</p>
                 ) : (
                   <ul className="flex flex-col gap-2">
-                    {pageFindings.map((finding) => (
-                      <li key={`${finding.runId}/${finding.id}`}>
+                    {pageFindingGroups.map((finding) => (
+                      <li key={finding.idempotencyKey ?? `${finding.runId}/${finding.id}`}>
                         <button
                           type="button"
                           className="w-full min-w-0 rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-muted/40"
@@ -392,16 +405,26 @@ export function NodeSheet({
                             >
                               {finding.severity}
                             </Badge>
+                            {finding.status ? (
+                              <Badge variant={finding.status === "fixed" ? "secondary" : "outline"}>
+                                {finding.status}
+                              </Badge>
+                            ) : null}
                             <span className="min-w-0 truncate font-medium" title={finding.kind}>
                               {prettyIdent(finding.kind)}
                             </span>
                             <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
-                              {finding.runId}
+                              {finding.lastRunId ?? finding.runId}
                             </span>
                           </div>
                           <p className="mt-1 text-xs break-words text-muted-foreground">
                             {prettyLeadingIdent(finding.message)}
                           </p>
+                          {finding.status === "fixed" && finding.retestRunId ? (
+                            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                              replay {finding.retestRunId}
+                            </p>
+                          ) : null}
                         </button>
                       </li>
                     ))}

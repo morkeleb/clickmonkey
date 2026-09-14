@@ -243,6 +243,36 @@ describe("badgeCounts", () => {
     assert.equal(login.yellow, 0);
   });
 
+  it("counts one pill per ik_ and skips fixed", () => {
+    const finding = {
+      schemaVersion: 1 as const,
+      id: "fnd_1_expectFailed",
+      kind: "expectFailed" as const,
+      message: "expected invalid, field is valid",
+      tapePath: "/tmp/x",
+      stepIndex: 1,
+      pageId: "home",
+    };
+    const counts = badgeCounts({
+      pageId: "home",
+      path: "/",
+      findings: [
+        { pageId: "home", severity: "major", finding, runId: "run-a", id: "fnd_1_expectFailed" },
+        { pageId: "home", severity: "major", finding, runId: "run-b", id: "fnd_9_expectFailed" },
+        {
+          pageId: "home",
+          severity: "critical",
+          finding: { ...finding, id: "fnd_2_pageError", kind: "pageError" as const, message: "boom" },
+          status: "fixed",
+          runId: "run-a",
+          id: "fnd_2_pageError",
+        },
+      ],
+    });
+    assert.equal(counts.red, 1);
+    assert.equal(counts.yellow, 0);
+  });
+
   it("does not paint url-less findings on every page", () => {
     const counts = badgeCounts({
       pageId: "home",

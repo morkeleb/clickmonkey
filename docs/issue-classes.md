@@ -40,7 +40,7 @@ These merge into per-run ledgers (`quality.json`, `testability.json`, `broken.js
 | **Shallow payload** | XSS/SQLi/overlong in fields on a site you own | `unleash --nasty` / `nasty_*` |
 | **Explore oracles** | Claim vs behavior, purpose, consistency, interruption, affordance | MCP / `explore` when the host files them |
 | **Frozen contracts** | Path, text, value, visible/hidden, invalid | MCP `spec_save` / `spec_run`, CLI `clickmonkey spec` fences |
-| **Regression** | Same finding tape still fails or is fixed | `clickmonkey replay` (STILL / FIXED / LOOK) |
+| **Regression** | Same tape still fails, or a later walk files the same `ik_` after replay said FIXED | `clickmonkey replay` (STILL / FIXED / LOOK) |
 
 ### A11y extras (axe, not the full best-practice dump)
 

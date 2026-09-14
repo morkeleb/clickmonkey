@@ -119,13 +119,14 @@ clickmonkey/
   testability.json               # legacy workspace ledger (inspect without a run)
   quality.json                   # legacy workspace ledger (inspect without a run)
   broken.json                    # legacy workspace ledger (inspect without a run)
-  runs/<id>/                     # tape, shots, findings, nav.jsonl for one walk
+  runs/<id>/                     # tape, shots, findings (idempotencyKey), nav.jsonl for one walk
   runs/<id>/quality.json         # HTML, a11y, JS, SEO, visual extras for that walk
   runs/<id>/testability.json     # locatability for that walk
   runs/<id>/broken.json          # 404s seen on that walk
   runs/<id>/verbose/             # --verbose only: per-step HTML + view.txt (safe to delete)
   reports/<id>/findings.md       # shareable reports (one folder per report)
-  dismissed.json                 # fingerprints prune wrote; later report skips them
+  dismissed.json                 # ik_ keys prune wrote; later report skips the same bug
+  fixed.json                     # ik_ keys replay confirmed; later report moves them to Fixed
   replays/<id>/comparison.md     # before/after vs that report
   explore-context.md             # optional: app architecture for explore --skills
   specs/*.md                     # replayable clickmonkey fences
@@ -278,12 +279,14 @@ Explore exit `1` means findings, not a crash — mark the job `allow_failure`. E
 
 `clickmonkey report` writes `clickmonkey/reports/<id>/findings.md` plus `report.json` (which runs it covers). A TTY asks which runs to combine (checkbox, none pre-selected), then **Pages with issues?** — default (top 8) or full (every page with its own issues). `--runs id,id` is explicit; `--all` takes every run that has findings. `--quality-full` skips the prompt (scripts). Chapters match the sitemap page sheet: Findings, Testability, Accessibility, Visual, Quality (HTML, SEO, Runtime). `Pages` groups list unique-to-a-route issues (default: top 8; full: every such page). The report also has a By page index: default lists those pages; `--quality-full` indexes every labeled ledger page (chrome as labels on those lines, not extra headings). Compact drops the leash intro (replay runs it from config) and keeps the path from the last `open` or nav-landmark click. Findings and ledger rows include a short **Why it matters** paragraph (copy-pasteable). With `brain` configured it adds titles and expected/actual. `--out` also copies the markdown to a path you name. The dashboard lists every report and has Print (browser Save as PDF) and Copy (text + screenshots).
 
+Open cards are tagged **new** (first seen in the newest selected run) or **still** (seen before). **Fixed** means `clickmonkey replay` ran that finding’s tape with the same fills and it did not reproduce. A later unleash/nasty land is not a retest — those walks type different values.
+
 `clickmonkey prune` is human review of a **report**, not the sitemap. After `clickmonkey report` you have `clickmonkey/reports/<id>/findings.md`. Some cards are real bugs; some are walker noise (clip on an icon rail, a 1×1 hidden native `<select>` under a custom combobox). Prune:
 
 1. Pick a report (TTY select, or pass the report id). `clickmonkey prune --help` prints the same story.
-2. Checkbox the findings that are false positives. With `brain` configured, likely noise is pre-checked (uncheck anything real). Scripts: `clickmonkey prune <reportId> --ids fnd_3_expectFailed,fnd_10_visualIssue`.
+2. Checkbox the findings that are false positives. With `brain` configured, likely noise is pre-checked (uncheck anything real). Scripts: `clickmonkey prune <reportId> --ids ik_ab12cd34ef567890,fnd_10_visualIssue`. The loc line’s `ik_` is the bug; `fnd_*` is that run’s folder.
 3. The markdown is rewritten without those cards. Finding folders under `runs/` stay — the tape is the tape. Replay still has the original walk.
-4. Ids and fingerprints go into `clickmonkey/dismissed.json`. The next `clickmonkey report` skips matches so you do not re-triage the same noise.
+4. One dismissed item per card (the `ik_` plus fingerprint) goes into `clickmonkey/dismissed.json`. The next `clickmonkey report` skips that bug even when a later walk files it under a new `fnd_*`.
 
 It never edits `map.json`. A 404 room still on the sitemap is `clickmonkey pages`.
 
@@ -298,7 +301,7 @@ Each run writes `nav.jsonl` (and echoes timestamped lines on stderr): every DSL 
 
 A **run** is a walk (`map` / `unleash` / `nasty` / `explore` / playbook). A **report** (`clickmonkey report`) is the shareable markdown of those findings. A **replay of a report** is not a third walk — it is a **comparison** against that report: same tapes, new shots, `comparison.md` with before/after.
 
-`clickmonkey replay clickmonkey/reports/<id>/findings.md` writes `clickmonkey/replays/<id>/comparison.md`. Use the path that `report` printed. **STILL** = the bug came back. **FIXED** = it did not. **LOOK** = a human has to compare the pictures (UI / `screenshot ui`). Exit 1 only on STILL or ERROR.
+`clickmonkey replay clickmonkey/reports/<id>/findings.md` writes `clickmonkey/replays/<id>/comparison.md` and records **FIXED** `ik_` keys in `clickmonkey/fixed.json`. Use the path that `report` printed. **STILL** = the bug came back (and clears a prior fixed mark). **FIXED** = the same tape did not reproduce. **LOOK** = a human has to compare the pictures (UI / `screenshot ui`). Exit 1 only on STILL or ERROR. The next `clickmonkey report` moves replay-confirmed bugs to **Fixed** unless a later walk files that `ik_` again.
 
 Defaults: config `clickmonkey.json`, out `clickmonkey/runs/<id>/`.
 

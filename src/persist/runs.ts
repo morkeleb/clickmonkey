@@ -4,6 +4,7 @@ import { compactLog, hoppedStepIndexes } from "../playbooks/compact.js";
 import { findingHitOf, type FindingHit } from "../reports/check.js";
 import { formatLog, parseLog } from "../schema/dsl.js";
 import { type Finding, severityForKind, type FindingSeverity } from "../schema/finding.js";
+import { ledgerPath } from "../surveyor/path-template.js";
 import { loadFindingJson } from "./finding.js";
 import { runsDir } from "./workspace.js";
 
@@ -96,6 +97,31 @@ export function contextsByStep(runDir: string): Map<number, { pageId?: string; u
 
 export function contextAtStep(runDir: string, stepIndex: number): { pageId?: string; url?: string } {
   return contextFromEvents(readNavEvents(runDir), stepIndex);
+}
+
+export type RunVisits = { pageIds: Set<string>; paths: Set<string> };
+
+function pathOfNavUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const path = new URL(url).pathname;
+    return ledgerPath(path === "" ? "/" : path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Pages and ledger paths this walk landed on (`nav.jsonl`). */
+export function runVisits(runDir: string): RunVisits {
+  const pageIds = new Set<string>();
+  const paths = new Set<string>();
+  for (const ev of readNavEvents(runDir)) {
+    if (typeof ev.pageId === "string" && ev.pageId) pageIds.add(ev.pageId);
+    const href = typeof ev.url === "string" ? ev.url : typeof ev.to === "string" ? ev.to : undefined;
+    const path = pathOfNavUrl(href);
+    if (path) paths.add(path);
+  }
+  return { pageIds, paths };
 }
 
 function collectRunRoot(root: string, byId: Map<string, RunSummary>): void {

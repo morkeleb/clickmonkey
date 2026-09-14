@@ -6,6 +6,8 @@ import { describe, it } from "node:test";
 import {
   appendFindingReport,
   persistFinding,
+  findingIdempotencyKey,
+  findingIdentityOf,
   overflowViewportTag,
   persistVisualIssueFindings,
   shouldPersistFinding,
@@ -135,6 +137,49 @@ describe("finding folder", () => {
     assert.ok(existsSync(join(dir, "finding.json")));
     assert.ok(existsSync(join(dir, "report.md")));
     assert.ok(existsSync(join(dir, "screenshot.png")));
+  });
+
+  it("stamps a stable idempotency key that ignores step index and record ids", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "cm-fnd-ikey-"));
+    const a = persistFinding(outDir, {
+      schemaVersion: 1,
+      id: findingId(1, "notFound"),
+      kind: "notFound",
+      message: "HTTP 404 GET https://app.example/vouchers/voucher-vch-00479",
+      tapePath: join(outDir, "replay.log"),
+      stepIndex: 1,
+      url: "https://app.example/vouchers/voucher-vch-00479",
+    });
+    assert.match(a.finding.idempotencyKey ?? "", /^ik_[0-9a-f]{16}$/);
+    const b = persistFinding(outDir, {
+      schemaVersion: 1,
+      id: findingId(9, "notFound"),
+      kind: "notFound",
+      message: "Not found page GET https://app.example/vouchers/voucher-vch-00999",
+      tapePath: join(outDir, "replay.log"),
+      stepIndex: 9,
+      url: "https://app.example/vouchers/voucher-vch-00999",
+    });
+    assert.equal(b.created, false);
+    assert.equal(b.finding.idempotencyKey, a.finding.idempotencyKey);
+    const silentA = {
+      schemaVersion: 1 as const,
+      id: findingId(2, "expectFailed"),
+      kind: "expectFailed" as const,
+      message: "Save did not submit the form: no navigation, no write request, and no invalid fields were shown",
+      tapePath: "t",
+      stepIndex: 2,
+      pageId: "clients_new",
+      widgetRef: "page.button_save",
+    };
+    const silentB = { ...silentA, id: findingId(8, "expectFailed"), stepIndex: 8 };
+    assert.equal(findingIdempotencyKey(silentA), findingIdempotencyKey(silentB));
+    assert.notEqual(
+      findingIdempotencyKey(silentA),
+      findingIdempotencyKey({ ...silentA, pageId: "trust_settings" }),
+    );
+    const stamped = findingIdentityOf({ ...silentA, idempotencyKey: "ik_aaaaaaaaaaaaaaaa" });
+    assert.equal(stamped.idempotencyKey, "ik_aaaaaaaaaaaaaaaa");
   });
 
   it("dedups a notFound on the same path even when the message differs", () => {

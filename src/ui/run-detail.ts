@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { severityForKind } from "../schema/finding.js";
-import { loadFindingJson } from "../persist/finding.js";
+import { findingIdempotencyKey, loadFindingJson } from "../persist/finding.js";
 import {
   UiRunDetail,
   UiRunFinding,
@@ -331,6 +331,7 @@ function collectFindings(runDir: string, runId: string): UiRunFinding[] {
         ...(finding.url ? { url: finding.url } : {}),
         ...(finding.pageId ? { pageId: finding.pageId } : {}),
         ...(finding.widgetRef ? { widgetRef: finding.widgetRef } : {}),
+        idempotencyKey: finding.idempotencyKey ?? findingIdempotencyKey(finding),
         ...(existsSync(shot) ? { screenshotUrl: runFileUrl(runId, `findings/${name}/screenshot.png`) } : {}),
       }),
     );

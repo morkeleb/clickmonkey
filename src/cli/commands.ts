@@ -15,7 +15,7 @@ import { newRunId } from "../persist/run-id.js";
 import { mapPath, replaysDir, workspaceDir } from "../persist/workspace.js";
 import { writeBundle } from "../ui/bundle.js";
 import { isFindingsReport } from "../reports/fences.js";
-import { findingFingerprint, renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
+import { findingIdentity, renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
 import { dropReportFindings, parseReportFindings, suggestFalsePositives } from "../reports/prune.js";
 import { emptyConfig, requirePageModel, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
 import { FogPipName } from "../schema/fog.js";
@@ -485,7 +485,14 @@ export async function cmdReport(opts: {
     mkdirSync(dirname(extra), { recursive: true });
     writeFileSync(
       extra,
-      renderFindingsReport(written.cases, written.meta, extra, written.extras, written.summary),
+      renderFindingsReport(
+        written.cases,
+        written.meta,
+        extra,
+        written.extras,
+        written.summary,
+        written.classified,
+      ),
       "utf8",
     );
     process.stdout.write(`${extra}\n`);
@@ -550,33 +557,48 @@ export async function cmdPrune(
   if (!mdPath) fail(EXIT_USAGE, `report not found: ${id}`);
   const rewritten = rewriteReportMarkdown(configPath, id, markdown, kept.length);
   if (!rewritten) writeFileSync(mdPath, markdown, "utf8");
-  const casesById = new Map<string, string>();
+  const casesById = new Map<string, { fingerprint: string; idempotencyKey: string }>();
+  const casesByIk = new Map<string, { fingerprint: string; idempotencyKey: string }>();
   try {
     const runDirs = resolveRunDirs(configPath, loaded.meta.runIds);
     for (const c of collectFindingCases(runDirs, { tapes: false })) {
-      casesById.set(`${c.runId}/${c.id}`, findingFingerprint(c));
+      const ident = findingIdentity(c);
+      casesById.set(`${c.runId}/${c.id}`, ident);
+      casesByIk.set(ident.idempotencyKey, ident);
     }
   } catch {
-    // run folders may be gone; still dismiss by id
+    // run folders may be gone; still dismiss by ik_ / id from the report
   }
   const now = new Date().toISOString();
   appendDismissed(
     configPath,
-    dropped.flatMap((f) =>
-      f.ids.map((findingId, i) => {
-        const runId = f.runIds[i] ?? f.runIds[0];
-        const fingerprint = runId ? casesById.get(`${runId}/${findingId}`) : undefined;
-        return {
-          dismissedAt: now,
-          id: findingId,
-          reportId: id,
-          kind: f.kind,
-          title: f.title,
-          ...(runId ? { runId } : {}),
-          ...(fingerprint ? { fingerprint } : {}),
-        };
-      }),
-    ),
+    dropped.map((f) => {
+      const fromIk = f.idempotencyKey ? casesByIk.get(f.idempotencyKey) : undefined;
+      let ident = fromIk;
+      if (!ident) {
+        for (const [i, findingId] of f.ids.entries()) {
+          const runId = f.runIds[i] ?? f.runIds[0];
+          const hit = runId ? casesById.get(`${runId}/${findingId}`) : undefined;
+          if (hit) {
+            ident = hit;
+            break;
+          }
+        }
+      }
+      const runId = f.runIds[0];
+      const idempotencyKey = f.idempotencyKey ?? ident?.idempotencyKey;
+      const fingerprint = ident?.fingerprint;
+      return {
+        dismissedAt: now,
+        id: f.id,
+        reportId: id,
+        kind: f.kind,
+        title: f.title,
+        ...(runId ? { runId } : {}),
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+        ...(fingerprint ? { fingerprint } : {}),
+      };
+    }),
   );
   process.stdout.write(`${rewritten?.mdPath ?? mdPath}\n`);
   process.stderr.write(`dropped ${dropped.length} finding${dropped.length === 1 ? "" : "s"}\n`);

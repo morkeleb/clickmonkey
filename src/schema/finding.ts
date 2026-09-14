@@ -56,6 +56,8 @@ export const Finding = z
     url: z.string().min(1).optional(),
     pageId: z.string().min(1).optional(),
     widgetRef: z.string().min(1).optional(),
+    /** Stable across runs for the same product bug. Not the per-run folder id. */
+    idempotencyKey: z.string().min(1).optional(),
   })
   .strict();
 export type Finding = z.infer<typeof Finding>;
