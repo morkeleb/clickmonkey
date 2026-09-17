@@ -15,8 +15,11 @@ Save. `explore_start` can load a sitemap other than `clickmonkey/map.json` via
 `map`. `config.brain` is not required.
 
 That freeze+replay is why you would use MCP instead of explore-only. Map,
-unleash, and nasty stay CLI. Monkeys and modes: [walkers.md](walkers.md). Fog:
-[fog.md](fog.md). What to harvest vs leave to QA: [issue-classes.md](issue-classes.md).
+unleash, and nasty stay CLI. A coding agent that should **run** ClickMonkey
+(not click along) uses the skills in [`skills/`](https://github.com/morkeleb/clickmonkey/tree/main/skills)
+(`npx skills add morkeleb/clickmonkey`) — see [AGENTS.md](https://github.com/morkeleb/clickmonkey/blob/main/AGENTS.md).
+Monkeys and modes: [walkers.md](walkers.md). Fog: [fog.md](fog.md). What to
+harvest vs leave to QA: [issue-classes.md](issue-classes.md).
 
 ## Before you connect
 

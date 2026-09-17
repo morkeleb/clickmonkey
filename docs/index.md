@@ -13,5 +13,6 @@ QA walker. Point it at a URL, let it drive the UI, keep a tape.
 - [Walkers](walkers/) — monkeys, modes, spec/test live letters (**s** / **t**)
 - [Fog of war](fog/) — clocks and hunger
 - [MCP](mcp/) — host-LLM walk, then freeze a spec
+- [AGENTS.md](https://github.com/morkeleb/clickmonkey/blob/main/AGENTS.md) — coding-agent skills (walk, fix, CI)
 - [Issue classes](issue-classes/) — what it harvests vs QA
 - [Chapter order](chapter-order/) — Quality → Visual → Accessibility → Testability

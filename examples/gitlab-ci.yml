@@ -9,13 +9,15 @@
 # CI variables: PREVIEW_URL, CLICKMONKEY_USER, CLICKMONKEY_PASSWORD,
 # and the LLM key named in clickmonkey.json brain.apiKeyEnv.
 #
-# allow_failure: explore exit 1 means findings, not a broken pipeline.
+# allow_failure exit_codes [1]: findings, not a broken pipeline.
 # Exit 2 is a setup failure (no brain, model down, missing API key).
 
 explore:
   stage: test
   image: node:22
-  allow_failure: true
+  allow_failure:
+    exit_codes:
+      - 1
   script:
     - npx --yes playwright install --with-deps chromium
     - npm install -g clickmonkey
@@ -26,15 +28,20 @@ explore:
       }
     - |
       CHARTER="$(git log --oneline "${CI_COMMIT_BEFORE_SHA:-HEAD~1}..${CI_COMMIT_SHA}" 2>/dev/null || git log --oneline -15)"
-    - >
-      clickmonkey explore
-      --url "$PREVIEW_URL"
-      --charter "$CHARTER"
-      --skills clickmonkey/explore-context.md
-      --minutes 15
-      --steps 40
-    - clickmonkey report --all
-    - clickmonkey bundle --out clickmonkey-bundle
+    - |
+      set +e
+      clickmonkey explore \
+        --url "$PREVIEW_URL" \
+        --charter "$CHARTER" \
+        --skills clickmonkey/explore-context.md \
+        --minutes 15 \
+        --steps 40
+      code=$?
+      set -e
+      if [ "$code" -ge 2 ]; then exit "$code"; fi
+      clickmonkey report --all --quality-full
+      clickmonkey bundle --out clickmonkey-bundle
+      exit "$code"
   artifacts:
     when: always
     expire_in: 14 days

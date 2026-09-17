@@ -1,0 +1,79 @@
+# Example GitHub Actions job: explore a preview URL, then ship a static dashboard.
+# Copy into the *application* repo as .github/workflows/clickmonkey.yml.
+#
+# Also copy examples/explore-context.md → clickmonkey/explore-context.md
+# and describe *your* site. The charter is git log for this push.
+#
+# Secrets: PREVIEW_URL, CLICKMONKEY_USER, CLICKMONKEY_PASSWORD,
+# and the LLM key named in clickmonkey.json brain.apiKeyEnv.
+#
+# Findings: the walk step writes report+bundle then a follow-up step exits 1
+# with continue-on-error (yellow). Exit 2/3 fail the job.
+
+name: clickmonkey
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install ClickMonkey and Chromium
+        run: |
+          npm install -g clickmonkey
+          npx --yes playwright install --with-deps chromium
+
+      - name: Require explore-context
+        run: |
+          test -f clickmonkey/explore-context.md || {
+            echo "missing clickmonkey/explore-context.md — copy examples/explore-context.md from clickmonkey and describe this site"
+            exit 2
+          }
+
+      - name: Explore, report, bundle
+        id: walk
+        env:
+          PREVIEW_URL: ${{ secrets.PREVIEW_URL }}
+          CLICKMONKEY_USER: ${{ secrets.CLICKMONKEY_USER }}
+          CLICKMONKEY_PASSWORD: ${{ secrets.CLICKMONKEY_PASSWORD }}
+        run: |
+          set -u
+          CHARTER="$(git log --oneline "${{ github.event.pull_request.base.sha || github.event.before }}..${{ github.sha }}" 2>/dev/null || git log --oneline -15)"
+          set +e
+          clickmonkey explore \
+            --url "$PREVIEW_URL" \
+            --charter "$CHARTER" \
+            --skills clickmonkey/explore-context.md \
+            --minutes 15 \
+            --steps 40
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ge 2 ]; then exit "$code"; fi
+          clickmonkey report --all --quality-full
+          clickmonkey bundle --out clickmonkey-bundle
+
+      - name: Findings
+        if: steps.walk.outputs.code == '1'
+        continue-on-error: true
+        run: echo "ClickMonkey reported findings (exit 1)"; exit 1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clickmonkey-bundle
+          path: |
+            clickmonkey-bundle/
+            clickmonkey/reports/
+          if-no-files-found: ignore

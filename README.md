@@ -15,6 +15,7 @@ Jobs, modes, and fog: [docs/walkers.md](docs/walkers.md).
 Fog ledger and hunger: [docs/fog.md](docs/fog.md).
 How to read the dashboard map (haze, m/u/n pips, live letters): [docs/map.md](docs/map.md) (GitHub Pages: https://morkeleb.github.io/clickmonkey/map/).
 Host-LLM MCP (explore, then freeze and prove a spec): [docs/mcp.md](docs/mcp.md).
+Coding-agent skills (walk, fix, CI): [AGENTS.md](AGENTS.md).
 
 0.0.7 stays tagged. Those configs will not run here.
 
@@ -252,7 +253,7 @@ clickmonkey ui --stop
 
 `clickmonkey ui` reads `clickmonkey.json` in the current directory (or `--config`) and serves a localhost-only dashboard on `127.0.0.1:4174`. It never binds a public interface. `--port` and `--no-open` are optional. After a clone, `npm install --prefix web && npm run build` once so `web/dist` exists. If the banner says the UI is stale, use **Restart UI** in that banner, or `clickmonkey ui --stop` then `clickmonkey ui`. A report page has **Copy** (markdown + inlined screenshots for pasting into a model) next to **Print**.
 
-`clickmonkey bundle` writes a static copy of that dashboard (default `clickmonkey/bundle/`). It does not need the CLI to view: serve the folder (`python3 -m http.server 4174`) or upload it to GitLab Pages. Do not open `index.html` as `file://` — fetch is blocked. A GitLab job example is `examples/gitlab-ci.yml`.
+`clickmonkey bundle` writes a static copy of that dashboard (default `clickmonkey/bundle/`). It does not need the CLI to view: serve the folder (`python3 -m http.server 4174`) or upload it to GitLab Pages. Do not open `index.html` as `file://` — fetch is blocked. Pipeline examples: `examples/gitlab-ci.yml`, `examples/github-actions.yml`.
 
 ## Exploratory testing via MCP
 
@@ -273,7 +274,9 @@ ClickMonkey is headless by default. A pipeline that already deploys a preview UR
 5. `clickmonkey bundle --out clickmonkey-bundle`
 6. Upload `clickmonkey-bundle/` as a job artifact (and optionally GitLab Pages).
 
-Explore exit `1` means findings, not a crash — mark the job `allow_failure`. Exit `2` means the model was unreachable or the API key is missing (not findings). Replay of a previous report is the cheap gate (no LLM). See `examples/gitlab-ci.yml`. Downloading the artifact: `python3 -m http.server 4174` in `clickmonkey-bundle/` and open http://127.0.0.1:4174/. You cannot replay from the zip unless the preview URL is still up.
+Explore exit `1` means findings, not a crash — the examples allow that code so the bundle still publishes (`allow_failure` exit_codes `[1]` on GitLab; a follow-up step with `continue-on-error` on GitHub). Exit `2` means the model was unreachable or the API key is missing (not findings) and must fail the job. Replay of a previous report is the cheap gate (no LLM). See `examples/gitlab-ci.yml` and `examples/github-actions.yml`. Downloading the artifact: `python3 -m http.server 4174` in `clickmonkey-bundle/` and open http://127.0.0.1:4174/. You cannot replay from the zip unless the preview URL is still up.
+
+A coding agent in the app repo can install the same loop as skills: `npx skills add morkeleb/clickmonkey` ([AGENTS.md](AGENTS.md)).
 
 `--nasty` fills fields from a catalog of XSS, SQLi, format, and overlong junk. It is for a site you own (your staging). Do not point it at anyone else's production.
 
