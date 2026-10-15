@@ -129,6 +129,7 @@ export async function runExplore(opts: {
   chat?: ChatClient;
   brain?: Brain;
   verbose?: boolean;
+  storageState?: string;
 }): Promise<ExploreResult> {
   const brainCfg = requireBrain(opts.config);
   const apiKey = resolveApiKey(brainCfg.apiKeyEnv);
@@ -189,7 +190,7 @@ export async function runExplore(opts: {
     });
 
   try {
-    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout, storageState: opts.storageState }, async (handle) => {
     const state = await bootRun(handle, opts.config, opts.outDir, {
       configPath: opts.configPath,
       verbose: opts.verbose,

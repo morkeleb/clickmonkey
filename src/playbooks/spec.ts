@@ -397,13 +397,14 @@ export async function runSpecs(opts: {
   headed?: boolean;
   timeout?: number;
   verbose?: boolean;
+  storageState?: string;
 }): Promise<SpecRunResult> {
   const logPath = join(opts.outDir, "log.txt");
   const mdPath = join(opts.outDir, "spec-results.md");
   const runId = basename(opts.outDir);
 
   try {
-    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout, storageState: opts.storageState }, async (handle) => {
     const state = await bootRun(handle, opts.config, opts.outDir, {
       configPath: opts.configPath,
       verbose: opts.verbose,

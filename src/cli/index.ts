@@ -19,6 +19,7 @@ import {
   cmdUi,
   cmdUnleash,
   cmdView,
+  cmdLogin,
 } from "./commands.js";
 import { cmdEmit } from "./cmd-emit.js";
 import { cmdPages } from "./cmd-pages.js";
@@ -56,6 +57,7 @@ try {
       job: { type: "string" },
       form: { type: "string" },
       drop: { type: "string" },
+      "storage-state": { type: "string" },
     },
   });
 
@@ -99,12 +101,15 @@ try {
     job: typeof values.job === "string" ? values.job : undefined,
     form: typeof values.form === "string" ? values.form : undefined,
     drop: typeof values.drop === "string" ? values.drop : undefined,
+    storageState: typeof values["storage-state"] === "string" ? values["storage-state"] : undefined,
   };
 
   const run = async (): Promise<number> => {
     switch (command) {
       case "init":
         return cmdInit(flags);
+      case "login":
+        return cmdLogin(flags);
       case "inspect":
         return cmdInspect(flags);
       case "view":

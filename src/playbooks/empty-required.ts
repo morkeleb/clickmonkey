@@ -88,11 +88,12 @@ export async function runEmptyRequired(opts: {
   headed?: boolean;
   timeout?: number;
   verbose?: boolean;
+  storageState?: string;
 }): Promise<EmptyRequiredResult> {
   const logPath = join(opts.outDir, "replay.log");
 
   try {
-    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout, storageState: opts.storageState }, async (handle) => {
     const state = await bootRun(handle, opts.config, opts.outDir, {
       configPath: opts.configPath,
       verbose: opts.verbose,

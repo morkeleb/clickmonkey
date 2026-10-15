@@ -69,6 +69,7 @@ export async function replayLog(opts: {
   verbose?: boolean;
   /** Take / copy a shot of the page after the last step. */
   afterScreenshot?: string;
+  storageState?: string;
 }): Promise<{ ok: boolean; findings: Finding[]; reproduced?: { kind: string; stepIndex: number } }> {
   const log = readLog(opts.logPath);
   const model = requirePageModel(opts.config.map);
@@ -82,7 +83,7 @@ export async function replayLog(opts: {
   const usedLocators = usedLocatorsFor(model, log);
 
   try {
-    return await withRun({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+    return await withRun({ headed: opts.headed, timeout: opts.timeout, storageState: opts.storageState }, async (handle) => {
     const state = await bootRun(handle, opts.config, opts.outDir, {
       configPath: opts.configPath,
       replay: true,

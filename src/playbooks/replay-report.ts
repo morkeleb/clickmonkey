@@ -156,6 +156,7 @@ export async function replayReport(opts: {
   outDir: string;
   headed?: boolean;
   timeout?: number;
+  storageState?: string;
 }): Promise<ReplayReportResult> {
   const fences = extractClickmonkeyFences(opts.markdown);
   const comparisonPath = join(opts.outDir, "comparison.md");
@@ -183,6 +184,7 @@ export async function replayReport(opts: {
         headed: opts.headed,
         timeout: opts.timeout,
         afterScreenshot: afterPath,
+        storageState: opts.storageState,
       });
       const status = classify({ findings: result.findings, log: fence.log });
       const after = existsSync(afterPath) ? afterPath : undefined;

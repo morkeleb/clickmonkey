@@ -537,6 +537,7 @@ export class ExploreSession {
     skills?: string;
     verbose?: boolean;
     brainName?: string;
+    storageState?: string;
     /** Test seam; defaults to withRun. */
     run?: ExploreRunner;
   }): Promise<ExploreVisit> {
@@ -555,7 +556,7 @@ export class ExploreSession {
       };
     });
     const run = opts.run ?? withRun;
-    this.runDone = run({ headed: opts.headed, timeout: opts.timeout }, async (handle) => {
+    this.runDone = run({ headed: opts.headed, timeout: opts.timeout, storageState: opts.storageState }, async (handle) => {
       try {
         if (this.closing) return;
         const state = await bootRun(handle, opts.config, opts.outDir, {

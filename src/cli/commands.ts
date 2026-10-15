@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { bootRun } from "../executor/boot.js";
 import { attachOracles, createExecutor } from "../executor/run.js";
 import { withRun } from "../executor/session.js";
@@ -18,6 +19,7 @@ import { isFindingsReport } from "../reports/fences.js";
 import { findingIdentity, renderFindingsReport, writeRunsReport } from "../reports/findings-report.js";
 import { dropReportFindings, parseReportFindings, suggestFalsePositives } from "../reports/prune.js";
 import { emptyConfig, requirePageModel, requireVisionShots, resolveVision, VisionError } from "../schema/config.js";
+import type { Config } from "../schema/config.js";
 import { FogPipName } from "../schema/fog.js";
 import { formatLog, formatStep } from "../schema/dsl.js";
 import { formatTestabilityLine } from "../surveyor/audit.js";
@@ -68,8 +70,20 @@ import {
   printUsage,
   resolveConfigPath,
   resolveOutDir,
+  resolveStorageState,
   withUrl,
 } from "./common.js";
+
+/**
+ * A saved login session (storage state) means the browser is already
+ * authenticated, so the leash `intro` (SSO click / login fill) must not run —
+ * otherwise it would look for login widgets that are no longer present on the
+ * signed-in app. Returns a config with `intro` cleared when a storage state is
+ * in use, so the existing `intro.length > 0` gates in the playbooks skip it.
+ */
+export function withSessionConfig(config: Config, storageState?: string): Config {
+  return storageState ? { ...config, intro: [] } : config;
+}
 
 export async function cmdInit(opts: { url?: string; config?: string }): Promise<number> {
   const path = resolveConfigPath(opts.config);
@@ -87,20 +101,63 @@ export async function cmdInit(opts: { url?: string; config?: string }): Promise<
   return EXIT_OK;
 }
 
+export async function cmdLogin(opts: {
+  config?: string;
+  url?: string;
+  out?: string;
+  timeout?: string;
+}): Promise<number> {
+  const configPath = resolveConfigPath(opts.config);
+  const config = withUrl(loadConfigOrExit(configPath), opts.url);
+  const timeout = parseTimeout(opts.timeout);
+  const outPath = opts.out
+    ? resolve(process.cwd(), opts.out)
+    : join(workspaceDir(configPath), "storage-state.json");
+  mkdirSync(dirname(outPath), { recursive: true });
+  try {
+    await withRun({ headed: true, timeout }, async (handle) => {
+      await handle.page.goto(config.url, { waitUntil: "domcontentloaded" });
+      process.stdout.write(`\nBrowser opened at ${config.url}\n`);
+      process.stdout.write(
+        `Log in now (no time limit). When you have landed in the app, return here and press Enter to save the session.\n\n`,
+      );
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      await rl.question("Press Enter once you have logged in and landed in the app: ");
+      rl.close();
+      const href = handle.page.url();
+      if (/\/login|\/connect\/authorize|\/Account\/Login|\/Discovery/i.test(href)) {
+        process.stderr.write(
+          `Warning: still on a login/IdP page (${href}). The saved session may not be authenticated.\n`,
+        );
+      }
+      await handle.context.storageState({ path: outPath });
+      process.stdout.write(`Saved session to ${outPath}\n`);
+      process.stdout.write(
+        `Reuse it with: clickmonkey inspect --headed --storage-state ${outPath}\n`,
+      );
+    });
+  } catch (err) {
+    fail(EXIT_FINDINGS, errMessage(err));
+  }
+  return EXIT_OK;
+}
+
 export async function cmdInspect(opts: {
   config?: string;
   url?: string;
   headed?: boolean;
   timeout?: string;
   verbose?: boolean;
+  storageState?: string;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = persistUrl(configPath, loadConfigOrExit(configPath), opts.url);
   const timeout = parseTimeout(opts.timeout);
+  const storageState = resolveStorageState(opts.storageState);
   const outDir = resolveOutDir(undefined, configPath);
   try {
-    await withRun({ headed: opts.headed, timeout }, async (handle) => {
-      if (config.intro.length > 0) {
+    await withRun({ headed: opts.headed, timeout, storageState }, async (handle) => {
+      if (config.intro.length > 0 && !storageState) {
         const state = await bootRun(handle, config, outDir, {
           configPath,
           verbose: opts.verbose,
@@ -140,14 +197,16 @@ export async function cmdView(opts: {
   headed?: boolean;
   timeout?: string;
   verbose?: boolean;
+  storageState?: string;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
   const timeout = parseTimeout(opts.timeout);
+  const storageState = resolveStorageState(opts.storageState);
   const outDir = resolveOutDir(undefined, configPath);
   try {
-    await withRun({ headed: opts.headed, timeout }, async (handle) => {
-      const state = await bootRun(handle, config, outDir, {
+    await withRun({ headed: opts.headed, timeout, storageState }, async (handle) => {
+      const state = await bootRun(handle, withSessionConfig(config, storageState), outDir, {
         configPath,
         verbose: opts.verbose,
         brain: "view",
@@ -185,6 +244,7 @@ export async function cmdStep(
     headed?: boolean;
     timeout?: string;
     verbose?: boolean;
+    storageState?: string;
   },
 ): Promise<number> {
   if (!line) {
@@ -196,9 +256,10 @@ export async function cmdStep(
   const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   const timeout = parseTimeout(opts.timeout);
+  const storageState = resolveStorageState(opts.storageState);
   try {
-    return await withRun({ headed: opts.headed, timeout }, async (handle) => {
-      const state = await bootRun(handle, config, outDir, {
+    return await withRun({ headed: opts.headed, timeout, storageState }, async (handle) => {
+      const state = await bootRun(handle, withSessionConfig(config, storageState), outDir, {
         configPath,
         verbose: opts.verbose,
         brain: "step",
@@ -238,6 +299,7 @@ export async function cmdPlaybook(
     headed?: boolean;
     timeout?: string;
     verbose?: boolean;
+    storageState?: string;
   },
 ): Promise<number> {
   if (!name) {
@@ -248,15 +310,17 @@ export async function cmdPlaybook(
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
   const outDir = resolveOutDir(opts.out, configPath);
+  const storageState = resolveStorageState(opts.storageState);
   mkdirSync(outDir, { recursive: true });
   try {
     const result = await runEmptyRequired({
-      config,
+      config: withSessionConfig(config, storageState),
       configPath,
       outDir,
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
       verbose: opts.verbose,
+      storageState,
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
@@ -276,6 +340,7 @@ export async function cmdMap(opts: {
   timeout?: string;
   steps?: string;
   verbose?: boolean;
+  storageState?: string;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
@@ -288,11 +353,12 @@ export async function cmdMap(opts: {
       fail(EXIT_USAGE, errMessage(err));
     }
   }
+  const storageState = resolveStorageState(opts.storageState);
   const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
     const result = await runUnleash({
-      config,
+      config: withSessionConfig(config, storageState),
       configPath,
       outDir,
       headed: opts.headed,
@@ -300,6 +366,7 @@ export async function cmdMap(opts: {
       steps: parseSteps(opts.steps, MAP_CLI_STEPS),
       mode: "navigate",
       verbose: opts.verbose,
+      storageState,
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
@@ -325,6 +392,7 @@ export async function cmdUnleash(opts: {
   nasty?: boolean;
   verbose?: boolean;
   form?: string;
+  storageState?: string;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
@@ -338,11 +406,12 @@ export async function cmdUnleash(opts: {
     }
   }
   const form = opts.form?.trim() || undefined;
+  const storageState = resolveStorageState(opts.storageState);
   const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
     const result = await runUnleash({
-      config,
+      config: withSessionConfig(config, storageState),
       configPath,
       outDir,
       headed: opts.headed,
@@ -352,6 +421,7 @@ export async function cmdUnleash(opts: {
       verbose: opts.verbose,
       form,
       echo: process.stdout,
+      storageState,
     });
     if (result.submitted) {
       process.stdout.write(`submitted ${result.submitted.from} → ${result.submitted.to}\n`);
@@ -384,6 +454,7 @@ export async function cmdExplore(opts: {
   charter?: string;
   skills?: string;
   verbose?: boolean;
+  storageState?: string;
 }): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
   const config = withUrl(loadConfigOrExit(configPath), opts.url);
@@ -406,11 +477,12 @@ export async function cmdExplore(opts: {
     if (!existsSync(path)) fail(EXIT_USAGE, `skills not found: ${path}`);
     skills = readFileSync(path, "utf8");
   }
+  const storageState = resolveStorageState(opts.storageState);
   const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
     const result = await runExplore({
-      config,
+      config: withSessionConfig(config, storageState),
       configPath,
       outDir,
       headed: opts.headed,
@@ -420,6 +492,7 @@ export async function cmdExplore(opts: {
       charter: opts.charter,
       skills,
       verbose: opts.verbose,
+      storageState,
     });
     process.stdout.write(`${result.logPath}\n`);
     if (result.findings[0]) {
@@ -616,6 +689,7 @@ export async function cmdSpec(
     verbose?: boolean;
     check?: boolean;
     failOnFindings?: boolean;
+    storageState?: string;
   },
 ): Promise<number> {
   const configPath = resolveConfigPath(opts.config);
@@ -638,17 +712,19 @@ export async function cmdSpec(
       fail(EXIT_USAGE, errMessage(err));
     }
   }
+  const storageState = resolveStorageState(opts.storageState);
   const outDir = resolveOutDir(opts.out, configPath);
   mkdirSync(outDir, { recursive: true });
   try {
     const result = await runSpecs({
-      config,
+      config: withSessionConfig(config, storageState),
       configPath,
       outDir,
       files,
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
       verbose: opts.verbose,
+      storageState,
     });
     process.stdout.write(formatSpecTable(result.cases));
     const failFindings = shouldFailOnFindings(result.ok, result.findingErrors, Boolean(opts.failOnFindings));
@@ -671,6 +747,7 @@ export async function cmdReplay(
     headed?: boolean;
     timeout?: string;
     verbose?: boolean;
+    storageState?: string;
   },
 ): Promise<number> {
   if (!logPath) {
@@ -681,8 +758,10 @@ export async function cmdReplay(
   if (!existsSync(resolvedLog)) fail(EXIT_USAGE, `log not found: ${resolvedLog}`);
   const configPath = resolveConfigPath(opts.config);
   const text = readFileSync(resolvedLog, "utf8");
+  const storageState = resolveStorageState(opts.storageState);
   try {
     const config = withUrl(loadConfigOrExit(configPath), opts.url);
+    const sessionConfig = withSessionConfig(config, storageState);
     if (isFindingsReport(text)) {
       const outDir = opts.out
         ? resolve(process.cwd(), opts.out)
@@ -691,11 +770,12 @@ export async function cmdReplay(
       const result = await replayReport({
         markdown: text,
         reportPath: resolvedLog,
-        config,
+        config: sessionConfig,
         configPath,
         outDir,
         headed: opts.headed,
         timeout: parseTimeout(opts.timeout),
+        storageState,
       });
       process.stdout.write(formatReplayReport(result));
       return result.ok ? EXIT_OK : EXIT_FINDINGS;
@@ -703,13 +783,14 @@ export async function cmdReplay(
     const outDir = resolveOutDir(opts.out, configPath);
     mkdirSync(outDir, { recursive: true });
     const result = await replayLog({
-      config,
+      config: sessionConfig,
       configPath,
       logPath: resolvedLog,
       outDir,
       headed: opts.headed,
       timeout: parseTimeout(opts.timeout),
       verbose: opts.verbose,
+      storageState,
     });
     if (result.reproduced) {
       process.stderr.write(`reproduced ${result.reproduced.kind} at step ${result.reproduced.stepIndex}\n`);
